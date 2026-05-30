@@ -6,3 +6,5 @@ dist
 .env.local
 backend/.env
 backend/*.exe
+__pycache__/
+*.pyc
