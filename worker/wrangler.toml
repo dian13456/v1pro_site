@@ -1,0 +1,8 @@
+name = "jiadian-hub-worker"
+main = "src/index.js"
+compatibility_date = "2026-05-30"
+
+[vars]
+ALLOWED_VID = "0483"
+ALLOWED_PID = "66AA"
+DOWNLOAD_BASE_URL = "https://example.com/protected"
