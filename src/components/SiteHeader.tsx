@@ -8,7 +8,7 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ title, subtitle, rightSlot }: SiteHeaderProps) {
   return (
-    <header className="sticky top-4 z-20 mb-8 rounded-3xl border border-white/25 bg-white/50 p-5 shadow-[0_24px_45px_-20px_rgba(0,0,0,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/55">
+    <header className="mb-8 rounded-3xl border border-white/25 bg-white/70 p-5 dark:border-white/10 dark:bg-slate-900/70">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-cyan-500">JiaDian HUB Resource Center</p>

@@ -5,7 +5,7 @@
     "description": "官方 1.9 寸动态时钟素材，含启动动画与常亮版。",
     "size": "30MB",
     "image": "1.png",
-    "download": "https://v1zip-1311844229.cos.ap-guangzhou.myqcloud.com/1.zip",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/1.png",
     "category": "gif",
     "materialType": "image",
     "updatedAt": "2026-05-30"
@@ -16,9 +16,97 @@
     "description": "Apple 风格浅色表盘，专为 170x320 竖屏优化。",
     "size": "18MB",
     "image": "2.jpg",
-    "download": "https://v1zip-1311844229.cos.ap-guangzhou.myqcloud.com/2.zip",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/2.jpg",
     "category": "gif",
     "materialType": "image",
     "updatedAt": "2026-05-29"
+  },
+  {
+    "id": 3,
+    "title": "1",
+    "description": "明日香",
+    "size": "30MB",
+    "image": "3.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/3.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31"
+  },
+  {
+    "id": 4,
+    "title": "1",
+    "description": "24",
+    "size": "30MB",
+    "image": "4_14a51edf.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/4_14a51edf.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31"
+  },
+  {
+    "id": 2605310117326672,
+    "title": "1",
+    "description": "wwe",
+    "size": "30MB",
+    "image": "8f40711e.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/8f40711e.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31"
+  },
+  {
+    "id": 2605310119015246,
+    "title": "8",
+    "description": "22",
+    "size": "30MB",
+    "image": "fedeb402.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/fedeb402.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31T01:19:01+08:00"
+  },
+  {
+    "id": 2605310119123197,
+    "title": "8",
+    "description": "22",
+    "size": "30MB",
+    "image": "81adceba.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/81adceba.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31T01:19:12+08:00"
+  },
+  {
+    "id": 2605310119255626,
+    "title": "8",
+    "description": "22",
+    "size": "30MB",
+    "image": "3d0a61cd.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/3d0a61cd.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31T01:19:25+08:00"
+  },
+  {
+    "id": 2605310119321940,
+    "title": "8",
+    "description": "22",
+    "size": "30MB",
+    "image": "cae4ac2d.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/cae4ac2d.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31T01:19:33+08:00"
+  },
+  {
+    "id": 2605310119410411,
+    "title": "8",
+    "description": "22",
+    "size": "30MB",
+    "image": "019bf53c.jpg",
+    "download": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/019bf53c.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-05-31T01:19:41+08:00"
   }
 ]

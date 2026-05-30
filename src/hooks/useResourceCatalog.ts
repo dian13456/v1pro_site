@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { MaterialTypeFilter, ResourceCategory, ResourceItem } from "../types/resource";
 import { fetchResources } from "../services/resourceService";
 
+export type ResourceSortMode = "latest" | "oldest" | "hot";
+
 export function useResourceCatalog() {
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -9,6 +11,7 @@ export function useResourceCatalog() {
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState<ResourceCategory>("all");
   const [materialType, setMaterialType] = useState<MaterialTypeFilter>("all");
+  const [sortMode, setSortMode] = useState<ResourceSortMode>("latest");
 
   useEffect(() => {
     let active = true;
@@ -30,7 +33,7 @@ export function useResourceCatalog() {
 
   const filtered = useMemo(() => {
     const query = keyword.trim().toLowerCase();
-    return resources.filter((resource) => {
+    const result = resources.filter((resource) => {
       const passCategory = category === "all" ? true : resource.category === category;
       if (!passCategory) return false;
       const passMaterialType = materialType === "all" ? true : resource.materialType === materialType;
@@ -41,7 +44,15 @@ export function useResourceCatalog() {
         resource.description.toLowerCase().includes(query)
       );
     });
-  }, [resources, keyword, category, materialType]);
+    result.sort((a, b) => {
+      if (sortMode === "hot") return 0;
+      const aTime = new Date(a.updatedAt).getTime();
+      const bTime = new Date(b.updatedAt).getTime();
+      if (sortMode === "oldest") return aTime - bTime;
+      return bTime - aTime;
+    });
+    return result;
+  }, [resources, keyword, category, materialType, sortMode]);
 
   return {
     resources,
@@ -54,5 +65,7 @@ export function useResourceCatalog() {
     setCategory,
     materialType,
     setMaterialType,
+    sortMode,
+    setSortMode,
   };
 }

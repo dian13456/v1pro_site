@@ -1,13 +1,11 @@
+import { DESKTOP_IMAGE_TRANSFER } from "../config/desktopTransfer";
 import { isAllowedUsbDevice, usbDeviceFilters } from "../config/allowedDevices";
 import {
   DEFAULT_CHUNK_SIZE,
-  DEFAULT_WRITE_RETRIES,
-  LCD_HEIGHT,
-  LCD_WIDTH,
-  buildDataPacket,
+  USB_FRAME_SIZE,
+  buildDataFramesBuffer,
   buildEndPacket,
   buildStartPacket,
-  crc16Ccitt,
   decodeAckText,
 } from "./usbProtocol";
 
@@ -30,6 +28,15 @@ export interface StaticImagePushOptions {
 const START_ACKS = new Set(["OK_START", "ER_WH", "ER_START"]);
 const DATA_ACKS = new Set(["OK_D", "ER_CRC", "ER_SEQ", "ER_DATA", "ER_WR"]);
 const END_ACKS = new Set(["OK_SHOW", "ER_SIZE", "ER_FCRC", "ER_FLSH", "ER_END"]);
+const PING_ACKS = new Set(["OK_PING"]);
+const PING_PACKET = new Uint8Array([0xa5, 0x5a, 0x0d]);
+const MIN_BATCH_BYTES = 64 * 1024;
+const MAX_BATCH_BYTES = 256 * 1024;
+const MAX_IN_FLIGHT = 3;
+const PROGRESS_UPDATE_MS = 60;
+const PERIODIC_DRAIN_MS = 250;
+
+let cachedWriteOnlyMode: boolean | null = null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -121,11 +128,20 @@ export async function prepareUsbSession(device: USBDevice): Promise<UsbEndpoints
 export async function drainIn(device: USBDevice, inEndpoint: number): Promise<void> {
   for (let i = 0; i < 32; i += 1) {
     try {
-      const result = await withTimeout(
-        device.transferIn(inEndpoint, 64),
-        40,
-        "drain timeout"
-      );
+      const result = await withTimeout(device.transferIn(inEndpoint, 64), 30, "drain timeout");
+      if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
+        break;
+      }
+    } catch {
+      break;
+    }
+  }
+}
+
+async function quickDrainIn(device: USBDevice, inEndpoint: number): Promise<void> {
+  for (let i = 0; i < 6; i += 1) {
+    try {
+      const result = await withTimeout(device.transferIn(inEndpoint, 64), 8, "drain timeout");
       if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
         break;
       }
@@ -144,14 +160,9 @@ export async function readAckText(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const left = Math.max(30, Math.min(120, deadline - Date.now()));
-      const result = await withTimeout(
-        device.transferIn(inEndpoint, 64),
-        left,
-        "ack poll timeout"
-      );
+      const left = Math.max(20, Math.min(200, deadline - Date.now()));
+      const result = await withTimeout(device.transferIn(inEndpoint, 64), left, "ack poll timeout");
       if (result.status !== "ok" || !result.data) {
-        await sleep(20);
         continue;
       }
       const text = decodeAckText(result.data);
@@ -159,7 +170,7 @@ export async function readAckText(
         return text;
       }
     } catch {
-      await sleep(20);
+      // keep polling until deadline
     }
   }
   throw new Error("设备应答超时");
@@ -169,57 +180,120 @@ async function transferOutWithRetry(
   device: USBDevice,
   outEndpoint: number,
   data: Uint8Array,
-  retries = DEFAULT_WRITE_RETRIES
+  retries: number
 ): Promise<void> {
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      const result = await device.transferOut(outEndpoint, data);
+      const result = await device.transferOut(
+        outEndpoint,
+        new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
+      );
       if (result.status === "ok") {
         return;
       }
     } catch {
-      await sleep(2);
+      if (attempt + 1 < retries) {
+        await sleep(2);
+      }
     }
   }
   throw new Error("USB 写入失败");
 }
 
-export async function pushStaticImagePayload(
+function clampBatchSize(value: number): number {
+  return Math.max(MIN_BATCH_BYTES, Math.min(MAX_BATCH_BYTES, value));
+}
+
+function createProgressReporter(
+  totalPayloadBytes: number,
+  onProgress?: (sent: number, total: number) => void
+): (sentPayloadBytes: number, force?: boolean) => void {
+  let lastReportAt = 0;
+  let lastSent = -1;
+  return (sentPayloadBytes: number, force = false) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    if (!force && sentPayloadBytes === lastSent) return;
+    if (!force && now - lastReportAt < PROGRESS_UPDATE_MS) return;
+    lastSent = sentPayloadBytes;
+    lastReportAt = now;
+    onProgress(sentPayloadBytes, totalPayloadBytes);
+  };
+}
+
+interface PendingWrite {
+  promise: Promise<void>;
+  sentPayloadBytes: number;
+}
+
+async function transferOutHighThroughput(
   session: UsbEndpoints,
-  payload: Uint8Array,
-  useRle: boolean,
-  options: StaticImagePushOptions = {}
+  frames: Uint8Array,
+  payloadBytes: number,
+  writeRetries: number,
+  onProgress?: (sent: number, total: number) => void
 ): Promise<void> {
-  const width = options.width ?? LCD_WIDTH;
-  const height = options.height ?? LCD_HEIGHT;
-  const chunkSize = Math.max(1, Math.min(options.chunkSize ?? DEFAULT_CHUNK_SIZE, 56));
-  const writeRetries = options.writeRetries ?? DEFAULT_WRITE_RETRIES;
-  const onProgress = options.onProgress;
-
   const { device, outEndpoint, inEndpoint } = session;
-  const ackEach = options.ackEach ?? true;
+  const report = createProgressReporter(payloadBytes, onProgress);
+  const batchBytes = clampBatchSize(DESKTOP_IMAGE_TRANSFER.webBatchBytes);
+  const total = frames.length;
 
-  await drainIn(device, inEndpoint);
+  let offset = 0;
+  let lastDrainAt = Date.now();
+  const queue: PendingWrite[] = [];
+  report(0, true);
 
-  const startPacket = useRle ? buildStartPacket(width, height, payload.length) : buildStartPacket(width, height);
-  await transferOutWithRetry(device, outEndpoint, startPacket, writeRetries);
+  const enqueue = (sliceStart: number, sliceEnd: number): void => {
+    const chunk = frames.subarray(sliceStart, sliceEnd);
+    const sentPayloadBytes = Math.min(payloadBytes, Math.round((sliceEnd / total) * payloadBytes));
+    queue.push({
+      promise: transferOutWithRetry(device, outEndpoint, chunk, writeRetries),
+      sentPayloadBytes,
+    });
+  };
 
-  const startAck = await readAckText(device, inEndpoint, START_ACKS, 10000);
-  if (startAck !== "OK_START") {
-    throw new Error(`设备拒绝开始帧: ${startAck}`);
+  while (offset < total || queue.length > 0) {
+    while (queue.length < MAX_IN_FLIGHT && offset < total) {
+      const end = Math.min(offset + batchBytes, total);
+      enqueue(offset, end);
+      offset = end;
+    }
+
+    const head = queue.shift();
+    if (!head) continue;
+    await head.promise;
+    report(head.sentPayloadBytes);
+
+    const now = Date.now();
+    if (now - lastDrainAt >= PERIODIC_DRAIN_MS) {
+      await quickDrainIn(device, inEndpoint);
+      lastDrainAt = now;
+    }
   }
 
-  let sent = 0;
-  let seq = 0;
-  let frameCrc = 0xffff;
-  const total = payload.length;
-  onProgress?.(0, total);
+  await quickDrainIn(device, inEndpoint);
+  report(payloadBytes, true);
+}
 
-  while (sent < total) {
-    const end = Math.min(sent + chunkSize, total);
-    const part = payload.subarray(sent, end);
-    const packet = buildDataPacket(seq, part);
-    await transferOutWithRetry(device, outEndpoint, packet, writeRetries);
+async function transferOutAckFallback(
+  session: UsbEndpoints,
+  frames: Uint8Array,
+  payloadBytes: number,
+  chunkSize: number,
+  writeRetries: number,
+  ackEach: boolean,
+  onProgress?: (sent: number, total: number) => void
+): Promise<void> {
+  const { device, outEndpoint, inEndpoint } = session;
+  const frameCount = frames.length / USB_FRAME_SIZE;
+  const report = createProgressReporter(payloadBytes, onProgress);
+  let sent = 0;
+  report(0, true);
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const start = frameIndex * USB_FRAME_SIZE;
+    const frame = frames.subarray(start, start + USB_FRAME_SIZE);
+    await transferOutWithRetry(device, outEndpoint, frame, writeRetries);
 
     if (ackEach) {
       const dataAck = await readAckText(device, inEndpoint, DATA_ACKS, 1500);
@@ -228,17 +302,112 @@ export async function pushStaticImagePayload(
       }
     }
 
-    frameCrc = crc16Ccitt(part, frameCrc);
-    sent = end;
-    seq = (seq + 1) & 0xff;
-    onProgress?.(sent, total);
+    sent = Math.min(payloadBytes, sent + chunkSize);
+    report(sent);
+    if (DESKTOP_IMAGE_TRANSFER.paceMs > 0) {
+      await sleep(DESKTOP_IMAGE_TRANSFER.paceMs);
+    }
+  }
+
+  report(payloadBytes, true);
+}
+
+async function probeInAck(session: UsbEndpoints): Promise<boolean> {
+  const { device, outEndpoint, inEndpoint } = session;
+  await drainIn(device, inEndpoint);
+  try {
+    await transferOutWithRetry(device, outEndpoint, PING_PACKET, DESKTOP_IMAGE_TRANSFER.writeRetries);
+    const ack = await readAckText(device, inEndpoint, PING_ACKS, 2000);
+    return ack === "OK_PING";
+  } catch {
+    return false;
+  }
+}
+
+async function pushStaticImagePayloadInternal(
+  session: UsbEndpoints,
+  payload: Uint8Array,
+  useRle: boolean,
+  writeOnlyMode: boolean,
+  options: StaticImagePushOptions
+): Promise<void> {
+  const width = options.width ?? DESKTOP_IMAGE_TRANSFER.width;
+  const height = options.height ?? DESKTOP_IMAGE_TRANSFER.height;
+  const chunkSize = Math.max(1, Math.min(options.chunkSize ?? DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_SIZE));
+  const writeRetries = options.writeRetries ?? DESKTOP_IMAGE_TRANSFER.writeRetries;
+  const ackEach = !writeOnlyMode && options.ackEach === true;
+
+  const { device, outEndpoint, inEndpoint } = session;
+  await drainIn(device, inEndpoint);
+
+  const startPacket = useRle ? buildStartPacket(width, height, payload.length) : buildStartPacket(width, height);
+  await transferOutWithRetry(device, outEndpoint, startPacket, writeRetries);
+
+  if (writeOnlyMode) {
+    await sleep(DESKTOP_IMAGE_TRANSFER.writeOnlyStartDelayMs);
+  } else {
+    const startAck = await readAckText(device, inEndpoint, START_ACKS, 10000);
+    if (startAck !== "OK_START") {
+      throw new Error(`设备拒绝开始帧: ${startAck}`);
+    }
+  }
+
+  const { frames, frameCrc } = buildDataFramesBuffer(payload, chunkSize);
+  if (writeOnlyMode) {
+    await transferOutHighThroughput(session, frames, payload.length, writeRetries, options.onProgress);
+  } else {
+    await transferOutAckFallback(session, frames, payload.length, chunkSize, writeRetries, ackEach, options.onProgress);
   }
 
   const endPacket = buildEndPacket(frameCrc);
   await transferOutWithRetry(device, outEndpoint, endPacket, writeRetries);
 
+  if (writeOnlyMode) {
+    await quickDrainIn(device, inEndpoint);
+    await sleep(DESKTOP_IMAGE_TRANSFER.writeOnlyEndDelayMs);
+    return;
+  }
+
   const endAck = await readAckText(device, inEndpoint, END_ACKS, 30000);
   if (endAck !== "OK_SHOW") {
     throw new Error(`设备拒绝结束帧: ${endAck}`);
   }
+}
+
+export async function pushStaticImagePayload(
+  session: UsbEndpoints,
+  payload: Uint8Array,
+  useRle: boolean,
+  options: StaticImagePushOptions = {}
+): Promise<void> {
+  // 高性能主路径：默认 writeOnly，避免 ACK polling 开销。
+  let writeOnlyMode = cachedWriteOnlyMode ?? true;
+
+  try {
+    await pushStaticImagePayloadInternal(session, payload, useRle, writeOnlyMode, options);
+  } catch (error) {
+    const message = (error as Error)?.message || "";
+    if (writeOnlyMode) {
+      // 主路径失败时再尝试 ACK fallback，避免影响正常高速传输。
+      const canAck = await probeInAck(session);
+      if (canAck) {
+        cachedWriteOnlyMode = false;
+        await pushStaticImagePayloadInternal(session, payload, useRle, false, options);
+        return;
+      }
+      if (message.includes("应答超时")) {
+        throw new Error("设备应答超时，请确认设备未处于时间显示/屏保模式，并重新插拔后再试");
+      }
+      throw error;
+    }
+
+    if (message.includes("应答超时")) {
+      cachedWriteOnlyMode = true;
+      await pushStaticImagePayloadInternal(session, payload, useRle, true, options);
+      return;
+    }
+    throw error;
+  }
+
+  cachedWriteOnlyMode = writeOnlyMode;
 }

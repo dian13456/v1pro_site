@@ -32,7 +32,7 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     return null;
   }
 
-  const updated = item.updatedAt || new Date().toISOString().slice(0, 10);
+  const updated = item.updatedAt || new Date().toISOString();
 
   return {
     id: item.id,

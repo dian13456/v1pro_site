@@ -141,3 +141,15 @@ export function prepareRgb565Payload(raw: Uint8Array): { payload: Uint8Array; us
     useRle,
   };
 }
+
+export function swapRgb565Bytes(raw: Uint8Array): Uint8Array {
+  const out = new Uint8Array(raw.length);
+  out.set(raw);
+  const end = out.length & ~1;
+  for (let i = 0; i < end; i += 2) {
+    const lo = out[i];
+    out[i] = out[i + 1];
+    out[i + 1] = lo;
+  }
+  return out;
+}

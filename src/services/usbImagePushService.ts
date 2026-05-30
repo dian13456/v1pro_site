@@ -1,5 +1,6 @@
+import { DESKTOP_IMAGE_TRANSFER } from "../config/desktopTransfer";
 import { createImageUrl } from "./imageService";
-import { fetchImageToRgb565, prepareRgb565Payload } from "./imageRgb565";
+import { fetchImageToRgb565, prepareRgb565Payload, swapRgb565Bytes } from "./imageRgb565";
 import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authService";
 import { prepareUsbSession, pushStaticImagePayload, resolveAuthorizedDevice } from "./usbDeviceSession";
 
@@ -27,7 +28,15 @@ export async function pushResourceImageToDevice(
   const signedUrl = await createImageUrl(resourceId, fallbackImageUrl);
 
   onProgress?.({ phase: "convert", sent: 0, total: 0 });
-  const raw = await fetchImageToRgb565(signedUrl);
+  let raw = await fetchImageToRgb565(signedUrl, {
+    width: DESKTOP_IMAGE_TRANSFER.width,
+    height: DESKTOP_IMAGE_TRANSFER.height,
+    fitMode: DESKTOP_IMAGE_TRANSFER.fitMode,
+    rotateDeg: DESKTOP_IMAGE_TRANSFER.rotateDeg,
+  });
+  if (DESKTOP_IMAGE_TRANSFER.swapRgb565) {
+    raw = swapRgb565Bytes(raw);
+  }
   const { payload, useRle } = prepareRgb565Payload(raw);
 
   const device = await resolveAuthorizedDevice();
@@ -35,6 +44,9 @@ export async function pushResourceImageToDevice(
 
   onProgress?.({ phase: "transfer", sent: 0, total: payload.length });
   await pushStaticImagePayload(session, payload, useRle, {
+    chunkSize: DESKTOP_IMAGE_TRANSFER.chunkSize,
+    writeRetries: DESKTOP_IMAGE_TRANSFER.writeRetries,
+    ackEach: DESKTOP_IMAGE_TRANSFER.ackEachWhenInAvailable,
     onProgress: (sent, total) => {
       onProgress?.({ phase: "transfer", sent, total });
     },

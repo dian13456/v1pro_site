@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
@@ -7,21 +7,22 @@ import { SiteHeader } from "../components/SiteHeader";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
-import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
 import { createImageUrl } from "../services/imageService";
-import { pushResourceImageToDevice } from "../services/usbImagePushService";
+import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
-  const [pushingId, setPushingId] = useState<number | null>(null);
-  const [pushProgress, setPushProgress] = useState(0);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [likingId, setLikingId] = useState<number | null>(null);
+  const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
+  const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [errorMessage, setErrorMessage] = useState("");
   const { theme, toggleTheme } = useThemeMode();
   const {
@@ -34,8 +35,45 @@ export default function ResourcesPage() {
     setCategory,
     materialType,
     setMaterialType,
+    sortMode,
+    setSortMode,
   } = useResourceCatalog();
-  const { visibleItems, hasMore, sentinelRef } = useInfiniteScroll(filtered, 16);
+  const sortedResources = useMemo(() => {
+    if (sortMode !== "hot") return filtered;
+    return [...filtered].sort((a, b) => {
+      const likeA = likeCounts[a.id] || 0;
+      const likeB = likeCounts[b.id] || 0;
+      if (likeA !== likeB) return likeB - likeA;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [filtered, sortMode, likeCounts]);
+  const totalItems = sortedResources.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [keyword, category, materialType, sortMode, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const visibleItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedResources.slice(start, start + pageSize);
+  }, [sortedResources, currentPage, pageSize]);
+
+  const pageList = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages = new Set<number>([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+    return Array.from(pages)
+      .filter((p) => p >= 1 && p <= totalPages)
+      .sort((a, b) => a - b);
+  }, [totalPages, currentPage]);
 
   const preloadList = useMemo(
     () =>
@@ -48,6 +86,22 @@ export default function ResourcesPage() {
     [visibleItems]
   );
   useImagePreload(preloadList);
+
+  useEffect(() => {
+    let active = true;
+    fetchResourceLikes()
+      .then((state) => {
+        if (!active) return;
+        setLikeCounts(state.counts);
+        setLikedIds(state.likedIds);
+      })
+      .catch(() => {
+        // Ignore like init errors, download flow handles auth failures explicitly.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     clearAuthState();
@@ -63,7 +117,6 @@ export default function ResourcesPage() {
     try {
       setDownloadingId(resource.id);
       setErrorMessage("");
-      setSuccessMessage("");
       const signedUrl =
         resource.materialType === "image"
           ? await createImageUrl(resource.id, resource.image)
@@ -80,35 +133,37 @@ export default function ResourcesPage() {
     }
   };
 
-  const handlePushToDevice = async (resource: ResourceItem) => {
-    if (resource.materialType !== "image") {
+  const handleLike = async (resource: ResourceItem) => {
+    if (likedIds.has(resource.id)) {
       return;
     }
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
     }
-
     try {
-      setPushingId(resource.id);
-      setPushProgress(0);
+      setLikingId(resource.id);
       setErrorMessage("");
-      setSuccessMessage("");
-      await pushResourceImageToDevice(resource.id, resource.image, (progress) => {
-        if (progress.phase === "transfer" && progress.total > 0) {
-          setPushProgress((progress.sent / progress.total) * 100);
-        }
-      });
-      setSuccessMessage(`「${resource.title}」已下传到设备屏幕`);
+      const result = await likeResource(resource.id);
+      setLikeCounts((prev) => ({
+        ...prev,
+        [resource.id]: result.likeCount,
+      }));
+      if (result.liked || result.alreadyLiked) {
+        setLikedIds((prev) => {
+          const next = new Set(prev);
+          next.add(resource.id);
+          return next;
+        });
+      }
     } catch (err) {
-      const message = (err as Error)?.message || "下传失败";
+      const message = (err as Error)?.message || "点赞失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
       }
     } finally {
-      setPushingId(null);
-      setPushProgress(0);
+      setLikingId(null);
     }
   };
 
@@ -116,7 +171,7 @@ export default function ResourcesPage() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
-          title="佳点 V1PRO 素材下载中心"
+          title="佳点素材下载中心"
           subtitle="面向 1.9 寸（320×170 横屏）素材商店，支持 GIF、驱动、固件、软件与说明书下载。"
           rightSlot={
             <div className="flex items-center gap-2">
@@ -137,7 +192,7 @@ export default function ResourcesPage() {
           <CategoryTabs value={category} onChange={setCategory} />
         </section>
 
-        <section className="mb-6 flex flex-wrap gap-2">
+        <section className="mb-4 flex flex-wrap gap-2">
           {[
             { value: "all", label: "全部类型" },
             { value: "image", label: "图片素材" },
@@ -160,16 +215,51 @@ export default function ResourcesPage() {
             );
           })}
         </section>
+        <section className="mb-6 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-slate-500 dark:text-slate-300">排序</span>
+          {[
+            { value: "latest", label: "最新优先" },
+            { value: "oldest", label: "最早优先" },
+            { value: "hot", label: "热门排行" },
+          ].map((item) => {
+            const active = sortMode === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setSortMode(item.value as typeof sortMode)}
+                className={`rounded-full px-4 py-2 text-sm transition ${
+                  active
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                    : "border border-white/25 bg-white/55 text-slate-700 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </section>
+        <section className="mb-6 flex flex-wrap items-center gap-3">
+          <span className="text-sm text-slate-500 dark:text-slate-300">每页</span>
+          <select
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+            className="rounded-full border border-white/25 bg-white/55 px-3 py-2 text-sm text-slate-700 outline-none dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+          >
+            {[20, 40, 60, 100].map((size) => (
+              <option key={size} value={size}>
+                {size} 张
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-slate-500 dark:text-slate-300">
+            共 {totalItems} 张，{totalPages} 页
+          </span>
+        </section>
 
         {error || errorMessage ? (
           <div className="mb-4 rounded-xl border border-rose-300/60 bg-rose-100/70 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
             {error || errorMessage}
-          </div>
-        ) : null}
-
-        {successMessage ? (
-          <div className="mb-4 rounded-xl border border-emerald-300/60 bg-emerald-100/70 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-            {successMessage}
           </div>
         ) : null}
 
@@ -186,10 +276,11 @@ export default function ResourcesPage() {
                 key={resource.id}
                 resource={resource}
                 onDownload={handleDownload}
-                onPushToDevice={handlePushToDevice}
+                onLike={handleLike}
                 downloading={downloadingId === resource.id}
-                pushing={pushingId === resource.id}
-                pushProgress={pushingId === resource.id ? pushProgress : 0}
+                liking={likingId === resource.id}
+                liked={likedIds.has(resource.id)}
+                likeCount={likeCounts[resource.id] || 0}
               />
             ))}
           </section>
@@ -201,7 +292,40 @@ export default function ResourcesPage() {
           </div>
         ) : null}
 
-        {hasMore ? <div ref={sentinelRef} className="h-8" /> : null}
+        {!loading && totalItems > 0 ? (
+          <section className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+            >
+              上一页
+            </button>
+            {pageList.map((page) => (
+              <button
+                key={page}
+                type="button"
+                onClick={() => setCurrentPage(page)}
+                className={`rounded-full px-3 py-2 text-sm transition ${
+                  currentPage === page
+                    ? "bg-cyan-600 text-white"
+                    : "border border-white/25 bg-white/55 text-slate-700 hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+            >
+              下一页
+            </button>
+          </section>
+        ) : null}
       </div>
     </div>
   );

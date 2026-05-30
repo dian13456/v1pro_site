@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,20 @@ type authRequest struct {
 	Pid    string `json:"pid"`
 }
 
+type signedURLCacheEntry struct {
+	url       string
+	expiresAt time.Time
+}
+
+type likesStore struct {
+	Counts      map[string]int             `json:"counts"`
+	DeviceLikes map[string]map[string]bool `json:"deviceLikes"`
+}
+
+type likeRequest struct {
+	ResourceID string `json:"resourceId"`
+}
+
 func loadResourceMap(path string) (resourceMap, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -35,6 +50,48 @@ func loadResourceMap(path string) (resourceMap, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+func loadLikesStore(path string) (likesStore, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return likesStore{
+				Counts:      map[string]int{},
+				DeviceLikes: map[string]map[string]bool{},
+			}, nil
+		}
+		return likesStore{}, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return likesStore{
+			Counts:      map[string]int{},
+			DeviceLikes: map[string]map[string]bool{},
+		}, nil
+	}
+	var store likesStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		return likesStore{}, err
+	}
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
+	if store.DeviceLikes == nil {
+		store.DeviceLikes = map[string]map[string]bool{}
+	}
+	return store, nil
+}
+
+func saveLikesStore(path string, store likesStore) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return os.WriteFile(path, raw, 0o644)
 }
 
 func normalizeHexID(v string) string {
@@ -98,6 +155,18 @@ func verifyToken(token string, jwtSecret string) bool {
 	payload := parts[0] + "." + parts[1]
 	signature := strings.Join(parts[2:], ".")
 	return signTokenPayload(payload, jwtSecret) == signature
+}
+
+func serialFromToken(token string, jwtSecret string) (string, bool) {
+	if !verifyToken(token, jwtSecret) {
+		return "", false
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) < 3 {
+		return "", false
+	}
+	serial := strings.TrimSpace(parts[0])
+	return serial, serial != ""
 }
 
 func parseBearerToken(c *gin.Context) string {
@@ -188,6 +257,10 @@ func main() {
 	if imageMapPath == "" {
 		imageMapPath = filepath.Join("config", "image_map.json")
 	}
+	resourceLikesPath := os.Getenv("RESOURCE_LIKES_PATH")
+	if resourceLikesPath == "" {
+		resourceLikesPath = filepath.Join("config", "resource_likes.json")
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -201,6 +274,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("load image map failed: %v", err)
 	}
+	likes, err := loadLikesStore(resourceLikesPath)
+	if err != nil {
+		log.Fatalf("load resource likes failed: %v", err)
+	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
 	if err != nil {
@@ -210,6 +287,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("init image cos signer failed: %v", err)
 	}
+	imageURLCache := map[string]signedURLCacheEntry{}
+	var imageURLCacheMu sync.RWMutex
+	var likesMu sync.RWMutex
+	imageSignTTL := 10 * time.Minute
+	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
+	imageCacheReuseTTL := imageSignTTL - 30*time.Second
 
 	router := gin.Default()
 	router.Use(corsMiddleware(corsAllowOrigin))
@@ -238,6 +321,81 @@ func main() {
 		token := parseBearerToken(c)
 		valid := verifyToken(token, jwtSecret)
 		c.JSON(http.StatusOK, gin.H{"success": valid})
+	})
+
+	router.GET("/api/resource-likes", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		likesMu.RLock()
+		counts := make(map[string]int, len(likes.Counts))
+		for id, count := range likes.Counts {
+			if count < 0 {
+				count = 0
+			}
+			counts[id] = count
+		}
+		likedMap := likes.DeviceLikes[serial]
+		likedResourceIDs := make([]string, 0, len(likedMap))
+		for id, liked := range likedMap {
+			if liked {
+				likedResourceIDs = append(likedResourceIDs, id)
+			}
+		}
+		likesMu.RUnlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":          true,
+			"counts":           counts,
+			"likedResourceIds": likedResourceIDs,
+		})
+	})
+
+	router.POST("/api/resource-like", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req likeRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 不能为空"})
+			return
+		}
+		resourceID := strings.TrimSpace(req.ResourceID)
+
+		likesMu.Lock()
+		if likes.DeviceLikes[serial] == nil {
+			likes.DeviceLikes[serial] = map[string]bool{}
+		}
+		alreadyLiked := likes.DeviceLikes[serial][resourceID]
+		if !alreadyLiked {
+			likes.DeviceLikes[serial][resourceID] = true
+			likes.Counts[resourceID] = likes.Counts[resourceID] + 1
+		}
+		likeCount := likes.Counts[resourceID]
+		if likeCount < 0 {
+			likeCount = 0
+		}
+		saveErr := saveLikesStore(resourceLikesPath, likes)
+		likesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "点赞保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":      true,
+			"alreadyLiked": alreadyLiked,
+			"liked":        true,
+			"likeCount":    likeCount,
+		})
 	})
 
 	handleResource := func(c *gin.Context, id string) {
@@ -275,11 +433,26 @@ func main() {
 			return
 		}
 
-		url, signErr := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
+		now := time.Now()
+		imageURLCacheMu.RLock()
+		cached, hasCached := imageURLCache[objectKey]
+		imageURLCacheMu.RUnlock()
+		if hasCached && cached.expiresAt.After(now) {
+			c.JSON(http.StatusOK, gin.H{"url": cached.url})
+			return
+		}
+
+		url, signErr := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, imageSignTTL)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign image url failed"})
 			return
 		}
+		imageURLCacheMu.Lock()
+		imageURLCache[objectKey] = signedURLCacheEntry{
+			url:       url,
+			expiresAt: now.Add(imageCacheReuseTTL),
+		}
+		imageURLCacheMu.Unlock()
 
 		c.JSON(http.StatusOK, gin.H{"url": url})
 	}

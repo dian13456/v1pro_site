@@ -1,6 +1,8 @@
 import { isAllowedUsbDevice } from "../config/allowedDevices";
 
 const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
+const DEV_LIKE_COUNTS_KEY = "jiadian_dev_like_counts";
+const DEV_LIKED_DEVICES_KEY = "jiadian_dev_like_devices";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -19,6 +21,10 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
   const body = parseBody(init);
   const headers = (init.headers || {}) as Record<string, string>;
   const auth = headers.Authorization || headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const serial = token.startsWith("dev-token-")
+    ? token.replace(/^dev-token-/, "").replace(/-\d+$/, "")
+    : token.split(".")[0] || "";
 
   if (path === "/api/auth") {
     const serial = String(body.serial || "");
@@ -46,6 +52,54 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       success: true,
       expires,
       url: `https://example.com/dev-download/${resourceId}.zip?exp=${expires}&sig=dev`,
+    };
+  }
+
+  if (path === "/api/resource-likes") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const rawCounts = localStorage.getItem(DEV_LIKE_COUNTS_KEY);
+    const rawDevices = localStorage.getItem(DEV_LIKED_DEVICES_KEY);
+    const counts = rawCounts ? (JSON.parse(rawCounts) as Record<string, number>) : {};
+    const devices = rawDevices
+      ? (JSON.parse(rawDevices) as Record<string, Record<string, boolean>>)
+      : {};
+    const likedResourceIds = Object.entries(devices[serial] || {})
+      .filter(([, liked]) => Boolean(liked))
+      .map(([id]) => Number.parseInt(id, 10))
+      .filter((id) => Number.isFinite(id));
+    return { success: true, counts, likedResourceIds };
+  }
+
+  if (path === "/api/resource-like") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const resourceId = String(body.resourceId || "");
+    if (!resourceId) {
+      return { success: false, message: "resourceId 不能为空" };
+    }
+    const rawCounts = localStorage.getItem(DEV_LIKE_COUNTS_KEY);
+    const rawDevices = localStorage.getItem(DEV_LIKED_DEVICES_KEY);
+    const counts = rawCounts ? (JSON.parse(rawCounts) as Record<string, number>) : {};
+    const devices = rawDevices
+      ? (JSON.parse(rawDevices) as Record<string, Record<string, boolean>>)
+      : {};
+    const deviceLikes = devices[serial] || {};
+    const alreadyLiked = Boolean(deviceLikes[resourceId]);
+    if (!alreadyLiked) {
+      deviceLikes[resourceId] = true;
+      counts[resourceId] = Math.max(0, Number(counts[resourceId] || 0)) + 1;
+      devices[serial] = deviceLikes;
+      localStorage.setItem(DEV_LIKE_COUNTS_KEY, JSON.stringify(counts));
+      localStorage.setItem(DEV_LIKED_DEVICES_KEY, JSON.stringify(devices));
+    }
+    return {
+      success: true,
+      alreadyLiked,
+      liked: true,
+      likeCount: Math.max(0, Number(counts[resourceId] || 0)),
     };
   }
 

@@ -8,6 +8,8 @@ export const LCD_WIDTH = 170;
 export const LCD_HEIGHT = 320;
 export const DEFAULT_CHUNK_SIZE = 56;
 export const DEFAULT_WRITE_RETRIES = 8;
+export const USB_FRAME_SIZE = 64;
+export const USB_OUT_BATCH_BYTES = 2048;
 
 export function crc16Ccitt(data: Uint8Array, init = 0xffff): number {
   let crc = init & 0xffff;
@@ -65,6 +67,42 @@ export function buildDataPacket(seq: number, chunk: Uint8Array): Uint8Array {
 
 export function buildEndPacket(frameCrc: number): Uint8Array {
   return new Uint8Array([PROTO_A5, PROTO_5A, CMD_IMG_END, frameCrc & 0xff, (frameCrc >> 8) & 0xff]);
+}
+
+/** 预构建全部 0x02 数据帧（每帧 64B，与 USB FS 分包对齐），减少传输时 JS 开销。 */
+export function buildDataFramesBuffer(
+  payload: Uint8Array,
+  chunkSize = DEFAULT_CHUNK_SIZE
+): { frames: Uint8Array; frameCrc: number } {
+  const size = Math.max(1, Math.min(chunkSize, DEFAULT_CHUNK_SIZE));
+  const packetCount = Math.ceil(payload.length / size);
+  const frames = new Uint8Array(packetCount * USB_FRAME_SIZE);
+  let frameCrc = 0xffff;
+  let seq = 0;
+  let sent = 0;
+  let frameIndex = 0;
+
+  while (sent < payload.length) {
+    const end = Math.min(sent + size, payload.length);
+    const part = payload.subarray(sent, end);
+    const pktCrc = crc16Ccitt(part);
+    const offset = frameIndex * USB_FRAME_SIZE;
+    frames[offset] = PROTO_A5;
+    frames[offset + 1] = PROTO_5A;
+    frames[offset + 2] = CMD_IMG_DATA;
+    frames[offset + 3] = seq & 0xff;
+    frames[offset + 4] = part.length & 0xff;
+    frames[offset + 5] = (part.length >> 8) & 0xff;
+    frames[offset + 6] = pktCrc & 0xff;
+    frames[offset + 7] = (pktCrc >> 8) & 0xff;
+    frames.set(part, offset + 8);
+    frameCrc = crc16Ccitt(part, frameCrc);
+    sent = end;
+    seq = (seq + 1) & 0xff;
+    frameIndex += 1;
+  }
+
+  return { frames, frameCrc };
 }
 
 export function decodeAckText(data: DataView | undefined): string {

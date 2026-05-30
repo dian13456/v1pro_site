@@ -146,6 +146,28 @@ Authorization: Bearer <token>
 }
 ```
 
+## Python 图片上传 GUI
+
+新增工具：`tools/image_uploader_gui.py`
+
+可实现：
+
+- 选择本地图片并上传到 COS 图片桶
+- 自动同步 `src/data/resources.json`
+- 自动同步 `backend/config/image_map.json`
+
+使用方式：
+
+```bash
+python -m pip install -r tools/requirements.txt
+python tools/image_uploader_gui.py
+```
+
+上传成功后：
+
+- 本地前端会按更新后的资源清单显示图片素材
+- 后端若在运行中，请重启后端使 `image_map.json` 生效
+
 ### `GET /api/image/?id=1`
 
 Header:

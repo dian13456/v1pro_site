@@ -12,6 +12,8 @@ export interface ResourceItem {
   category: Exclude<ResourceCategory, "all">;
   materialType: MaterialType;
   updatedAt: string;
+  likeCount?: number;
+  liked?: boolean;
 }
 
 export interface AuthState {
