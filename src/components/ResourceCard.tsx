@@ -21,6 +21,22 @@ function ResourceCardComponent({
   liked,
   likeCount,
 }: ResourceCardProps) {
+  if (resource.category === "software") {
+    return (
+      <article className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{resource.title}</div>
+        <button
+          type="button"
+          disabled={downloading}
+          onClick={() => onDownload(resource)}
+          className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+        >
+          {downloading ? "生成下载链接..." : "下载"}
+        </button>
+      </article>
+    );
+  }
+
   const materialLabel = resource.materialType === "image" ? "图片素材" : "V1PRO素材包";
   const [signedImageUrl, setSignedImageUrl] = useState<string>("");
 
