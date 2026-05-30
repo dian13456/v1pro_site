@@ -156,6 +156,11 @@ func splitToken(token string) (payload string, signature string, ok bool) {
 	return token[:lastDot], token[lastDot+1:], true
 }
 
+func isSoftwareObjectKey(objectKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(objectKey))
+	return strings.HasSuffix(key, ".exe")
+}
+
 func verifyToken(token string, jwtSecret string) bool {
 	payload, signature, ok := splitToken(token)
 	if !ok {
@@ -235,6 +240,22 @@ func main() {
 	if imageCOSSecretKey == "" {
 		imageCOSSecretKey = cosSecretKey
 	}
+	softwareCOSBucket := os.Getenv("SOFTWARE_COS_BUCKET")
+	if softwareCOSBucket == "" {
+		softwareCOSBucket = "v1pro-1311844229"
+	}
+	softwareCOSRegion := os.Getenv("SOFTWARE_COS_REGION")
+	if softwareCOSRegion == "" {
+		softwareCOSRegion = "ap-guangzhou"
+	}
+	softwareCOSSecretID := os.Getenv("SOFTWARE_COS_SECRET_ID")
+	if softwareCOSSecretID == "" {
+		softwareCOSSecretID = cosSecretID
+	}
+	softwareCOSSecretKey := os.Getenv("SOFTWARE_COS_SECRET_KEY")
+	if softwareCOSSecretKey == "" {
+		softwareCOSSecretKey = cosSecretKey
+	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
@@ -298,6 +319,15 @@ func main() {
 	imageSigner, err := service.NewCOSSigner(imageCOSBucket, imageCOSRegion, imageCOSSecretID, imageCOSSecretKey)
 	if err != nil {
 		log.Fatalf("init image cos signer failed: %v", err)
+	}
+	softwareSigner, err := service.NewCOSSigner(
+		softwareCOSBucket,
+		softwareCOSRegion,
+		softwareCOSSecretID,
+		softwareCOSSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("init software cos signer failed: %v", err)
 	}
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
@@ -423,7 +453,12 @@ func main() {
 			return
 		}
 
-		url, signErr := signer.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
+		selectedSigner := signer
+		if isSoftwareObjectKey(objectKey) {
+			selectedSigner = softwareSigner
+		}
+
+		url, signErr := selectedSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign url failed"})
 			return
