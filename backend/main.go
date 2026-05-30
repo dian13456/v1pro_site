@@ -121,6 +121,10 @@ func main() {
 	if resourceMapPath == "" {
 		resourceMapPath = filepath.Join("config", "resource_map.json")
 	}
+	imageMapPath := os.Getenv("IMAGE_MAP_PATH")
+	if imageMapPath == "" {
+		imageMapPath = filepath.Join("config", "image_map.json")
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -129,6 +133,10 @@ func main() {
 	mapping, err := loadResourceMap(resourceMapPath)
 	if err != nil {
 		log.Fatalf("load resource map failed: %v", err)
+	}
+	imageMapping, err := loadResourceMap(imageMapPath)
+	if err != nil {
+		log.Fatalf("load image map failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -187,11 +195,39 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"url": url})
 	}
 
+	handleImage := func(c *gin.Context, id string) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+			return
+		}
+
+		objectKey, ok := imageMapping[id]
+		if !ok || objectKey == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
+			return
+		}
+
+		url, signErr := signer.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
+		if signErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign image url failed"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"url": url})
+	}
+
 	router.GET("/api/resource/:id", func(c *gin.Context) {
 		handleResource(c, c.Param("id"))
 	})
 	router.GET("/api/resource/", func(c *gin.Context) {
 		handleResource(c, c.Query("id"))
+	})
+	router.GET("/api/image/:id", func(c *gin.Context) {
+		handleImage(c, c.Param("id"))
+	})
+	router.GET("/api/image/", func(c *gin.Context) {
+		handleImage(c, c.Query("id"))
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

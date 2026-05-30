@@ -11,6 +11,7 @@ import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
+import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 
 export default function ResourcesPage() {
@@ -32,7 +33,13 @@ export default function ResourcesPage() {
   const { visibleItems, hasMore, sentinelRef } = useInfiniteScroll(filtered, 16);
 
   const preloadList = useMemo(
-    () => visibleItems.slice(0, Math.min(visibleItems.length + 6, 26)).map((item) => item.image),
+    () =>
+      isStaticMode()
+        ? visibleItems
+            .slice(0, Math.min(visibleItems.length + 6, 26))
+            .map((item) => item.image)
+            .filter((url) => /^https?:\/\//i.test(url))
+        : [],
     [visibleItems]
   );
   useImagePreload(preloadList);

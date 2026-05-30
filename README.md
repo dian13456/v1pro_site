@@ -101,6 +101,7 @@ go run .
 - `ALLOWED_PID`（默认 `66AA`）
 - `CORS_ALLOW_ORIGIN`（例如 `https://你的用户名.github.io`）
 - `RESOURCE_MAP_PATH`（默认 `config/resource_map.json`）
+- `IMAGE_MAP_PATH`（默认 `config/image_map.json`）
 
 ## API 说明
 
@@ -126,6 +127,22 @@ go run .
 ```
 
 ### `GET /api/resource/?id=1`
+
+Header:
+
+```txt
+Authorization: Bearer <token>
+```
+
+响应：
+
+```json
+{
+  "url": "https://...（10分钟有效）"
+}
+```
+
+### `GET /api/image/?id=1`
 
 Header:
 
