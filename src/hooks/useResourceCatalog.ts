@@ -34,7 +34,7 @@ export function useResourceCatalog() {
   const filtered = useMemo(() => {
     const query = keyword.trim().toLowerCase();
     const result = resources.filter((resource) => {
-      const passCategory = category === "all" ? true : resource.category === category;
+      const passCategory = category === "all" ? resource.category === "gif" : resource.category === category;
       if (!passCategory) return false;
       const passMaterialType = materialType === "all" ? true : resource.materialType === materialType;
       if (!passMaterialType) return false;
