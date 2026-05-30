@@ -1,3 +1,5 @@
+import { isAllowedUsbDevice } from "../config/allowedDevices";
+
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 type JsonValue = Record<string, unknown>;
@@ -20,7 +22,9 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     const serial = String(body.serial || "");
     const vid = String(body.vid || "").toUpperCase();
     const pid = String(body.pid || "").toUpperCase();
-    if (!serial || vid !== "0483" || pid !== "66AA") {
+    const vendorId = Number.parseInt(vid, 16);
+    const productId = Number.parseInt(pid, 16);
+    if (!serial || !isAllowedUsbDevice(vendorId, productId)) {
       return { success: false, message: "未检测到授权设备" };
     }
     return { success: true, token: `dev-token-${serial}-${Date.now()}` };

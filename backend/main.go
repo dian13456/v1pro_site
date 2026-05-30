@@ -41,6 +41,44 @@ func normalizeHexID(v string) string {
 	return strings.ToUpper(strings.TrimSpace(v))
 }
 
+type usbDevicePair struct {
+	vid string
+	pid string
+}
+
+func loadAllowedDevices(raw string) []usbDevicePair {
+	if strings.TrimSpace(raw) == "" {
+		raw = "0483:66AA,2E3C:5753"
+	}
+	pairs := make([]usbDevicePair, 0)
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.Split(item, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		pairs = append(pairs, usbDevicePair{
+			vid: normalizeHexID(parts[0]),
+			pid: normalizeHexID(parts[1]),
+		})
+	}
+	return pairs
+}
+
+func isAllowedDevice(vid, pid string, allowed []usbDevicePair) bool {
+	normalizedVID := normalizeHexID(vid)
+	normalizedPID := normalizeHexID(pid)
+	for _, pair := range allowed {
+		if pair.vid == normalizedVID && pair.pid == normalizedPID {
+			return true
+		}
+	}
+	return false
+}
+
 func signTokenPayload(payload string, jwtSecret string) string {
 	sum := sha256.Sum256([]byte(payload + "." + jwtSecret))
 	return fmt.Sprintf("%x", sum[:])
@@ -120,13 +158,22 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
 	}
-	allowedVID := os.Getenv("ALLOWED_VID")
-	if allowedVID == "" {
-		allowedVID = "0483"
+	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
+	if allowedDevicesRaw == "" {
+		// 兼容旧配置：未设置 ALLOWED_DEVICES 时使用 ALLOWED_VID/ALLOWED_PID
+		legacyVID := os.Getenv("ALLOWED_VID")
+		if legacyVID == "" {
+			legacyVID = "0483"
+		}
+		legacyPID := os.Getenv("ALLOWED_PID")
+		if legacyPID == "" {
+			legacyPID = "66AA"
+		}
+		allowedDevicesRaw = legacyVID + ":" + legacyPID + ",2E3C:5753"
 	}
-	allowedPID := os.Getenv("ALLOWED_PID")
-	if allowedPID == "" {
-		allowedPID = "66AA"
+	allowedDevices := loadAllowedDevices(allowedDevicesRaw)
+	if len(allowedDevices) == 0 {
+		log.Fatal("ALLOWED_DEVICES is empty or invalid")
 	}
 	corsAllowOrigin := os.Getenv("CORS_ALLOW_ORIGIN")
 	if corsAllowOrigin == "" {
@@ -178,7 +225,7 @@ func main() {
 			return
 		}
 
-		if normalizeHexID(req.Vid) != normalizeHexID(allowedVID) || normalizeHexID(req.Pid) != normalizeHexID(allowedPID) {
+		if !isAllowedDevice(req.Vid, req.Pid, allowedDevices) {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "设备 VID/PID 不匹配"})
 			return
 		}

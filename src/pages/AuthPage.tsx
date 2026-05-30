@@ -26,9 +26,7 @@ export default function AuthPage() {
       <div className="relative w-full max-w-lg rounded-3xl border border-white/20 bg-white/8 p-8 text-center shadow-2xl backdrop-blur-xl">
         <p className="text-xs uppercase tracking-[0.28em] text-cyan-300">USB Authentication</p>
         <h1 className="mt-3 text-3xl font-semibold text-white">请连接设备进行验证</h1>
-        <p className="mt-3 text-sm text-slate-200">
-          仅允许 VID: 0x0483 / PID: 0x66AA。建议使用 Edge/Chrome 并通过 localhost 访问。
-        </p>
+        <p className="mt-3 text-sm text-slate-200">请使用 Edge 或 Chrome 连接授权设备后完成验证。</p>
 
         <button
           type="button"
