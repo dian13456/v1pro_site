@@ -108,5 +108,27 @@
     "category": "gif",
     "materialType": "image",
     "updatedAt": "2026-05-31T01:19:41+08:00"
+  },
+  {
+    "id": 2605310147011009,
+    "title": "佳点V1PRO_V0.0.9_26260527_Setup.exe",
+    "description": "佳点 V1PRO 桌面软件安装包",
+    "size": "未知",
+    "image": "1.png",
+    "download": "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com/%E4%BD%B3%E7%82%B9V1PRO_V0.0.9_26260527_Setup.exe",
+    "category": "software",
+    "materialType": "v1pro-pack",
+    "updatedAt": "2026-05-31T01:47:01+08:00"
+  },
+  {
+    "id": 2605310147021006,
+    "title": "佳点V1_V0.0.6_20260530_Setup.exe",
+    "description": "佳点 V1 桌面软件安装包",
+    "size": "未知",
+    "image": "1.png",
+    "download": "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com/%E4%BD%B3%E7%82%B9V1_V0.0.6_20260530_Setup.exe",
+    "category": "software",
+    "materialType": "v1pro-pack",
+    "updatedAt": "2026-05-31T01:47:02+08:00"
   }
 ]

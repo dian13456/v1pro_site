@@ -147,13 +147,20 @@ func createToken(serial string, jwtSecret string) string {
 	return payload + "." + signature
 }
 
+func splitToken(token string) (payload string, signature string, ok bool) {
+	token = strings.TrimSpace(token)
+	lastDot := strings.LastIndex(token, ".")
+	if lastDot <= 0 || lastDot >= len(token)-1 {
+		return "", "", false
+	}
+	return token[:lastDot], token[lastDot+1:], true
+}
+
 func verifyToken(token string, jwtSecret string) bool {
-	parts := strings.Split(token, ".")
-	if len(parts) < 3 {
+	payload, signature, ok := splitToken(token)
+	if !ok {
 		return false
 	}
-	payload := parts[0] + "." + parts[1]
-	signature := strings.Join(parts[2:], ".")
 	return signTokenPayload(payload, jwtSecret) == signature
 }
 
@@ -161,11 +168,16 @@ func serialFromToken(token string, jwtSecret string) (string, bool) {
 	if !verifyToken(token, jwtSecret) {
 		return "", false
 	}
-	parts := strings.Split(token, ".")
-	if len(parts) < 3 {
+	payload, _, ok := splitToken(token)
+	if !ok {
 		return "", false
 	}
-	serial := strings.TrimSpace(parts[0])
+	// payload 格式：<serial>.<timestamp>，serial 允许包含 '.'，因此从最后一个 '.' 反向切分。
+	lastDot := strings.LastIndex(payload, ".")
+	if lastDot <= 0 {
+		return "", false
+	}
+	serial := strings.TrimSpace(payload[:lastDot])
 	return serial, serial != ""
 }
 
