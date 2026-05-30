@@ -5,10 +5,20 @@ import { createImageUrl } from "../services/imageService";
 interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
+  onPushToDevice?: (resource: ResourceItem) => void;
   downloading: boolean;
+  pushing?: boolean;
+  pushProgress?: number;
 }
 
-function ResourceCardComponent({ resource, onDownload, downloading }: ResourceCardProps) {
+function ResourceCardComponent({
+  resource,
+  onDownload,
+  onPushToDevice,
+  downloading,
+  pushing = false,
+  pushProgress = 0,
+}: ResourceCardProps) {
   const materialLabel = resource.materialType === "image" ? "图片素材" : "V1PRO素材包";
   const [signedImageUrl, setSignedImageUrl] = useState<string>("");
 
@@ -53,14 +63,30 @@ function ResourceCardComponent({ resource, onDownload, downloading }: ResourceCa
         </div>
       </div>
 
-      <button
-        type="button"
-        disabled={downloading}
-        onClick={() => onDownload(resource)}
-        className="mt-4 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-      >
-        {downloading ? "生成下载链接..." : "下载素材"}
-      </button>
+      <div className="mt-4 grid gap-2">
+        {resource.materialType === "image" && onPushToDevice ? (
+          <button
+            type="button"
+            disabled={downloading || pushing}
+            onClick={() => onPushToDevice(resource)}
+            className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pushing
+              ? pushProgress > 0
+                ? `下传中 ${Math.min(100, Math.round(pushProgress)).toFixed(0)}%`
+                : "准备下传..."
+              : "下传到设备"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          disabled={downloading || pushing}
+          onClick={() => onDownload(resource)}
+          className="w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+        >
+          {downloading ? "生成下载链接..." : resource.materialType === "image" ? "下载图片" : "下载素材"}
+        </button>
+      </div>
     </article>
   );
 }

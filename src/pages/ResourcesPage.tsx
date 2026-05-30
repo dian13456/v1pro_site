@@ -11,12 +11,17 @@ import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
+import { createImageUrl } from "../services/imageService";
+import { pushResourceImageToDevice } from "../services/usbImagePushService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [pushingId, setPushingId] = useState<number | null>(null);
+  const [pushProgress, setPushProgress] = useState(0);
+  const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const { theme, toggleTheme } = useThemeMode();
   const {
@@ -58,7 +63,11 @@ export default function ResourcesPage() {
     try {
       setDownloadingId(resource.id);
       setErrorMessage("");
-      const signedUrl = await createDownloadUrl(resource.id, resource.download);
+      setSuccessMessage("");
+      const signedUrl =
+        resource.materialType === "image"
+          ? await createImageUrl(resource.id, resource.image)
+          : await createDownloadUrl(resource.id, resource.download);
       window.open(signedUrl || resource.download, "_blank", "noopener,noreferrer");
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
@@ -68,6 +77,38 @@ export default function ResourcesPage() {
       }
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handlePushToDevice = async (resource: ResourceItem) => {
+    if (resource.materialType !== "image") {
+      return;
+    }
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    try {
+      setPushingId(resource.id);
+      setPushProgress(0);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await pushResourceImageToDevice(resource.id, resource.image, (progress) => {
+        if (progress.phase === "transfer" && progress.total > 0) {
+          setPushProgress((progress.sent / progress.total) * 100);
+        }
+      });
+      setSuccessMessage(`「${resource.title}」已下传到设备屏幕`);
+    } catch (err) {
+      const message = (err as Error)?.message || "下传失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setPushingId(null);
+      setPushProgress(0);
     }
   };
 
@@ -126,6 +167,12 @@ export default function ResourcesPage() {
           </div>
         ) : null}
 
+        {successMessage ? (
+          <div className="mb-4 rounded-xl border border-emerald-300/60 bg-emerald-100/70 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+            {successMessage}
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="rounded-2xl border border-white/20 bg-white/45 p-8 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
             正在加载资源...
@@ -139,7 +186,10 @@ export default function ResourcesPage() {
                 key={resource.id}
                 resource={resource}
                 onDownload={handleDownload}
+                onPushToDevice={handlePushToDevice}
                 downloading={downloadingId === resource.id}
+                pushing={pushingId === resource.id}
+                pushProgress={pushingId === resource.id ? pushProgress : 0}
               />
             ))}
           </section>
