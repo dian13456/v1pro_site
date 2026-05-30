@@ -100,6 +100,22 @@ func main() {
 	cosRegion := os.Getenv("COS_REGION")
 	cosSecretID := os.Getenv("COS_SECRET_ID")
 	cosSecretKey := os.Getenv("COS_SECRET_KEY")
+	imageCOSBucket := os.Getenv("IMAGE_COS_BUCKET")
+	if imageCOSBucket == "" {
+		imageCOSBucket = cosBucket
+	}
+	imageCOSRegion := os.Getenv("IMAGE_COS_REGION")
+	if imageCOSRegion == "" {
+		imageCOSRegion = cosRegion
+	}
+	imageCOSSecretID := os.Getenv("IMAGE_COS_SECRET_ID")
+	if imageCOSSecretID == "" {
+		imageCOSSecretID = cosSecretID
+	}
+	imageCOSSecretKey := os.Getenv("IMAGE_COS_SECRET_KEY")
+	if imageCOSSecretKey == "" {
+		imageCOSSecretKey = cosSecretKey
+	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
@@ -142,6 +158,10 @@ func main() {
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
 	if err != nil {
 		log.Fatalf("init cos signer failed: %v", err)
+	}
+	imageSigner, err := service.NewCOSSigner(imageCOSBucket, imageCOSRegion, imageCOSSecretID, imageCOSSecretKey)
+	if err != nil {
+		log.Fatalf("init image cos signer failed: %v", err)
 	}
 
 	router := gin.Default()
@@ -208,7 +228,7 @@ func main() {
 			return
 		}
 
-		url, signErr := signer.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
+		url, signErr := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign image url failed"})
 			return
