@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuthGuard } from "./hooks/useAuthGuard";
-import AuthPage from "./pages/AuthPage";
-import NotFoundPage from "./pages/NotFoundPage";
-import ResourcesPage from "./pages/ResourcesPage";
+import AuthPage from "./pages/AuthPage.tsx";
+import NotFoundPage from "./pages/NotFoundPage.tsx";
+import ResourcesPage from "./pages/ResourcesPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
