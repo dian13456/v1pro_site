@@ -226,7 +226,7 @@ func main() {
 		}
 
 		if !isAllowedDevice(req.Vid, req.Pid, allowedDevices) {
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "设备 VID/PID 不匹配"})
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "设备不匹配，请购买正规产品"})
 			return
 		}
 

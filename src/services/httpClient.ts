@@ -1,5 +1,7 @@
 import { isAllowedUsbDevice } from "../config/allowedDevices";
 
+const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
+
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 type JsonValue = Record<string, unknown>;
@@ -25,7 +27,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     const vendorId = Number.parseInt(vid, 16);
     const productId = Number.parseInt(pid, 16);
     if (!serial || !isAllowedUsbDevice(vendorId, productId)) {
-      return { success: false, message: "未检测到授权设备" };
+      return { success: false, message: DEVICE_MISMATCH_MESSAGE };
     }
     return { success: true, token: `dev-token-${serial}-${Date.now()}` };
   }

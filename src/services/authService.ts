@@ -4,6 +4,7 @@ import type { AuthState } from "../types/resource";
 import { isStaticMode } from "./runtimeMode";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
+export const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 
 interface AuthApiResponse {
   success: boolean;
@@ -15,11 +16,46 @@ interface VerifyApiResponse {
   success: boolean;
 }
 
+function mapAuthMessage(message?: string): string {
+  if (!message) return DEVICE_MISMATCH_MESSAGE;
+  if (/VID\/PID|不匹配|授权设备|认证失败/i.test(message)) {
+    return DEVICE_MISMATCH_MESSAGE;
+  }
+  return message;
+}
+
+async function readDeviceSerial(device: USBDevice): Promise<string> {
+  if (device.serialNumber) return device.serialNumber;
+  try {
+    if (!device.opened) await device.open();
+  } catch {
+    throw new Error(DEVICE_MISMATCH_MESSAGE);
+  }
+  if (device.serialNumber) return device.serialNumber;
+  throw new Error(DEVICE_MISMATCH_MESSAGE);
+}
+
+async function resolveUsbDevice(): Promise<USBDevice> {
+  const grantedDevices = await navigator.usb.getDevices();
+  const matched = grantedDevices.filter((device) =>
+    isAllowedUsbDevice(device.vendorId, device.productId)
+  );
+  if (matched.length > 0) {
+    return matched[0];
+  }
+
+  try {
+    return await navigator.usb.requestDevice({ filters: usbDeviceFilters() });
+  } catch (error) {
+    throw mapUsbError(error);
+  }
+}
+
 function mapUsbError(error: unknown): Error {
   const domError = error as DOMException;
   switch (domError?.name) {
     case "NotFoundError":
-      return new Error("未选择设备，请在弹窗中选择授权USB设备");
+      return new Error(DEVICE_MISMATCH_MESSAGE);
     case "NotAllowedError":
     case "AbortError":
       return new Error("浏览器取消了设备授权，请重试");
@@ -83,17 +119,12 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
     throw new Error("当前页面不是安全上下文，请通过 localhost 或 HTTPS 访问");
   }
 
-  let device: USBDevice;
-  try {
-    device = await navigator.usb.requestDevice({ filters: usbDeviceFilters() });
-  } catch (error) {
-    throw mapUsbError(error);
+  const device = await resolveUsbDevice();
+  const { vendorId, productId } = device;
+  if (!isAllowedUsbDevice(vendorId, productId)) {
+    throw new Error(DEVICE_MISMATCH_MESSAGE);
   }
-
-  const { vendorId, productId, serialNumber } = device;
-  if (!isAllowedUsbDevice(vendorId, productId) || !serialNumber) {
-    throw new Error("未检测到授权设备");
-  }
+  const serialNumber = await readDeviceSerial(device);
 
   const { vid, pid } = formatUsbDeviceId(vendorId, productId);
 
@@ -111,7 +142,7 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
     });
 
     if (!authResult.success || !authResult.token) {
-      throw new Error(authResult.message || "设备认证失败");
+      throw new Error(mapAuthMessage(authResult.message));
     }
     token = authResult.token;
   }
