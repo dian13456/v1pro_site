@@ -117,6 +117,10 @@ export default function ResourcesPage() {
     try {
       setDownloadingId(resource.id);
       setErrorMessage("");
+      if (resource.category === "software" && /^https?:\/\//i.test(resource.download)) {
+        window.open(resource.download, "_blank", "noopener,noreferrer");
+        return;
+      }
       const signedUrl =
         resource.materialType === "image"
           ? await createImageUrl(resource.id, resource.image)
