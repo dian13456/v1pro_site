@@ -37,6 +37,23 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export async function resolveAuthorizedDevice(): Promise<USBDevice> {
   if (!("usb" in navigator)) {
     throw new Error("当前浏览器不支持 WebUSB");
@@ -104,7 +121,11 @@ export async function prepareUsbSession(device: USBDevice): Promise<UsbEndpoints
 export async function drainIn(device: USBDevice, inEndpoint: number): Promise<void> {
   for (let i = 0; i < 32; i += 1) {
     try {
-      const result = await device.transferIn(inEndpoint, 64);
+      const result = await withTimeout(
+        device.transferIn(inEndpoint, 64),
+        40,
+        "drain timeout"
+      );
       if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
         break;
       }
@@ -123,7 +144,12 @@ export async function readAckText(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const result = await device.transferIn(inEndpoint, 64);
+      const left = Math.max(30, Math.min(120, deadline - Date.now()));
+      const result = await withTimeout(
+        device.transferIn(inEndpoint, 64),
+        left,
+        "ack poll timeout"
+      );
       if (result.status !== "ok" || !result.data) {
         await sleep(20);
         continue;
