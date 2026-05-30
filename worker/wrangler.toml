@@ -5,4 +5,6 @@ compatibility_date = "2026-05-30"
 [vars]
 ALLOWED_VID = "0483"
 ALLOWED_PID = "66AA"
-DOWNLOAD_BASE_URL = "https://example.com/protected"
+COS_BUCKET = "v1zip-1311844229"
+COS_REGION = "ap-guangzhou"
+RESOURCE_MAP_JSON = "{\"1\":\"1.zip\",\"2\":\"2.zip\"}"
