@@ -18,6 +18,7 @@ import type { ResourceItem } from "../types/resource";
 export default function ResourcesPage() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [playingId, setPlayingId] = useState<number | null>(null);
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
@@ -167,6 +168,28 @@ export default function ResourcesPage() {
     }
   };
 
+  const handlePlay = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    try {
+      setPlayingId(resource.id);
+      setErrorMessage("");
+      const signedUrl = await createDownloadUrl(resource.id, resource.download);
+      window.open(signedUrl || resource.download, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      const message = (err as Error)?.message || "播放链接生成失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setPlayingId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
@@ -277,8 +300,10 @@ export default function ResourcesPage() {
                 key={resource.id}
                 resource={resource}
                 onDownload={handleDownload}
+                onPlay={handlePlay}
                 onLike={handleLike}
                 downloading={downloadingId === resource.id}
+                playing={playingId === resource.id}
                 liking={likingId === resource.id}
                 liked={likedIds.has(resource.id)}
                 likeCount={likeCounts[resource.id] || 0}

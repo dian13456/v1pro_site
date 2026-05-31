@@ -136,7 +136,7 @@
     "title": "test.mp4",
     "description": "视频桶测试文件",
     "size": "未知",
-    "image": "https://v1image-1311844229.cos.ap-guangzhou.myqcloud.com/1.png",
+    "image": "https://video-cover-1311844229.cos.ap-guangzhou.myqcloud.com/test.jpg",
     "download": "https://video-1311844229.cos.ap-guangzhou.myqcloud.com/test.mp4",
     "category": "gif",
     "materialType": "video",

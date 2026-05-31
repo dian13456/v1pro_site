@@ -5,8 +5,10 @@ import { createImageUrl } from "../services/imageService";
 interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
+  onPlay: (resource: ResourceItem) => void;
   onLike: (resource: ResourceItem) => void;
   downloading: boolean;
+  playing: boolean;
   liking: boolean;
   liked: boolean;
   likeCount: number;
@@ -15,8 +17,10 @@ interface ResourceCardProps {
 function ResourceCardComponent({
   resource,
   onDownload,
+  onPlay,
   onLike,
   downloading,
+  playing,
   liking,
   liked,
   likeCount,
@@ -43,31 +47,36 @@ function ResourceCardComponent({
       : resource.materialType === "video"
         ? "视频素材"
         : "V1PRO素材包";
-  const [signedImageUrl, setSignedImageUrl] = useState<string>("");
+  const [previewUrl, setPreviewUrl] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
-    const fallbackUrl =
-      resource.materialType === "video"
-        ? resource.image
-        : /^https?:\/\//i.test(resource.download)
-          ? resource.download
-          : resource.image;
-    createImageUrl(resource.id, fallbackUrl)
-      .then((url) => {
-        if (!cancelled) {
-          setSignedImageUrl(url);
+    const loadPreview = async () => {
+      try {
+        if (resource.materialType === "video") {
+          const fallbackCover = /^https?:\/\//i.test(resource.image) ? resource.image : "";
+          const videoUrl = await createImageUrl(resource.id, fallbackCover);
+          if (!cancelled) {
+            setPreviewUrl(videoUrl || fallbackCover);
+          }
+          return;
         }
-      })
-      .catch(() => {
+        const fallbackUrl = /^https?:\/\//i.test(resource.download) ? resource.download : resource.image;
+        const imageUrl = await createImageUrl(resource.id, fallbackUrl);
         if (!cancelled) {
-          setSignedImageUrl("");
+          setPreviewUrl(imageUrl);
         }
-      });
+      } catch {
+        if (!cancelled) {
+          setPreviewUrl("");
+        }
+      }
+    };
+    void loadPreview();
     return () => {
       cancelled = true;
     };
-  }, [resource.id, resource.image, resource.download]);
+  }, [resource.id, resource.image, resource.download, resource.materialType]);
 
   return (
     <article className="group rounded-3xl border border-white/25 bg-white/55 p-4 shadow-[0_30px_45px_-28px_rgba(0,0,0,0.55)] backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_32px_60px_-26px_rgba(34,211,238,0.45)] dark:border-white/10 dark:bg-slate-900/45">
@@ -76,9 +85,9 @@ function ResourceCardComponent({
       </div>
       <div className="rounded-[1.4rem] bg-black p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition duration-300 group-hover:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.45),0_0_26px_-10px_rgba(56,189,248,0.8)]">
         <div className="overflow-hidden rounded-[1rem] bg-slate-900" style={{ aspectRatio: "320 / 170" }}>
-          {signedImageUrl ? (
+          {previewUrl ? (
             <img
-              src={signedImageUrl}
+              src={previewUrl}
               alt={resource.title}
               loading="lazy"
               decoding="async"
@@ -86,21 +95,31 @@ function ResourceCardComponent({
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-              图片加载中...
+              {resource.materialType === "video" ? "视频预览加载中..." : "图片加载中..."}
             </div>
           )}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className={`mt-4 grid gap-2 ${resource.materialType === "video" ? "grid-cols-3" : "grid-cols-2"}`}>
         <button
           type="button"
           disabled={downloading}
           onClick={() => onDownload(resource)}
-          className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+          className="w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
         >
           {downloading ? "生成下载链接..." : resource.materialType === "image" || resource.materialType === "video" ? "下载" : "下载素材"}
         </button>
+        {resource.materialType === "video" ? (
+          <button
+            type="button"
+            disabled={playing}
+            onClick={() => onPlay(resource)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          >
+            {playing ? "打开中..." : "播放"}
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="点赞"
