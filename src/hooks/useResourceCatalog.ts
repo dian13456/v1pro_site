@@ -36,7 +36,12 @@ export function useResourceCatalog() {
     const result = resources.filter((resource) => {
       const passCategory = category === "all" ? resource.category === "gif" : resource.category === category;
       if (!passCategory) return false;
-      const passMaterialType = materialType === "all" ? true : resource.materialType === materialType;
+      const passMaterialType =
+        sortMode === "hot" && materialType === "all"
+          ? resource.materialType === "video" || resource.materialType === "gif"
+          : materialType === "all"
+            ? true
+            : resource.materialType === materialType;
       if (!passMaterialType) return false;
       if (!query) return true;
       return (

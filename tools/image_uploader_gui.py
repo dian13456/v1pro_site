@@ -80,6 +80,11 @@ def extract_gif_first_frame_jpeg_bytes(gif_path: Path) -> bytes:
         return output.getvalue()
 
 
+def parse_media_paths(raw: str) -> list[Path]:
+    parts = [item.strip() for item in (raw or "").split(" | ") if item.strip()]
+    return [Path(p) for p in parts]
+
+
 class ImageUploaderGUI:
     def __init__(self):
         self.root = tk.Tk()
@@ -143,14 +148,27 @@ class ImageUploaderGUI:
         self.remote_restart_cmd_var = tk.StringVar(
             value=os.getenv("REMOTE_RESTART_CMD", "echo 'PASSWORD' | sudo -S -p '' systemctl restart jiadian-api.service")
         )
+        self.delete_resource_ids: list[int] = []
+        self.delete_filter_var = tk.StringVar(value="image")
 
         self._build_ui()
         self.regenerate_random_code()
+        self.refresh_delete_resource_list()
         self.material_type_var.trace_add("write", lambda *_: self._on_material_type_change())
 
     def _build_ui(self):
-        top = ttk.LabelFrame(self.root, text="COS 配置（单独处理图片/视频/GIF）", padding=10)
-        top.pack(fill=tk.X, padx=12, pady=(12, 8))
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        upload_tab = ttk.Frame(notebook, padding=2)
+        cos_tab = ttk.Frame(notebook, padding=2)
+        delete_tab = ttk.Frame(notebook, padding=2)
+        notebook.add(upload_tab, text="上传与同步")
+        notebook.add(cos_tab, text="COS配置")
+        notebook.add(delete_tab, text="删除资源")
+
+        top = ttk.LabelFrame(cos_tab, text="COS 配置（单独处理图片/视频/GIF）", padding=10)
+        top.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         top.columnconfigure(1, weight=1)
         top.columnconfigure(3, weight=1)
 
@@ -203,8 +221,8 @@ class ImageUploaderGUI:
             row=10, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
         )
 
-        resource = ttk.LabelFrame(self.root, text="素材信息", padding=10)
-        resource.pack(fill=tk.X, padx=12, pady=(0, 8))
+        resource = ttk.LabelFrame(upload_tab, text="素材信息", padding=10)
+        resource.pack(fill=tk.X, padx=0, pady=(0, 8))
         resource.columnconfigure(1, weight=1)
         resource.columnconfigure(3, weight=1)
 
@@ -220,7 +238,7 @@ class ImageUploaderGUI:
             row=0, column=3, sticky="ew", pady=2
         )
 
-        ttk.Label(resource, text="主文件").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(resource, text="主文件（支持多选）").grid(row=1, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.media_path_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=2)
         ttk.Button(resource, text="选择文件", command=self.choose_media).grid(row=1, column=3, sticky="ew", pady=2)
 
@@ -250,16 +268,16 @@ class ImageUploaderGUI:
         )
         ttk.Button(resource, text="重新生成", command=self.regenerate_random_code).grid(row=7, column=2, columnspan=2, sticky="ew", pady=2)
 
-        actions = ttk.Frame(self.root)
-        actions.pack(fill=tk.X, padx=12, pady=(0, 8))
+        actions = ttk.Frame(upload_tab)
+        actions.pack(fill=tk.X, padx=0, pady=(0, 8))
         ttk.Button(actions, text="上传并同步显示", command=self.upload_and_sync).pack(side=tk.LEFT)
         ttk.Label(
             actions,
             text="说明：图片仅更新 image_map；视频/GIF更新 resource_map；封面按配置写入 image_map。",
         ).pack(side=tk.LEFT, padx=12)
 
-        sync_frame = ttk.LabelFrame(self.root, text="云服务器自动同步（可选）", padding=10)
-        sync_frame.pack(fill=tk.X, padx=12, pady=(0, 8))
+        sync_frame = ttk.LabelFrame(upload_tab, text="云服务器自动同步（可选）", padding=10)
+        sync_frame.pack(fill=tk.X, padx=0, pady=(0, 8))
         sync_frame.columnconfigure(1, weight=1)
         sync_frame.columnconfigure(3, weight=1)
 
@@ -286,8 +304,54 @@ class ImageUploaderGUI:
             row=4, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
         )
 
-        log_frame = ttk.LabelFrame(self.root, text="日志", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+        delete_frame = ttk.LabelFrame(delete_tab, text="资源删除（会同时清理映射）", padding=10)
+        delete_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        delete_frame.columnconfigure(0, weight=1)
+
+        delete_hint = (
+            "列表显示: ID | 类型 | 标题\n"
+            "删除时会同步清理 resources.json、image_map.json、resource_map.json。"
+        )
+        ttk.Label(delete_frame, text=delete_hint).pack(anchor="w", pady=(0, 8))
+
+        filter_frame = ttk.Frame(delete_frame)
+        filter_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(filter_frame, text="分类筛选").pack(side=tk.LEFT)
+        self.delete_filter_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.delete_filter_var,
+            state="readonly",
+            values=("image", "video", "gif", "v1pro-pack", "all"),
+            width=14,
+        )
+        self.delete_filter_combo.pack(side=tk.LEFT, padx=(8, 0))
+        self.delete_filter_combo.bind("<<ComboboxSelected>>", lambda _e: self.refresh_delete_resource_list())
+        ttk.Label(filter_frame, text="（默认 image=图片素材）").pack(side=tk.LEFT, padx=(8, 0))
+
+        list_wrapper = ttk.Frame(delete_frame)
+        list_wrapper.pack(fill=tk.BOTH, expand=True)
+        list_wrapper.columnconfigure(0, weight=1)
+        list_wrapper.rowconfigure(0, weight=1)
+
+        self.delete_listbox = tk.Listbox(
+            list_wrapper,
+            selectmode=tk.EXTENDED,
+            activestyle="none",
+            exportselection=False,
+        )
+        self.delete_listbox.grid(row=0, column=0, sticky="nsew")
+
+        delete_scroll = ttk.Scrollbar(list_wrapper, orient=tk.VERTICAL, command=self.delete_listbox.yview)
+        delete_scroll.grid(row=0, column=1, sticky="ns")
+        self.delete_listbox.configure(yscrollcommand=delete_scroll.set)
+
+        delete_actions = ttk.Frame(delete_frame)
+        delete_actions.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(delete_actions, text="刷新列表", command=self.refresh_delete_resource_list).pack(side=tk.LEFT)
+        ttk.Button(delete_actions, text="删除选中资源", command=self.delete_selected_resources).pack(side=tk.LEFT, padx=(8, 0))
+
+        log_frame = ttk.LabelFrame(upload_tab, text="日志", padding=10)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=(0, 0))
         self.log_text = tk.Text(log_frame, height=14, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
@@ -300,18 +364,32 @@ class ImageUploaderGUI:
         material_type = self.material_type_var.get().strip()
         if material_type == "video":
             filetypes = [("Video Files", "*.mp4;*.mov;*.m4v;*.avi;*.mkv;*.webm;*.flv")]
-            title = "选择视频文件"
+            title = "选择视频文件（可多选）"
         elif material_type == "gif":
             filetypes = [("GIF Files", "*.gif")]
-            title = "选择 GIF 文件"
+            paths = filedialog.askopenfilenames(title="选择 GIF 文件（可多选）", filetypes=filetypes)
+            if paths:
+                self.media_path_var.set(" | ".join(paths))
+                first_name = Path(paths[0]).stem
+                self.title_var.set(first_name)
+                self.desc_var.set(first_name)
+            return
         else:
             filetypes = [("Image Files", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")]
-            title = "选择图片文件"
-        path = filedialog.askopenfilename(title=title, filetypes=filetypes)
-        if path:
-            self.media_path_var.set(path)
-            if not self.title_var.get().strip():
-                self.title_var.set(Path(path).stem)
+            title = "选择图片文件（可多选）"
+
+        paths = filedialog.askopenfilenames(title=title, filetypes=filetypes)
+        if paths:
+            self.media_path_var.set(" | ".join(paths))
+            first_name = Path(paths[0]).stem
+            if material_type in ("gif",):
+                self.title_var.set(first_name)
+                self.desc_var.set(first_name)
+            else:
+                if not self.title_var.get().strip():
+                    self.title_var.set(first_name)
+                if not self.desc_var.get().strip():
+                    self.desc_var.set(first_name)
 
     def choose_cover(self):
         path = filedialog.askopenfilename(
@@ -403,17 +481,91 @@ class ImageUploaderGUI:
             client.close()
         self.log("云服务器同步完成")
 
+    def refresh_delete_resource_list(self):
+        resources = load_json(RESOURCES_PATH, [])
+        if not isinstance(resources, list):
+            resources = []
+        selected_filter = self.delete_filter_var.get().strip() or "image"
+        resources_sorted = sorted(
+            [
+                item
+                for item in resources
+                if isinstance(item, dict)
+                and (
+                    selected_filter == "all"
+                    or str(item.get("materialType", "")).strip() == selected_filter
+                )
+            ],
+            key=lambda x: int(x.get("id", 0)),
+            reverse=True,
+        )
+        self.delete_resource_ids = []
+        self.delete_listbox.delete(0, tk.END)
+        for item in resources_sorted:
+            rid = int(item.get("id", 0))
+            title = str(item.get("title", "")).strip() or "(无标题)"
+            material_type = str(item.get("materialType", "")).strip() or "-"
+            self.delete_resource_ids.append(rid)
+            self.delete_listbox.insert(tk.END, f"{rid} | {material_type} | {title}")
+
+    def delete_selected_resources(self):
+        selected_indices = list(self.delete_listbox.curselection())
+        if not selected_indices:
+            messagebox.showwarning("提示", "请先选择要删除的资源。")
+            return
+
+        selected_ids = [self.delete_resource_ids[i] for i in selected_indices if i < len(self.delete_resource_ids)]
+        if not selected_ids:
+            messagebox.showwarning("提示", "未识别到有效资源 ID。")
+            return
+
+        preview = "、".join(str(x) for x in selected_ids[:6])
+        if len(selected_ids) > 6:
+            preview += "..."
+        confirmed = messagebox.askyesno("确认删除", f"确定删除 {len(selected_ids)} 条资源？\nID: {preview}")
+        if not confirmed:
+            return
+
+        resources = load_json(RESOURCES_PATH, [])
+        image_map = load_json(IMAGE_MAP_PATH, {})
+        resource_map = load_json(RESOURCE_MAP_PATH, {})
+        if not isinstance(resources, list) or not isinstance(image_map, dict) or not isinstance(resource_map, dict):
+            messagebox.showerror("失败", "配置文件格式异常，请检查 resources.json / image_map.json / resource_map.json")
+            return
+
+        selected_set = {int(x) for x in selected_ids}
+        original_count = len(resources)
+        resources = [item for item in resources if not (isinstance(item, dict) and int(item.get("id", 0)) in selected_set)]
+        removed_count = original_count - len(resources)
+        for rid in selected_set:
+            image_map.pop(str(rid), None)
+            resource_map.pop(str(rid), None)
+
+        save_json(RESOURCES_PATH, resources)
+        save_json(IMAGE_MAP_PATH, image_map)
+        save_json(RESOURCE_MAP_PATH, resource_map)
+        self.log(f"删除资源 {removed_count} 条，已同步更新本地 JSON 映射")
+        if self.auto_sync_var.get():
+            self._sync_remote_files()
+        self.refresh_delete_resource_list()
+        messagebox.showinfo("完成", f"删除完成，共 {removed_count} 条。")
+
     def upload_and_sync(self):
         try:
             material_type = self.material_type_var.get().strip() or "image"
-            media_path = Path(self.media_path_var.get().strip())
-            if not media_path.exists():
+            media_paths = parse_media_paths(self.media_path_var.get().strip())
+            if not media_paths:
                 raise RuntimeError("请先选择有效主文件")
 
-            title = self.title_var.get().strip()
-            desc = self.desc_var.get().strip()
-            if not title or not desc:
+            is_batch = len(media_paths) > 1
+            title_input = self.title_var.get().strip()
+            desc_input = self.desc_var.get().strip()
+            if not is_batch and material_type != "gif" and (not title_input or not desc_input):
                 raise RuntimeError("标题和描述不能为空")
+            if is_batch and material_type == "video" and not self.cover_path_var.get().strip() and not self.cover_url_var.get().strip():
+                raise RuntimeError("批量视频请提供封面文件或封面链接")
+            if is_batch and material_type == "gif" and (self.cover_path_var.get().strip() or self.cover_url_var.get().strip()):
+                self.log("批量 GIF 模式已忽略手动封面设置，将自动提取每个 GIF 第一帧。")
 
             resources = load_json(RESOURCES_PATH, [])
             image_map = load_json(IMAGE_MAP_PATH, {})
@@ -421,159 +573,162 @@ class ImageUploaderGUI:
             if not isinstance(resources, list) or not isinstance(image_map, dict) or not isinstance(resource_map, dict):
                 raise RuntimeError("配置文件格式异常，请检查 resources.json / image_map.json / resource_map.json")
 
-            rid = make_resource_id(self.random_code_var.get().strip())
             existing_ids = {item.get("id") for item in resources if isinstance(item, dict)}
-            while rid in existing_ids:
-                self.regenerate_random_code()
-                rid = make_resource_id(self.random_code_var.get().strip())
-            self.id_var.set(str(rid))
+            uploaded_ids: list[int] = []
+            cover_path_raw = self.cover_path_var.get().strip()
+            cover_url_fallback = self.cover_url_var.get().strip()
+            shared_download_url = self.download_var.get().strip()
 
-            suffix = self.random_code_var.get().strip() or random_code(8)
-            self.random_code_var.set(suffix)
-            self.log(f"随机码: {suffix}")
+            for media_path in media_paths:
+                if not media_path.exists():
+                    self.log(f"[跳过] 文件不存在: {media_path}")
+                    continue
 
-            image_key = ""
-            download_url = self.download_var.get().strip()
+                suffix = random_code(8)
+                rid = make_resource_id(suffix)
+                while rid in existing_ids:
+                    suffix = random_code(8)
+                    rid = make_resource_id(suffix)
+                existing_ids.add(rid)
+                self.id_var.set(str(rid))
+                self.random_code_var.set(suffix)
+                self.log(f"随机码: {suffix}")
 
-            if material_type == "video":
-                video_bucket = self.video_bucket_var.get().strip()
-                video_region = self.video_region_var.get().strip()
-                if not video_bucket:
-                    raise RuntimeError("视频 Bucket 不能为空")
-                video_ext = media_path.suffix.lower() or ".mp4"
-                video_key = make_object_key(suffix, video_ext, "vid")
-                self.log(f"开始上传视频 -> COS: {video_bucket}/{video_key}")
-                video_client = self._build_cos_client(video_region)
-                with media_path.open("rb") as f:
-                    video_client.put_object(Bucket=video_bucket, Body=f, Key=video_key)
-                self.log("视频上传成功")
-                resource_map[str(rid)] = video_key
+                image_key = ""
+                download_url = shared_download_url
 
-                cover_path_raw = self.cover_path_var.get().strip()
-                cover_url_fallback = self.cover_url_var.get().strip()
-                if cover_path_raw:
-                    cover_path = Path(cover_path_raw)
-                    if not cover_path.exists():
-                        raise RuntimeError("选择的视频封面文件不存在")
-                    cover_code = random_code(8)
-                    cover_ext = cover_path.suffix.lower() or ".jpg"
-                    image_key = make_object_key(cover_code, cover_ext, "cover")
-                    cover_bucket = self.video_cover_bucket_var.get().strip()
-                    cover_region = self.video_cover_region_var.get().strip()
-                    if not cover_bucket:
-                        raise RuntimeError("视频封面 Bucket 不能为空")
-                    self.log(f"开始上传视频封面 -> COS: {cover_bucket}/{image_key}")
-                    cover_client = self._build_cos_client(cover_region)
-                    with cover_path.open("rb") as f:
-                        cover_client.put_object(Bucket=cover_bucket, Body=f, Key=image_key)
-                    self.log("视频封面上传成功")
-                    image_map[str(rid)] = image_key
-                else:
-                    if not cover_url_fallback:
+                if material_type == "video":
+                    video_bucket = self.video_bucket_var.get().strip()
+                    video_region = self.video_region_var.get().strip()
+                    if not video_bucket:
+                        raise RuntimeError("视频 Bucket 不能为空")
+                    video_ext = media_path.suffix.lower() or ".mp4"
+                    video_key = make_object_key(suffix, video_ext, "vid")
+                    self.log(f"开始上传视频 -> COS: {video_bucket}/{video_key}")
+                    video_client = self._build_cos_client(video_region)
+                    with media_path.open("rb") as f:
+                        video_client.put_object(Bucket=video_bucket, Body=f, Key=video_key)
+                    self.log("视频上传成功")
+                    resource_map[str(rid)] = video_key
+
+                    if cover_path_raw:
+                        cover_path = Path(cover_path_raw)
+                        if not cover_path.exists():
+                            raise RuntimeError("选择的视频封面文件不存在")
+                        cover_code = random_code(8)
+                        cover_ext = cover_path.suffix.lower() or ".jpg"
+                        image_key = make_object_key(cover_code, cover_ext, "cover")
+                        cover_bucket = self.video_cover_bucket_var.get().strip()
+                        cover_region = self.video_cover_region_var.get().strip()
+                        if not cover_bucket:
+                            raise RuntimeError("视频封面 Bucket 不能为空")
+                        self.log(f"开始上传视频封面 -> COS: {cover_bucket}/{image_key}")
+                        cover_client = self._build_cos_client(cover_region)
+                        with cover_path.open("rb") as f:
+                            cover_client.put_object(Bucket=cover_bucket, Body=f, Key=image_key)
+                        self.log("视频封面上传成功")
+                        image_map[str(rid)] = image_key
+                    elif cover_url_fallback:
+                        image_key = cover_url_fallback
+                        image_map.pop(str(rid), None)
+                    else:
                         raise RuntimeError("视频素材请上传封面图，或填写封面链接")
-                    image_key = cover_url_fallback
-                    image_map.pop(str(rid), None)
 
-                if not download_url:
-                    video_base = self.video_public_base_var.get().strip().rstrip("/")
-                    download_url = f"{video_base}/{video_key}" if video_base else video_key
-            elif material_type == "gif":
-                gif_bucket = self.gif_bucket_var.get().strip()
-                gif_region = self.gif_region_var.get().strip()
-                if not gif_bucket:
-                    raise RuntimeError("GIF Bucket 不能为空")
-                gif_ext = media_path.suffix.lower() or ".gif"
-                gif_key = make_object_key(suffix, gif_ext, "gif")
-                self.log(f"开始上传GIF -> COS: {gif_bucket}/{gif_key}")
-                gif_client = self._build_cos_client(gif_region)
-                with media_path.open("rb") as f:
-                    gif_client.put_object(Bucket=gif_bucket, Body=f, Key=gif_key)
-                self.log("GIF上传成功")
-                resource_map[str(rid)] = gif_key
+                    if not download_url:
+                        video_base = self.video_public_base_var.get().strip().rstrip("/")
+                        download_url = f"{video_base}/{video_key}" if video_base else video_key
 
-                cover_path_raw = self.cover_path_var.get().strip()
-                cover_url_fallback = self.cover_url_var.get().strip()
-                if cover_path_raw:
-                    cover_path = Path(cover_path_raw)
-                    if not cover_path.exists():
-                        raise RuntimeError("选择的GIF封面文件不存在")
-                    cover_code = random_code(8)
-                    cover_ext = cover_path.suffix.lower() or ".jpg"
-                    image_key = make_object_key(cover_code, cover_ext, "gif_cover")
-                    cover_bucket = self.gif_cover_bucket_var.get().strip()
-                    cover_region = self.gif_cover_region_var.get().strip()
-                    if not cover_bucket:
-                        raise RuntimeError("GIF封面 Bucket 不能为空")
-                    self.log(f"开始上传GIF封面 -> COS: {cover_bucket}/{image_key}")
-                    cover_client = self._build_cos_client(cover_region)
-                    with cover_path.open("rb") as f:
-                        cover_client.put_object(Bucket=cover_bucket, Body=f, Key=image_key)
-                    self.log("GIF封面上传成功")
-                    image_map[str(rid)] = image_key
-                elif cover_url_fallback:
-                    image_key = cover_url_fallback
-                    image_map.pop(str(rid), None)
+                elif material_type == "gif":
+                    gif_bucket = self.gif_bucket_var.get().strip()
+                    gif_region = self.gif_region_var.get().strip()
+                    if not gif_bucket:
+                        raise RuntimeError("GIF Bucket 不能为空")
+                    gif_ext = media_path.suffix.lower() or ".gif"
+                    gif_key = make_object_key(suffix, gif_ext, "gif")
+                    self.log(f"开始上传GIF -> COS: {gif_bucket}/{gif_key}")
+                    gif_client = self._build_cos_client(gif_region)
+                    with media_path.open("rb") as f:
+                        gif_client.put_object(Bucket=gif_bucket, Body=f, Key=gif_key)
+                    self.log("GIF上传成功")
+                    resource_map[str(rid)] = gif_key
+
+                    if not is_batch and cover_path_raw:
+                        cover_path = Path(cover_path_raw)
+                        if not cover_path.exists():
+                            raise RuntimeError("选择的GIF封面文件不存在")
+                        cover_code = random_code(8)
+                        cover_ext = cover_path.suffix.lower() or ".jpg"
+                        image_key = make_object_key(cover_code, cover_ext, "gif_cover")
+                        cover_bucket = self.gif_cover_bucket_var.get().strip()
+                        cover_region = self.gif_cover_region_var.get().strip()
+                        if not cover_bucket:
+                            raise RuntimeError("GIF封面 Bucket 不能为空")
+                        self.log(f"开始上传GIF封面 -> COS: {cover_bucket}/{image_key}")
+                        cover_client = self._build_cos_client(cover_region)
+                        with cover_path.open("rb") as f:
+                            cover_client.put_object(Bucket=cover_bucket, Body=f, Key=image_key)
+                        self.log("GIF封面上传成功")
+                        image_map[str(rid)] = image_key
+                    elif not is_batch and cover_url_fallback:
+                        image_key = cover_url_fallback
+                        image_map.pop(str(rid), None)
+                    else:
+                        cover_code = random_code(8)
+                        image_key = make_object_key(cover_code, ".jpg", "gif_cover")
+                        cover_bucket = self.gif_cover_bucket_var.get().strip()
+                        cover_region = self.gif_cover_region_var.get().strip()
+                        if not cover_bucket:
+                            raise RuntimeError("GIF封面 Bucket 不能为空")
+                        self.log(f"自动提取第一帧并上传封面 -> {cover_bucket}/{image_key}")
+                        cover_client = self._build_cos_client(cover_region)
+                        cover_bytes = extract_gif_first_frame_jpeg_bytes(media_path)
+                        cover_client.put_object(Bucket=cover_bucket, Body=cover_bytes, Key=image_key)
+                        image_map[str(rid)] = image_key
+
+                    if not download_url:
+                        gif_base = self.gif_public_base_var.get().strip().rstrip("/")
+                        download_url = f"{gif_base}/{gif_key}" if gif_base else gif_key
+
                 else:
-                    cover_code = random_code(8)
-                    image_key = make_object_key(cover_code, ".jpg", "gif_cover")
-                    cover_bucket = self.gif_cover_bucket_var.get().strip()
-                    cover_region = self.gif_cover_region_var.get().strip()
-                    if not cover_bucket:
-                        raise RuntimeError("GIF封面 Bucket 不能为空")
-                    self.log(f"未提供封面，自动提取GIF第一帧并上传 -> {cover_bucket}/{image_key}")
-                    cover_client = self._build_cos_client(cover_region)
-                    cover_bytes = extract_gif_first_frame_jpeg_bytes(media_path)
-                    cover_client.put_object(Bucket=cover_bucket, Body=cover_bytes, Key=image_key)
+                    image_bucket = self.bucket_var.get().strip()
+                    image_region = self.region_var.get().strip()
+                    if not image_bucket:
+                        raise RuntimeError("图片 Bucket 不能为空")
+                    image_ext = media_path.suffix.lower() or ".png"
+                    image_key = make_object_key(suffix, image_ext, "img")
+                    self.log(f"开始上传图片 -> COS: {image_bucket}/{image_key}")
+                    image_client = self._build_cos_client(image_region)
+                    with media_path.open("rb") as f:
+                        image_client.put_object(Bucket=image_bucket, Body=f, Key=image_key)
+                    self.log("图片上传成功")
                     image_map[str(rid)] = image_key
+                    resource_map.pop(str(rid), None)
+                    if not download_url:
+                        image_base = self.image_public_base_var.get().strip().rstrip("/")
+                        download_url = f"{image_base}/{image_key}" if image_base else image_key
 
-                if not download_url:
-                    gif_base = self.gif_public_base_var.get().strip().rstrip("/")
-                    download_url = f"{gif_base}/{gif_key}" if gif_base else gif_key
-            else:
-                image_bucket = self.bucket_var.get().strip()
-                image_region = self.region_var.get().strip()
-                if not image_bucket:
-                    raise RuntimeError("图片 Bucket 不能为空")
-                image_ext = media_path.suffix.lower() or (".gif" if material_type == "gif" else ".png")
-                object_prefix = "gif" if material_type == "gif" else "img"
-                image_key = make_object_key(suffix, image_ext, object_prefix)
-                upload_label = "GIF" if material_type == "gif" else "图片"
-                self.log(f"开始上传{upload_label} -> COS: {image_bucket}/{image_key}")
-                image_client = self._build_cos_client(image_region)
-                with media_path.open("rb") as f:
-                    image_client.put_object(Bucket=image_bucket, Body=f, Key=image_key)
-                self.log(f"{upload_label}上传成功")
-                image_map[str(rid)] = image_key
-                resource_map.pop(str(rid), None)
-                if not download_url:
-                    image_base = self.image_public_base_var.get().strip().rstrip("/")
-                    download_url = f"{image_base}/{image_key}" if image_base else image_key
+                uploaded_at = datetime.now().astimezone().isoformat(timespec="seconds")
+                size = self.size_var.get().strip() or ("30MB" if material_type in ("image", "gif") else "未知")
+                category = self.category_var.get().strip() or "gif"
+                filename = media_path.stem
+                title = filename if is_batch or material_type == "gif" else title_input
+                desc = filename if is_batch or material_type == "gif" else desc_input
 
-            uploaded_at = datetime.now().astimezone().isoformat(timespec="seconds")
-            size = self.size_var.get().strip() or "未知"
-            category = self.category_var.get().strip() or "gif"
-
-            target = None
-            for item in resources:
-                if item.get("id") == rid:
-                    target = item
-                    break
-
-            if target is None:
                 target = {"id": rid}
+                target["title"] = title
+                target["description"] = desc
+                target["size"] = size
+                target["image"] = image_key
+                target["download"] = download_url
+                target["category"] = category
+                target["materialType"] = material_type
+                target["updatedAt"] = uploaded_at
                 resources.append(target)
-                self.log(f"新增资源 ID={rid}")
-            else:
-                self.log(f"更新资源 ID={rid}")
+                uploaded_ids.append(rid)
+                self.log(f"新增资源 ID={rid}（{filename}）")
 
-            target["title"] = title
-            target["description"] = desc
-            target["size"] = size
-            target["image"] = image_key
-            target["download"] = download_url
-            target["category"] = category
-            target["materialType"] = material_type
-            target["updatedAt"] = uploaded_at
+            if not uploaded_ids:
+                raise RuntimeError("没有可上传的有效文件")
 
             resources.sort(key=lambda x: int(x.get("id", 0)))
             save_json(RESOURCES_PATH, resources)
@@ -582,11 +737,15 @@ class ImageUploaderGUI:
             self.log("已同步更新 resources.json / image_map.json / resource_map.json")
             if self.auto_sync_var.get():
                 self._sync_remote_files()
+            self.refresh_delete_resource_list()
 
-            messagebox.showinfo(
-                "完成",
-                "上传并同步成功。\n\n已更新本地映射；若勾选自动同步，已推送到云服务器。",
-            )
+            if is_batch:
+                messagebox.showinfo("完成", f"批量上传成功，共 {len(uploaded_ids)} 条。")
+            else:
+                messagebox.showinfo(
+                    "完成",
+                    "上传并同步成功。\n\n已更新本地映射；若勾选自动同步，已推送到云服务器。",
+                )
             self.regenerate_random_code()
         except Exception as e:
             self.log(f"[错误] {e}")
