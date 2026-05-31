@@ -314,7 +314,7 @@ class ImageUploaderGUI:
         ttk.Label(resource, text="描述").grid(row=4, column=2, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.desc_var).grid(row=4, column=3, sticky="ew", pady=2)
 
-        ttk.Label(resource, text="作者(可选，仅填写时前端显示)").grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Label(resource, text="上传人(作者，可选，仅填写时前端显示)").grid(row=5, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.author_var).grid(row=5, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
         ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=6, column=0, sticky="w", pady=2)
