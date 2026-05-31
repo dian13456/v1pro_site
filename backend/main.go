@@ -111,6 +111,18 @@ func loadResourceMap(path string) (resourceMap, error) {
 	return m, nil
 }
 
+func loadResourceCatalog(path string) ([]map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func loadLikesStore(path string) (likesStore, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -453,6 +465,10 @@ func main() {
 	if resourceLikesPath == "" {
 		resourceLikesPath = filepath.Join("config", "resource_likes.json")
 	}
+	resourcesPath := os.Getenv("RESOURCES_PATH")
+	if resourcesPath == "" {
+		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -558,6 +574,15 @@ func main() {
 		token := parseBearerToken(c)
 		valid := verifyToken(token, jwtSecret)
 		c.JSON(http.StatusOK, gin.H{"success": valid})
+	})
+
+	router.GET("/api/resources", func(c *gin.Context) {
+		items, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
+			return
+		}
+		c.JSON(http.StatusOK, items)
 	})
 
 	router.GET("/api/resource-likes", func(c *gin.Context) {

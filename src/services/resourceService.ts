@@ -1,5 +1,6 @@
 import resourceData from "../data/resources.json";
 import type { ResourceItem } from "../types/resource";
+import { API_BASE } from "./httpClient";
 
 type ResourceRecord = Partial<ResourceItem> & {
   id?: number;
@@ -15,6 +16,7 @@ type ResourceRecord = Partial<ResourceItem> & {
 
 const COS_MANIFEST_URL = import.meta.env.VITE_COS_RESOURCE_MANIFEST_URL || "";
 const COS_PUBLIC_BASE_URL = import.meta.env.VITE_COS_PUBLIC_BASE_URL || "";
+const RESOURCE_API_URL = API_BASE ? `${API_BASE}/api/resources` : "/api/resources";
 
 function sortByUpdatedAtDesc(items: ResourceItem[]): ResourceItem[] {
   return [...items].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -58,7 +60,25 @@ async function fetchFromCosManifest(): Promise<ResourceItem[]> {
   return payload.map(normalizeRecord).filter((item): item is ResourceItem => item !== null);
 }
 
+async function fetchFromRuntimeApi(): Promise<ResourceItem[]> {
+  const response = await fetch(RESOURCE_API_URL, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`动态清单拉取失败（HTTP ${response.status}）`);
+  }
+  const payload = (await response.json()) as ResourceRecord[];
+  return payload.map(normalizeRecord).filter((item): item is ResourceItem => item !== null);
+}
+
 export async function fetchResources(): Promise<ResourceItem[]> {
+  try {
+    const dynamic = await fetchFromRuntimeApi();
+    if (dynamic.length > 0) {
+      return sortByUpdatedAtDesc(dynamic);
+    }
+  } catch {
+    // Fallback to COS/local when runtime API is unavailable.
+  }
+
   try {
     const remote = await fetchFromCosManifest();
     if (remote.length > 0) {

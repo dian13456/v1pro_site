@@ -18,6 +18,11 @@ try:
 except Exception:  # pragma: no cover - runtime dependency check
     Image = None
 
+try:
+    import paramiko
+except Exception:  # pragma: no cover - runtime dependency check
+    paramiko = None
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESOURCES_PATH = PROJECT_ROOT / "src" / "data" / "resources.json"
@@ -129,6 +134,15 @@ class ImageUploaderGUI:
         self.download_var = tk.StringVar()
         self.cover_url_var = tk.StringVar()
         self.random_code_var = tk.StringVar(value=random_code(8))
+        self.auto_sync_var = tk.BooleanVar(value=False)
+        self.remote_host_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_HOST", ""))
+        self.remote_user_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_USER", "ubuntu"))
+        self.remote_password_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_PASSWORD", ""))
+        self.remote_base_path_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_BASE_PATH", "/opt/jiadian-hub/app"))
+        self.remote_restart_var = tk.BooleanVar(value=False)
+        self.remote_restart_cmd_var = tk.StringVar(
+            value=os.getenv("REMOTE_RESTART_CMD", "echo 'PASSWORD' | sudo -S -p '' systemctl restart jiadian-api.service")
+        )
 
         self._build_ui()
         self.regenerate_random_code()
@@ -244,6 +258,34 @@ class ImageUploaderGUI:
             text="说明：图片仅更新 image_map；视频/GIF更新 resource_map；封面按配置写入 image_map。",
         ).pack(side=tk.LEFT, padx=12)
 
+        sync_frame = ttk.LabelFrame(self.root, text="云服务器自动同步（可选）", padding=10)
+        sync_frame.pack(fill=tk.X, padx=12, pady=(0, 8))
+        sync_frame.columnconfigure(1, weight=1)
+        sync_frame.columnconfigure(3, weight=1)
+
+        ttk.Checkbutton(sync_frame, text="上传后自动同步到云服务器", variable=self.auto_sync_var).grid(
+            row=0, column=0, columnspan=4, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(sync_frame, text="主机").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(sync_frame, textvariable=self.remote_host_var).grid(row=1, column=1, sticky="ew", padx=(8, 12), pady=2)
+        ttk.Label(sync_frame, text="用户").grid(row=1, column=2, sticky="w", pady=2)
+        ttk.Entry(sync_frame, textvariable=self.remote_user_var).grid(row=1, column=3, sticky="ew", pady=2)
+
+        ttk.Label(sync_frame, text="密码").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(sync_frame, textvariable=self.remote_password_var, show="*").grid(
+            row=2, column=1, sticky="ew", padx=(8, 12), pady=2
+        )
+        ttk.Label(sync_frame, text="远程项目根目录").grid(row=2, column=2, sticky="w", pady=2)
+        ttk.Entry(sync_frame, textvariable=self.remote_base_path_var).grid(row=2, column=3, sticky="ew", pady=2)
+
+        ttk.Checkbutton(sync_frame, text="同步后执行重启命令", variable=self.remote_restart_var).grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=2
+        )
+        ttk.Label(sync_frame, text="重启命令").grid(row=4, column=0, sticky="w", pady=2)
+        ttk.Entry(sync_frame, textvariable=self.remote_restart_cmd_var).grid(
+            row=4, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
+        )
+
         log_frame = ttk.LabelFrame(self.root, text="日志", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
         self.log_text = tk.Text(log_frame, height=14, wrap=tk.WORD)
@@ -304,6 +346,62 @@ class ImageUploaderGUI:
             raise RuntimeError("COS 配置不完整（SecretId / SecretKey / Region）")
         config = CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key, Token=None, Scheme="https")
         return CosS3Client(config)
+
+    def _sync_remote_files(self):
+        if paramiko is None:
+            raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
+
+        host = self.remote_host_var.get().strip()
+        user = self.remote_user_var.get().strip()
+        password = self.remote_password_var.get().strip()
+        base_path = self.remote_base_path_var.get().strip().rstrip("/")
+        if not host or not user or not password or not base_path:
+            raise RuntimeError("云同步配置不完整（主机/用户/密码/远程路径）")
+
+        upload_pairs = [
+            (RESOURCES_PATH, f"{base_path}/src/data/resources.json"),
+            (IMAGE_MAP_PATH, f"{base_path}/backend/config/image_map.json"),
+            (RESOURCE_MAP_PATH, f"{base_path}/backend/config/resource_map.json"),
+        ]
+        self.log(f"开始同步云服务器：{user}@{host}")
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=host, username=user, password=password, timeout=10)
+        try:
+            remote_dirs = {
+                f"{base_path}/src/data",
+                f"{base_path}/backend/config",
+            }
+            for remote_dir in sorted(remote_dirs):
+                _, stdout, stderr = client.exec_command(f"mkdir -p '{remote_dir}'")
+                _ = stdout.read()
+                err = stderr.read().decode("utf-8", "ignore").strip()
+                if err:
+                    raise RuntimeError(f"创建远程目录失败: {err}")
+
+            sftp = client.open_sftp()
+            try:
+                for local_path, remote_path in upload_pairs:
+                    sftp.put(str(local_path), remote_path)
+                    self.log(f"已上传到云服务器: {remote_path}")
+            finally:
+                sftp.close()
+
+            if self.remote_restart_var.get():
+                cmd = self.remote_restart_cmd_var.get().strip()
+                if not cmd:
+                    raise RuntimeError("已勾选重启，但重启命令为空")
+                self.log(f"执行重启命令: {cmd}")
+                _, stdout, stderr = client.exec_command(cmd)
+                out = stdout.read().decode("utf-8", "ignore").strip()
+                err = stderr.read().decode("utf-8", "ignore").strip()
+                if out:
+                    self.log(f"重启输出: {out}")
+                if err:
+                    self.log(f"重启输出(错误): {err}")
+        finally:
+            client.close()
+        self.log("云服务器同步完成")
 
     def upload_and_sync(self):
         try:
@@ -482,10 +580,12 @@ class ImageUploaderGUI:
             save_json(IMAGE_MAP_PATH, image_map)
             save_json(RESOURCE_MAP_PATH, resource_map)
             self.log("已同步更新 resources.json / image_map.json / resource_map.json")
+            if self.auto_sync_var.get():
+                self._sync_remote_files()
 
             messagebox.showinfo(
                 "完成",
-                "上传并同步成功。\n\n若后端正在运行，请重启后端使 map 生效；\n若线上已部署，请把改动部署到服务器。",
+                "上传并同步成功。\n\n已更新本地映射；若勾选自动同步，已推送到云服务器。",
             )
             self.regenerate_random_code()
         except Exception as e:
