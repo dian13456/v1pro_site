@@ -40,6 +40,64 @@ type likeRequest struct {
 	ResourceID string `json:"resourceId"`
 }
 
+type runtimeResourceMap struct {
+	path        string
+	mu          sync.RWMutex
+	data        resourceMap
+	lastModTime time.Time
+}
+
+func newRuntimeResourceMap(path string) (*runtimeResourceMap, error) {
+	m, err := loadResourceMap(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	return &runtimeResourceMap{
+		path:        path,
+		data:        m,
+		lastModTime: info.ModTime(),
+	}, nil
+}
+
+func (r *runtimeResourceMap) reloadIfChanged() error {
+	info, err := os.Stat(r.path)
+	if err != nil {
+		return err
+	}
+
+	r.mu.RLock()
+	lastModTime := r.lastModTime
+	r.mu.RUnlock()
+	if !info.ModTime().After(lastModTime) {
+		return nil
+	}
+
+	latestMap, err := loadResourceMap(r.path)
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	r.data = latestMap
+	r.lastModTime = info.ModTime()
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *runtimeResourceMap) get(id string) (string, bool) {
+	if err := r.reloadIfChanged(); err != nil {
+		log.Printf("warn: reload map %s failed: %v", r.path, err)
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	value, ok := r.data[id]
+	return value, ok
+}
+
 func loadResourceMap(path string) (resourceMap, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -173,6 +231,11 @@ func isVideoObjectKey(objectKey string) bool {
 		strings.HasSuffix(key, ".flv")
 }
 
+func isGIFObjectKey(objectKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(objectKey))
+	return strings.HasSuffix(key, ".gif")
+}
+
 func normalizeObjectKey(raw string) string {
 	key := strings.TrimSpace(raw)
 	if key == "" {
@@ -304,6 +367,54 @@ func main() {
 	if videoCOSSecretKey == "" {
 		videoCOSSecretKey = cosSecretKey
 	}
+	gifCOSBucket := os.Getenv("GIF_COS_BUCKET")
+	if gifCOSBucket == "" {
+		gifCOSBucket = "gif-1311844229"
+	}
+	gifCOSRegion := os.Getenv("GIF_COS_REGION")
+	if gifCOSRegion == "" {
+		gifCOSRegion = "ap-guangzhou"
+	}
+	gifCOSSecretID := os.Getenv("GIF_COS_SECRET_ID")
+	if gifCOSSecretID == "" {
+		gifCOSSecretID = cosSecretID
+	}
+	gifCOSSecretKey := os.Getenv("GIF_COS_SECRET_KEY")
+	if gifCOSSecretKey == "" {
+		gifCOSSecretKey = cosSecretKey
+	}
+	videoCoverCOSBucket := os.Getenv("VIDEO_COVER_COS_BUCKET")
+	if videoCoverCOSBucket == "" {
+		videoCoverCOSBucket = imageCOSBucket
+	}
+	videoCoverCOSRegion := os.Getenv("VIDEO_COVER_COS_REGION")
+	if videoCoverCOSRegion == "" {
+		videoCoverCOSRegion = imageCOSRegion
+	}
+	videoCoverCOSSecretID := os.Getenv("VIDEO_COVER_COS_SECRET_ID")
+	if videoCoverCOSSecretID == "" {
+		videoCoverCOSSecretID = cosSecretID
+	}
+	videoCoverCOSSecretKey := os.Getenv("VIDEO_COVER_COS_SECRET_KEY")
+	if videoCoverCOSSecretKey == "" {
+		videoCoverCOSSecretKey = cosSecretKey
+	}
+	gifCoverCOSBucket := os.Getenv("GIF_COVER_COS_BUCKET")
+	if gifCoverCOSBucket == "" {
+		gifCoverCOSBucket = "gif-cover-1311844229"
+	}
+	gifCoverCOSRegion := os.Getenv("GIF_COVER_COS_REGION")
+	if gifCoverCOSRegion == "" {
+		gifCoverCOSRegion = "ap-guangzhou"
+	}
+	gifCoverCOSSecretID := os.Getenv("GIF_COVER_COS_SECRET_ID")
+	if gifCoverCOSSecretID == "" {
+		gifCoverCOSSecretID = cosSecretID
+	}
+	gifCoverCOSSecretKey := os.Getenv("GIF_COVER_COS_SECRET_KEY")
+	if gifCoverCOSSecretKey == "" {
+		gifCoverCOSSecretKey = cosSecretKey
+	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
@@ -347,11 +458,11 @@ func main() {
 		port = "8080"
 	}
 
-	mapping, err := loadResourceMap(resourceMapPath)
+	resourceMapStore, err := newRuntimeResourceMap(resourceMapPath)
 	if err != nil {
 		log.Fatalf("load resource map failed: %v", err)
 	}
-	imageMapping, err := loadResourceMap(imageMapPath)
+	imageMapStore, err := newRuntimeResourceMap(imageMapPath)
 	if err != nil {
 		log.Fatalf("load image map failed: %v", err)
 	}
@@ -385,6 +496,33 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("init video cos signer failed: %v", err)
+	}
+	gifSigner, err := service.NewCOSSigner(
+		gifCOSBucket,
+		gifCOSRegion,
+		gifCOSSecretID,
+		gifCOSSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("init gif cos signer failed: %v", err)
+	}
+	videoCoverSigner, err := service.NewCOSSigner(
+		videoCoverCOSBucket,
+		videoCoverCOSRegion,
+		videoCoverCOSSecretID,
+		videoCoverCOSSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("init video cover cos signer failed: %v", err)
+	}
+	gifCoverSigner, err := service.NewCOSSigner(
+		gifCoverCOSBucket,
+		gifCoverCOSRegion,
+		gifCoverCOSSecretID,
+		gifCoverCOSSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("init gif cover cos signer failed: %v", err)
 	}
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
@@ -504,7 +642,7 @@ func main() {
 			return
 		}
 
-		rawObjectKey, ok := mapping[id]
+		rawObjectKey, ok := resourceMapStore.get(id)
 		objectKey := normalizeObjectKey(rawObjectKey)
 		if !ok || objectKey == "" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
@@ -514,6 +652,8 @@ func main() {
 		selectedSigner := signer
 		if isSoftwareObjectKey(objectKey) {
 			selectedSigner = softwareSigner
+		} else if isGIFObjectKey(objectKey) {
+			selectedSigner = gifSigner
 		} else if isVideoObjectKey(objectKey) {
 			selectedSigner = videoSigner
 		}
@@ -534,28 +674,43 @@ func main() {
 			return
 		}
 
-		objectKey, ok := imageMapping[id]
+		rawImageObjectKey, ok := imageMapStore.get(id)
+		objectKey := normalizeObjectKey(rawImageObjectKey)
 		if !ok || objectKey == "" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
 			return
 		}
 
+		selectedImageSigner := imageSigner
+		cacheKeyPrefix := "image:"
+		if rawResourceObjectKey, hasResource := resourceMapStore.get(id); hasResource {
+			resourceObjectKey := normalizeObjectKey(rawResourceObjectKey)
+			if isVideoObjectKey(resourceObjectKey) {
+				selectedImageSigner = videoCoverSigner
+				cacheKeyPrefix = "video-cover:"
+			} else if isGIFObjectKey(resourceObjectKey) {
+				selectedImageSigner = gifCoverSigner
+				cacheKeyPrefix = "gif-cover:"
+			}
+		}
+		cacheKey := cacheKeyPrefix + objectKey
+
 		now := time.Now()
 		imageURLCacheMu.RLock()
-		cached, hasCached := imageURLCache[objectKey]
+		cached, hasCached := imageURLCache[cacheKey]
 		imageURLCacheMu.RUnlock()
 		if hasCached && cached.expiresAt.After(now) {
 			c.JSON(http.StatusOK, gin.H{"url": cached.url})
 			return
 		}
 
-		url, signErr := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, imageSignTTL)
+		url, signErr := selectedImageSigner.GenerateReadURL(c.Request.Context(), objectKey, imageSignTTL)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign image url failed"})
 			return
 		}
 		imageURLCacheMu.Lock()
-		imageURLCache[objectKey] = signedURLCacheEntry{
+		imageURLCache[cacheKey] = signedURLCacheEntry{
 			url:       url,
 			expiresAt: now.Add(imageCacheReuseTTL),
 		}

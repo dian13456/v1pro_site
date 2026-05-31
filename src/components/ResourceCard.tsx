@@ -6,9 +6,12 @@ interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
   onPlay: (resource: ResourceItem) => void;
+  onStopPlay: () => void;
   onLike: (resource: ResourceItem) => void;
   downloading: boolean;
   playing: boolean;
+  isPlaying: boolean;
+  playUrl: string;
   liking: boolean;
   liked: boolean;
   likeCount: number;
@@ -18,9 +21,12 @@ function ResourceCardComponent({
   resource,
   onDownload,
   onPlay,
+  onStopPlay,
   onLike,
   downloading,
   playing,
+  isPlaying,
+  playUrl,
   liking,
   liked,
   likeCount,
@@ -46,6 +52,8 @@ function ResourceCardComponent({
       ? "图片素材"
       : resource.materialType === "video"
         ? "视频素材"
+        : resource.materialType === "gif"
+          ? "GIF素材"
         : "V1PRO素材包";
   const [previewUrl, setPreviewUrl] = useState<string>("");
 
@@ -85,7 +93,25 @@ function ResourceCardComponent({
       </div>
       <div className="rounded-[1.4rem] bg-black p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition duration-300 group-hover:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.45),0_0_26px_-10px_rgba(56,189,248,0.8)]">
         <div className="overflow-hidden rounded-[1rem] bg-slate-900" style={{ aspectRatio: "320 / 170" }}>
-          {previewUrl ? (
+          {resource.materialType === "video" && isPlaying && playUrl ? (
+            <video
+              src={playUrl}
+              controls
+              autoPlay
+              playsInline
+              preload="metadata"
+              className="h-full w-full object-cover"
+              onEnded={onStopPlay}
+            />
+          ) : resource.materialType === "gif" && isPlaying && playUrl ? (
+            <img
+              src={playUrl}
+              alt={`${resource.title} GIF 播放`}
+              loading="eager"
+              decoding="async"
+              className="h-full w-full object-cover"
+            />
+          ) : previewUrl ? (
             <img
               src={previewUrl}
               alt={resource.title}
@@ -101,23 +127,27 @@ function ResourceCardComponent({
         </div>
       </div>
 
-      <div className={`mt-4 grid gap-2 ${resource.materialType === "video" ? "grid-cols-3" : "grid-cols-2"}`}>
+      <div className={`mt-4 grid gap-2 ${resource.materialType === "video" || resource.materialType === "gif" ? "grid-cols-3" : "grid-cols-2"}`}>
         <button
           type="button"
           disabled={downloading}
           onClick={() => onDownload(resource)}
           className="w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
         >
-          {downloading ? "生成下载链接..." : resource.materialType === "image" || resource.materialType === "video" ? "下载" : "下载素材"}
+          {downloading
+            ? "生成下载链接..."
+            : resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif"
+              ? "下载"
+              : "下载素材"}
         </button>
-        {resource.materialType === "video" ? (
+        {resource.materialType === "video" || resource.materialType === "gif" ? (
           <button
             type="button"
             disabled={playing}
             onClick={() => onPlay(resource)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
-            {playing ? "打开中..." : "播放"}
+            {playing ? "打开中..." : isPlaying ? "收起" : "播放"}
           </button>
         ) : null}
         <button

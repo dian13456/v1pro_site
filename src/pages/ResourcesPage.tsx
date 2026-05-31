@@ -19,6 +19,8 @@ export default function ResourcesPage() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
+  const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
+  const [playingUrl, setPlayingUrl] = useState<string>("");
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
@@ -169,6 +171,12 @@ export default function ResourcesPage() {
   };
 
   const handlePlay = async (resource: ResourceItem) => {
+    if (playingResourceId === resource.id) {
+      setPlayingResourceId(null);
+      setPlayingUrl("");
+      return;
+    }
+
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -178,7 +186,8 @@ export default function ResourcesPage() {
       setPlayingId(resource.id);
       setErrorMessage("");
       const signedUrl = await createDownloadUrl(resource.id, resource.download);
-      window.open(signedUrl || resource.download, "_blank", "noopener,noreferrer");
+      setPlayingResourceId(resource.id);
+      setPlayingUrl(signedUrl || resource.download);
     } catch (err) {
       const message = (err as Error)?.message || "播放链接生成失败";
       setErrorMessage(message);
@@ -220,6 +229,7 @@ export default function ResourcesPage() {
             { value: "all", label: "全部类型" },
             { value: "image", label: "图片素材" },
             { value: "video", label: "视频素材" },
+            { value: "gif", label: "GIF素材" },
             { value: "v1pro-pack", label: "V1PRO素材包" },
           ].map((item) => {
             const active = materialType === item.value;
@@ -301,9 +311,15 @@ export default function ResourcesPage() {
                 resource={resource}
                 onDownload={handleDownload}
                 onPlay={handlePlay}
+                onStopPlay={() => {
+                  setPlayingResourceId(null);
+                  setPlayingUrl("");
+                }}
                 onLike={handleLike}
                 downloading={downloadingId === resource.id}
                 playing={playingId === resource.id}
+                isPlaying={playingResourceId === resource.id}
+                playUrl={playingResourceId === resource.id ? playingUrl : ""}
                 liking={likingId === resource.id}
                 liked={likedIds.has(resource.id)}
                 likeCount={likeCounts[resource.id] || 0}
