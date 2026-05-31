@@ -91,6 +91,9 @@ function ResourceCardComponent({
       <div className="mb-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs text-white dark:bg-white dark:text-slate-900">
         {materialLabel}
       </div>
+      {resource.author ? (
+        <div className="mb-3 text-xs text-slate-600 dark:text-slate-300">作者：{resource.author}</div>
+      ) : null}
       <div className="rounded-[1.4rem] bg-black p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition duration-300 group-hover:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.45),0_0_26px_-10px_rgba(56,189,248,0.8)]">
         <div className="overflow-hidden rounded-[1rem] bg-slate-900" style={{ aspectRatio: "320 / 170" }}>
           {resource.materialType === "video" && isPlaying && playUrl ? (

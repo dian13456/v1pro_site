@@ -46,7 +46,8 @@ export function useResourceCatalog() {
       if (!query) return true;
       return (
         resource.title.toLowerCase().includes(query) ||
-        resource.description.toLowerCase().includes(query)
+        resource.description.toLowerCase().includes(query) ||
+        (resource.author || "").toLowerCase().includes(query)
       );
     });
     result.sort((a, b) => {

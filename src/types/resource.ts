@@ -6,6 +6,7 @@ export interface ResourceItem {
   id: number;
   title: string;
   description: string;
+  author?: string;
   size: string;
   image: string;
   download: string;

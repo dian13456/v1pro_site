@@ -6,6 +6,7 @@ type ResourceRecord = Partial<ResourceItem> & {
   id?: number;
   title?: string;
   description?: string;
+  author?: string;
   size?: string;
   image?: string;
   download?: string;
@@ -40,6 +41,7 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     id: item.id,
     title: item.title,
     description: item.description,
+    author: (item.author || "").trim() || undefined,
     size: item.size || "未知",
     image: toAbsoluteUrl(item.image),
     download: toAbsoluteUrl(item.download),

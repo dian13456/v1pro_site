@@ -2,6 +2,8 @@ import json
 import io
 import os
 import secrets
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -80,6 +82,61 @@ def extract_gif_first_frame_jpeg_bytes(gif_path: Path) -> bytes:
         return output.getvalue()
 
 
+def resolve_ffmpeg_path() -> str | None:
+    env_ffmpeg = os.getenv("FFMPEG_PATH", "").strip()
+    if env_ffmpeg:
+        candidate = Path(env_ffmpeg)
+        if candidate.exists():
+            return str(candidate)
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        return ffmpeg
+
+    local_app_data = os.getenv("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        winget_root = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+        if winget_root.exists():
+            for candidate in sorted(winget_root.glob("**/ffmpeg.exe"), reverse=True):
+                if candidate.is_file():
+                    return str(candidate)
+    return None
+
+
+def extract_video_first_frame_jpeg_bytes(video_path: Path) -> bytes:
+    ffmpeg = resolve_ffmpeg_path()
+    if not ffmpeg:
+        raise RuntimeError(
+            "未检测到 ffmpeg，视频无封面时无法自动提取第一帧。"
+            "请安装 ffmpeg、重启程序，或设置环境变量 FFMPEG_PATH 指向 ffmpeg.exe。"
+        )
+
+    cmd = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, check=True)
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or b"").decode("utf-8", "ignore").strip()
+        raise RuntimeError(f"视频封面提取失败：{err or 'ffmpeg 执行失败'}") from exc
+
+    if not result.stdout:
+        raise RuntimeError("视频封面提取失败：未读取到第一帧图像数据")
+    return result.stdout
+
+
 def parse_media_paths(raw: str) -> list[Path]:
     parts = [item.strip() for item in (raw or "").split(" | ") if item.strip()]
     return [Path(p) for p in parts]
@@ -106,7 +163,7 @@ class ImageUploaderGUI:
             value=os.getenv("VIDEO_COS_PUBLIC_BASE", "https://video-1311844229.cos.ap-guangzhou.myqcloud.com")
         )
         self.video_cover_bucket_var = tk.StringVar(
-            value=os.getenv("VIDEO_COVER_COS_BUCKET", os.getenv("IMAGE_COS_BUCKET", "v1image-1311844229"))
+            value=os.getenv("VIDEO_COVER_COS_BUCKET", "video-cover-1311844229")
         )
         self.video_cover_region_var = tk.StringVar(
             value=os.getenv("VIDEO_COVER_COS_REGION", os.getenv("IMAGE_COS_REGION", "ap-guangzhou"))
@@ -134,13 +191,14 @@ class ImageUploaderGUI:
         self.id_var = tk.StringVar()
         self.title_var = tk.StringVar()
         self.desc_var = tk.StringVar()
+        self.author_var = tk.StringVar()
         self.size_var = tk.StringVar(value="未知")
         self.category_var = tk.StringVar(value="gif")
         self.download_var = tk.StringVar()
         self.cover_url_var = tk.StringVar()
         self.random_code_var = tk.StringVar(value=random_code(8))
-        self.auto_sync_var = tk.BooleanVar(value=False)
-        self.remote_host_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_HOST", ""))
+        self.auto_sync_var = tk.BooleanVar(value=True)
+        self.remote_host_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_HOST", "124.221.5.162"))
         self.remote_user_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_USER", "ubuntu"))
         self.remote_password_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_PASSWORD", ""))
         self.remote_base_path_var = tk.StringVar(value=os.getenv("REMOTE_SYNC_BASE_PATH", "/opt/jiadian-hub/app"))
@@ -256,17 +314,20 @@ class ImageUploaderGUI:
         ttk.Label(resource, text="描述").grid(row=4, column=2, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.desc_var).grid(row=4, column=3, sticky="ew", pady=2)
 
-        ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=5, column=0, sticky="w", pady=2)
-        ttk.Entry(resource, textvariable=self.download_var).grid(row=5, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(resource, text="作者(可选，仅填写时前端显示)").grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Entry(resource, textvariable=self.author_var).grid(row=5, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
-        ttk.Label(resource, text="封面链接(视频/GIF且不上传封面时可填)").grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Entry(resource, textvariable=self.cover_url_var).grid(row=6, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=6, column=0, sticky="w", pady=2)
+        ttk.Entry(resource, textvariable=self.download_var).grid(row=6, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
-        ttk.Label(resource, text="随机码(自动生成)").grid(row=7, column=0, sticky="w", pady=2)
+        ttk.Label(resource, text="封面链接(视频/GIF且不上传封面时可填)").grid(row=7, column=0, sticky="w", pady=2)
+        ttk.Entry(resource, textvariable=self.cover_url_var).grid(row=7, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+
+        ttk.Label(resource, text="随机码(自动生成)").grid(row=8, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.random_code_var, state="readonly").grid(
-            row=7, column=1, sticky="ew", padx=(8, 12), pady=2
+            row=8, column=1, sticky="ew", padx=(8, 12), pady=2
         )
-        ttk.Button(resource, text="重新生成", command=self.regenerate_random_code).grid(row=7, column=2, columnspan=2, sticky="ew", pady=2)
+        ttk.Button(resource, text="重新生成", command=self.regenerate_random_code).grid(row=8, column=2, columnspan=2, sticky="ew", pady=2)
 
         actions = ttk.Frame(upload_tab)
         actions.pack(fill=tk.X, padx=0, pady=(0, 8))
@@ -481,6 +542,46 @@ class ImageUploaderGUI:
             client.close()
         self.log("云服务器同步完成")
 
+    def _preflight_remote_sync(self):
+        if paramiko is None:
+            raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
+
+        host = self.remote_host_var.get().strip()
+        user = self.remote_user_var.get().strip()
+        password = self.remote_password_var.get().strip()
+        base_path = self.remote_base_path_var.get().strip().rstrip("/")
+        if not host or not user or not password or not base_path:
+            raise RuntimeError("云同步配置不完整（主机/用户/密码/远程路径）")
+
+        self.log(f"开始云服务器预检：{user}@{host}")
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=host, username=user, password=password, timeout=10)
+        try:
+            remote_dirs = (
+                f"{base_path}/src/data",
+                f"{base_path}/backend/config",
+            )
+            for remote_dir in remote_dirs:
+                _, stdout, stderr = client.exec_command(f"mkdir -p '{remote_dir}'")
+                _ = stdout.read()
+                err = stderr.read().decode("utf-8", "ignore").strip()
+                if err:
+                    raise RuntimeError(f"云服务器预检失败，目录不可写: {err}")
+
+            # 可选检查：若勾选了重启，提前确认 systemd 服务存在且状态可读。
+            if self.remote_restart_var.get():
+                _, stdout, stderr = client.exec_command("systemctl status jiadian-api.service >/dev/null 2>&1; echo $?")
+                code_text = stdout.read().decode("utf-8", "ignore").strip()
+                err = stderr.read().decode("utf-8", "ignore").strip()
+                if err:
+                    raise RuntimeError(f"云服务器预检失败（服务状态检查）: {err}")
+                if code_text not in {"0", "3", "4"}:
+                    raise RuntimeError("云服务器预检失败：无法确认 jiadian-api.service 状态")
+        finally:
+            client.close()
+        self.log("云服务器预检通过")
+
     def refresh_delete_resource_list(self):
         resources = load_json(RESOURCES_PATH, [])
         if not isinstance(resources, list):
@@ -560,10 +661,9 @@ class ImageUploaderGUI:
             is_batch = len(media_paths) > 1
             title_input = self.title_var.get().strip()
             desc_input = self.desc_var.get().strip()
+            author_input = self.author_var.get().strip()
             if not is_batch and material_type != "gif" and (not title_input or not desc_input):
                 raise RuntimeError("标题和描述不能为空")
-            if is_batch and material_type == "video" and not self.cover_path_var.get().strip() and not self.cover_url_var.get().strip():
-                raise RuntimeError("批量视频请提供封面文件或封面链接")
             if is_batch and material_type == "gif" and (self.cover_path_var.get().strip() or self.cover_url_var.get().strip()):
                 self.log("批量 GIF 模式已忽略手动封面设置，将自动提取每个 GIF 第一帧。")
 
@@ -578,6 +678,12 @@ class ImageUploaderGUI:
             cover_path_raw = self.cover_path_var.get().strip()
             cover_url_fallback = self.cover_url_var.get().strip()
             shared_download_url = self.download_var.get().strip()
+
+            if material_type == "video":
+                if cover_path_raw and not Path(cover_path_raw).exists():
+                    raise RuntimeError("选择的视频封面文件不存在")
+                if self.auto_sync_var.get():
+                    self._preflight_remote_sync()
 
             for media_path in media_paths:
                 if not media_path.exists():
@@ -602,6 +708,16 @@ class ImageUploaderGUI:
                     video_region = self.video_region_var.get().strip()
                     if not video_bucket:
                         raise RuntimeError("视频 Bucket 不能为空")
+                    cover_bucket = self.video_cover_bucket_var.get().strip()
+                    cover_region = self.video_cover_region_var.get().strip()
+                    if not cover_bucket:
+                        raise RuntimeError("视频封面 Bucket 不能为空")
+
+                    auto_cover_bytes = None
+                    if not cover_path_raw and not cover_url_fallback:
+                        self.log("未提供视频封面，先尝试自动提取第一帧...")
+                        auto_cover_bytes = extract_video_first_frame_jpeg_bytes(media_path)
+
                     video_ext = media_path.suffix.lower() or ".mp4"
                     video_key = make_object_key(suffix, video_ext, "vid")
                     self.log(f"开始上传视频 -> COS: {video_bucket}/{video_key}")
@@ -618,10 +734,6 @@ class ImageUploaderGUI:
                         cover_code = random_code(8)
                         cover_ext = cover_path.suffix.lower() or ".jpg"
                         image_key = make_object_key(cover_code, cover_ext, "cover")
-                        cover_bucket = self.video_cover_bucket_var.get().strip()
-                        cover_region = self.video_cover_region_var.get().strip()
-                        if not cover_bucket:
-                            raise RuntimeError("视频封面 Bucket 不能为空")
                         self.log(f"开始上传视频封面 -> COS: {cover_bucket}/{image_key}")
                         cover_client = self._build_cos_client(cover_region)
                         with cover_path.open("rb") as f:
@@ -632,7 +744,12 @@ class ImageUploaderGUI:
                         image_key = cover_url_fallback
                         image_map.pop(str(rid), None)
                     else:
-                        raise RuntimeError("视频素材请上传封面图，或填写封面链接")
+                        cover_code = random_code(8)
+                        image_key = make_object_key(cover_code, ".jpg", "cover")
+                        self.log(f"未提供视频封面，自动提取第一帧并上传 -> {cover_bucket}/{image_key}")
+                        cover_client = self._build_cos_client(cover_region)
+                        cover_client.put_object(Bucket=cover_bucket, Body=auto_cover_bytes, Key=image_key)
+                        image_map[str(rid)] = image_key
 
                     if not download_url:
                         video_base = self.video_public_base_var.get().strip().rstrip("/")
@@ -717,6 +834,8 @@ class ImageUploaderGUI:
                 target = {"id": rid}
                 target["title"] = title
                 target["description"] = desc
+                if author_input:
+                    target["author"] = author_input
                 target["size"] = size
                 target["image"] = image_key
                 target["download"] = download_url
