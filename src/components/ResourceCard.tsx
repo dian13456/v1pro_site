@@ -37,12 +37,22 @@ function ResourceCardComponent({
     );
   }
 
-  const materialLabel = resource.materialType === "image" ? "图片素材" : "V1PRO素材包";
+  const materialLabel =
+    resource.materialType === "image"
+      ? "图片素材"
+      : resource.materialType === "video"
+        ? "视频素材"
+        : "V1PRO素材包";
   const [signedImageUrl, setSignedImageUrl] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
-    const fallbackUrl = /^https?:\/\//i.test(resource.download) ? resource.download : resource.image;
+    const fallbackUrl =
+      resource.materialType === "video"
+        ? resource.image
+        : /^https?:\/\//i.test(resource.download)
+          ? resource.download
+          : resource.image;
     createImageUrl(resource.id, fallbackUrl)
       .then((url) => {
         if (!cancelled) {
@@ -89,7 +99,7 @@ function ResourceCardComponent({
           onClick={() => onDownload(resource)}
           className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
         >
-          {downloading ? "生成下载链接..." : resource.materialType === "image" ? "下载" : "下载素材"}
+          {downloading ? "生成下载链接..." : resource.materialType === "image" || resource.materialType === "video" ? "下载" : "下载素材"}
         </button>
         <button
           type="button"

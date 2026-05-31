@@ -1,5 +1,5 @@
 export type ResourceCategory = "all" | "gif" | "driver" | "firmware" | "software" | "manual";
-export type MaterialType = "image" | "v1pro-pack";
+export type MaterialType = "image" | "video" | "v1pro-pack";
 export type MaterialTypeFilter = "all" | MaterialType;
 
 export interface ResourceItem {

@@ -196,6 +196,7 @@ export default function ResourcesPage() {
           {[
             { value: "all", label: "全部类型" },
             { value: "image", label: "图片素材" },
+            { value: "video", label: "视频素材" },
             { value: "v1pro-pack", label: "V1PRO素材包" },
           ].map((item) => {
             const active = materialType === item.value;

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,6 +162,37 @@ func isSoftwareObjectKey(objectKey string) bool {
 	return strings.HasSuffix(key, ".exe")
 }
 
+func isVideoObjectKey(objectKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(objectKey))
+	return strings.HasSuffix(key, ".mp4") ||
+		strings.HasSuffix(key, ".mov") ||
+		strings.HasSuffix(key, ".m4v") ||
+		strings.HasSuffix(key, ".avi") ||
+		strings.HasSuffix(key, ".mkv") ||
+		strings.HasSuffix(key, ".webm") ||
+		strings.HasSuffix(key, ".flv")
+}
+
+func normalizeObjectKey(raw string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(key), "http://") || strings.HasPrefix(strings.ToLower(key), "https://") {
+		parsed, err := url.Parse(key)
+		if err == nil {
+			decodedPath, decodeErr := url.PathUnescape(parsed.Path)
+			if decodeErr == nil {
+				key = decodedPath
+			} else {
+				key = parsed.Path
+			}
+		}
+	}
+	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
+	return key
+}
+
 func verifyToken(token string, jwtSecret string) bool {
 	payload, signature, ok := splitToken(token)
 	if !ok {
@@ -256,6 +288,22 @@ func main() {
 	if softwareCOSSecretKey == "" {
 		softwareCOSSecretKey = cosSecretKey
 	}
+	videoCOSBucket := os.Getenv("VIDEO_COS_BUCKET")
+	if videoCOSBucket == "" {
+		videoCOSBucket = "video-1311844229"
+	}
+	videoCOSRegion := os.Getenv("VIDEO_COS_REGION")
+	if videoCOSRegion == "" {
+		videoCOSRegion = "ap-guangzhou"
+	}
+	videoCOSSecretID := os.Getenv("VIDEO_COS_SECRET_ID")
+	if videoCOSSecretID == "" {
+		videoCOSSecretID = cosSecretID
+	}
+	videoCOSSecretKey := os.Getenv("VIDEO_COS_SECRET_KEY")
+	if videoCOSSecretKey == "" {
+		videoCOSSecretKey = cosSecretKey
+	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
@@ -328,6 +376,15 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("init software cos signer failed: %v", err)
+	}
+	videoSigner, err := service.NewCOSSigner(
+		videoCOSBucket,
+		videoCOSRegion,
+		videoCOSSecretID,
+		videoCOSSecretKey,
+	)
+	if err != nil {
+		log.Fatalf("init video cos signer failed: %v", err)
 	}
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
@@ -447,7 +504,8 @@ func main() {
 			return
 		}
 
-		objectKey, ok := mapping[id]
+		rawObjectKey, ok := mapping[id]
+		objectKey := normalizeObjectKey(rawObjectKey)
 		if !ok || objectKey == "" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 			return
@@ -456,6 +514,8 @@ func main() {
 		selectedSigner := signer
 		if isSoftwareObjectKey(objectKey) {
 			selectedSigner = softwareSigner
+		} else if isVideoObjectKey(objectKey) {
+			selectedSigner = videoSigner
 		}
 
 		url, signErr := selectedSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
