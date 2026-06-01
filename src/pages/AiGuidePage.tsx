@@ -125,8 +125,8 @@ export default function AiGuidePage() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
-          title="AI 助手"
-          subtitle="用自然语言描述需求，智能推荐适合 1.9 寸横屏的素材。"
+          title="佳点电子资源中心"
+          subtitle="面向 1.9 寸（320×170 横屏）素材商店，支持 GIF、驱动、固件、软件与说明书下载。"
           rightSlot={
             <div className="flex flex-wrap items-center gap-2">
               <SiteNav />
