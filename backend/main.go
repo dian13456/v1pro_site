@@ -1017,7 +1017,7 @@ func main() {
 		})
 	})
 
-	handleResource := func(c *gin.Context, id string) {
+	handleResource := func(c *gin.Context, id string, previewOnly bool) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret)
 		if !ok {
@@ -1033,22 +1033,29 @@ func main() {
 		}
 
 		now := time.Now()
-		downloadsMu.Lock()
-		window, totalCount, weeklyCount, limitMsg := downloads.attemptDeviceDownload(serial, id, now)
-		weekKey := downloads.WeekKey
-		saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
-		downloadsMu.Unlock()
-		if limitMsg != "" {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":       limitMsg,
-				"hourlyCount": window.HourCount,
-				"dailyCount":  window.DayCount,
-			})
-			return
-		}
-		if saveErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
-			return
+		var window deviceDownloadWindow
+		var totalCount int
+		var weeklyCount int
+		var weekKey string
+		if !previewOnly {
+			downloadsMu.Lock()
+			var limitMsg string
+			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
+			weekKey = downloads.WeekKey
+			saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+			downloadsMu.Unlock()
+			if limitMsg != "" {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":       limitMsg,
+					"hourlyCount": window.HourCount,
+					"dailyCount":  window.DayCount,
+				})
+				return
+			}
+			if saveErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
+				return
+			}
 		}
 
 		selectedSigner := signer
@@ -1063,6 +1070,11 @@ func main() {
 		url, signErr := selectedSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign url failed"})
+			return
+		}
+
+		if previewOnly {
+			c.JSON(http.StatusOK, gin.H{"url": url})
 			return
 		}
 
@@ -1184,10 +1196,10 @@ func main() {
 	}
 
 	router.GET("/api/resource/:id", func(c *gin.Context) {
-		handleResource(c, c.Param("id"))
+		handleResource(c, c.Param("id"), c.Query("preview") == "1")
 	})
 	router.GET("/api/resource/", func(c *gin.Context) {
-		handleResource(c, c.Query("id"))
+		handleResource(c, c.Query("id"), c.Query("preview") == "1")
 	})
 	router.GET("/api/image/:id", func(c *gin.Context) {
 		handleImage(c, c.Param("id"), c.Query("download") == "1")

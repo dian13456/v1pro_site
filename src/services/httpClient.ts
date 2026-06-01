@@ -262,15 +262,22 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     if (!auth.startsWith("Bearer dev-token-")) {
       return { error: "token 无效" };
     }
-    const resourceId = parseQuery(path).get("id") || "0";
-    const stats = recordDevDeviceDownload(serial, resourceId);
-    if ("error" in stats) {
-      return stats;
-    }
+    const query = parseQuery(path);
+    const resourceId = query.get("id") || "0";
+    const forDownload = query.get("preview") !== "1";
     const expires = Math.floor(Date.now() / 1000) + 600;
+    if (forDownload) {
+      const stats = recordDevDeviceDownload(serial, resourceId);
+      if ("error" in stats) {
+        return stats;
+      }
+      return {
+        url: `https://example.com/dev-resource/${resourceId}?exp=${expires}&sig=dev`,
+        downloadStats: stats,
+      };
+    }
     return {
       url: `https://example.com/dev-resource/${resourceId}?exp=${expires}&sig=dev`,
-      downloadStats: stats,
     };
   }
 

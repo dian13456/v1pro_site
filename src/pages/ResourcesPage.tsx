@@ -216,7 +216,7 @@ export default function ResourcesPage() {
       const downloadResult =
         resource.materialType === "image"
           ? await createImageUrl(resource.id, resource.image, { forDownload: true })
-          : await createDownloadUrl(resource.id, resource.download);
+          : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
       applyDownloadStats(resource.id, downloadResult.stats);
       window.open(downloadResult.url || resource.download, "_blank", "noopener,noreferrer");
     } catch (err) {
@@ -279,9 +279,11 @@ export default function ResourcesPage() {
     try {
       setPlayingId(resource.id);
       setErrorMessage("");
-      const signedUrl = await createDownloadUrl(resource.id, resource.download);
+      const playResult = await createDownloadUrl(resource.id, resource.download, {
+        forDownload: false,
+      });
       setPlayingResourceId(resource.id);
-      setPlayingUrl(signedUrl || resource.download);
+      setPlayingUrl(playResult.url || resource.download);
     } catch (err) {
       const message = (err as Error)?.message || "播放链接生成失败";
       setErrorMessage(message);

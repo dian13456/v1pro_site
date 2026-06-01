@@ -19,8 +19,10 @@ interface GinResourceResponse {
 
 export async function createDownloadUrl(
   resourceId: number,
-  fallbackDownloadUrl?: string
+  fallbackDownloadUrl?: string,
+  options: { forDownload?: boolean } = {}
 ): Promise<SignedDownloadResult> {
+  const forDownload = options.forDownload === true;
   const auth = getAuthState();
   if (!hasValidLocalAuth() || !auth?.token) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -34,12 +36,18 @@ export async function createDownloadUrl(
     if (!fallbackDownloadUrl) {
       throw new Error("静态模式下缺少下载地址");
     }
-    const stats = recordLocalDeviceDownload(auth.serial, resourceId);
-    return { url: fallbackDownloadUrl, stats };
+    if (forDownload) {
+      const stats = recordLocalDeviceDownload(auth.serial, resourceId);
+      return { url: fallbackDownloadUrl, stats };
+    }
+    return { url: fallbackDownloadUrl };
   }
 
   try {
-    const signed = await apiFetch<GinResourceResponse>(`/api/resource/?id=${resourceId}`, {
+    const query = forDownload
+      ? `/api/resource/?id=${resourceId}`
+      : `/api/resource/?id=${resourceId}&preview=1`;
+    const signed = await apiFetch<GinResourceResponse>(query, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${auth.token}`,
