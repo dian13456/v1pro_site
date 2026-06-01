@@ -1,5 +1,4 @@
 import resourceData from "../data/resources.json";
-import { COLUMN_TAG_OPTIONS, type ColumnTagId } from "../data/columnTags";
 import type { ResourceItem } from "../types/resource";
 import { API_BASE } from "./httpClient";
 
@@ -13,7 +12,7 @@ type ResourceRecord = Partial<ResourceItem> & {
   download?: string;
   category?: ResourceItem["category"];
   materialType?: ResourceItem["materialType"];
-  columnTag?: ColumnTagId;
+  columnTag?: string;
   updatedAt?: string;
 };
 
@@ -38,14 +37,14 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
   }
 
   const updated = item.updatedAt || new Date().toISOString();
-  const validColumnTags = new Set<ColumnTagId>(COLUMN_TAG_OPTIONS.map((entry) => entry.id));
+  const columnTag = (item.columnTag || "").trim();
 
   return {
     id: item.id,
     title: item.title,
     description: item.description,
     author: (item.author || "").trim() || undefined,
-    columnTag: item.columnTag && validColumnTags.has(item.columnTag) ? item.columnTag : undefined,
+    columnTag: columnTag || undefined,
     size: item.size || "未知",
     image: toAbsoluteUrl(item.image),
     download: toAbsoluteUrl(item.download),

@@ -123,6 +123,18 @@ func loadResourceCatalog(path string) ([]map[string]any, error) {
 	return list, nil
 }
 
+func loadColumnTags(path string) ([]map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func loadLikesStore(path string) (likesStore, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -469,6 +481,10 @@ func main() {
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
 	}
+	columnTagsPath := os.Getenv("COLUMN_TAGS_PATH")
+	if columnTagsPath == "" {
+		columnTagsPath = filepath.Join("..", "src", "data", "columnTags.json")
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -580,6 +596,15 @@ func main() {
 		items, err := loadResourceCatalog(resourcesPath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
+			return
+		}
+		c.JSON(http.StatusOK, items)
+	})
+
+	router.GET("/api/column-tags", func(c *gin.Context) {
+		items, err := loadColumnTags(columnTagsPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "load column tags failed"})
 			return
 		}
 		c.JSON(http.StatusOK, items)

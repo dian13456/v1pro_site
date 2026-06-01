@@ -34,6 +34,7 @@ RESTART_CMD = os.getenv(
 
 CONFIG_PAIRS = [
     (ROOT / "src/data/resources.json", f"{BASE}/src/data/resources.json"),
+    (ROOT / "src/data/columnTags.json", f"{BASE}/src/data/columnTags.json"),
     (ROOT / "backend/config/image_map.json", f"{BASE}/backend/config/image_map.json"),
     (ROOT / "backend/config/resource_map.json", f"{BASE}/backend/config/resource_map.json"),
 ]

@@ -8,7 +8,6 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
-import { COLUMN_TAG_FILTER_OPTIONS } from "../data/columnTags";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
 import { createImageUrl } from "../services/imageService";
@@ -47,6 +46,7 @@ export default function ResourcesPage() {
     setMaterialType,
     columnTag,
     setColumnTag,
+    columnTagFilterOptions,
     sortMode,
     setSortMode,
   } = useResourceCatalog();
@@ -286,7 +286,7 @@ export default function ResourcesPage() {
         </section>
         <section className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-500 dark:text-slate-300">专栏</span>
-          {COLUMN_TAG_FILTER_OPTIONS.map((item) => {
+          {columnTagFilterOptions.map((item) => {
             const active = columnTag === item.value;
             return (
               <button

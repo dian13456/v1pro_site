@@ -28,6 +28,7 @@ except Exception:  # pragma: no cover - runtime dependency check
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESOURCES_PATH = PROJECT_ROOT / "src" / "data" / "resources.json"
+COLUMN_TAGS_PATH = PROJECT_ROOT / "src" / "data" / "columnTags.json"
 IMAGE_MAP_PATH = PROJECT_ROOT / "backend" / "config" / "image_map.json"
 RESOURCE_MAP_PATH = PROJECT_ROOT / "backend" / "config" / "resource_map.json"
 
@@ -44,6 +45,41 @@ def save_json(path: Path, value):
     with path.open("w", encoding="utf-8") as f:
         json.dump(value, f, ensure_ascii=False, indent=2)
         f.write("\n")
+
+
+def load_column_tags() -> list[dict]:
+    default_tags = [
+        {"id": "yuexin-miao", "label": "月薪喵", "keywords": ["月薪喵", "月薪"]},
+        {"id": "doro", "label": "doro", "keywords": ["doro"]},
+        {"id": "feibi", "label": "菲比", "keywords": ["菲比"]},
+    ]
+    tags = load_json(COLUMN_TAGS_PATH, default_tags)
+    if not isinstance(tags, list):
+        return default_tags
+    return tags
+
+
+def save_column_tags(tags: list[dict]) -> None:
+    save_json(COLUMN_TAGS_PATH, tags)
+
+
+def make_column_id(label: str, existing_ids: set[str]) -> str:
+    import hashlib
+
+    digest = hashlib.sha1(label.encode("utf-8")).hexdigest()[:10]
+    candidate = f"col-{digest}"
+    suffix = 1
+    while candidate in existing_ids:
+        candidate = f"col-{digest}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def parse_keywords(raw: str, fallback_label: str) -> list[str]:
+    keywords = [part.strip() for part in raw.replace("，", ",").split(",") if part.strip()]
+    if keywords:
+        return keywords
+    return [fallback_label] if fallback_label else []
 
 
 def random_code(length: int = 8) -> str:
@@ -193,6 +229,9 @@ class ImageUploaderGUI:
         self.desc_var = tk.StringVar()
         self.author_var = tk.StringVar()
         self.column_tag_var = tk.StringVar(value="")
+        self.column_tag_id_by_label: dict[str, str] = {"": ""}
+        self.new_column_label_var = tk.StringVar()
+        self.new_column_keywords_var = tk.StringVar()
         self.size_var = tk.StringVar(value="未知")
         self.category_var = tk.StringVar(value="gif")
         self.download_var = tk.StringVar()
@@ -212,6 +251,7 @@ class ImageUploaderGUI:
 
         self._build_ui()
         self.regenerate_random_code()
+        self.refresh_column_tag_manager()
         self.refresh_delete_resource_list()
         self.material_type_var.trace_add("write", lambda *_: self._on_material_type_change())
 
@@ -221,9 +261,11 @@ class ImageUploaderGUI:
 
         upload_tab = ttk.Frame(notebook, padding=2)
         cos_tab = ttk.Frame(notebook, padding=2)
+        column_tab = ttk.Frame(notebook, padding=2)
         delete_tab = ttk.Frame(notebook, padding=2)
         notebook.add(upload_tab, text="上传与同步")
         notebook.add(cos_tab, text="COS配置")
+        notebook.add(column_tab, text="专栏管理")
         notebook.add(delete_tab, text="删除资源")
 
         top = ttk.LabelFrame(cos_tab, text="COS 配置（单独处理图片/视频/GIF）", padding=10)
@@ -319,13 +361,14 @@ class ImageUploaderGUI:
         ttk.Entry(resource, textvariable=self.author_var).grid(row=5, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
         ttk.Label(resource, text="专栏标签(可选)").grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Combobox(
+        self.column_tag_combo = ttk.Combobox(
             resource,
             textvariable=self.column_tag_var,
-            values=("", "yuexin-miao", "doro", "feibi"),
+            values=("",),
             state="readonly",
-        ).grid(row=6, column=1, sticky="ew", padx=(8, 12), pady=2)
-        ttk.Label(resource, text="月薪喵 / doro / 菲比").grid(row=6, column=2, columnspan=2, sticky="w", pady=2)
+        )
+        self.column_tag_combo.grid(row=6, column=1, sticky="ew", padx=(8, 12), pady=2)
+        ttk.Label(resource, text="可在「专栏管理」页新增").grid(row=6, column=2, columnspan=2, sticky="w", pady=2)
 
         ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=7, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.download_var).grid(row=7, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
@@ -374,6 +417,38 @@ class ImageUploaderGUI:
         ttk.Entry(sync_frame, textvariable=self.remote_restart_cmd_var).grid(
             row=4, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
         )
+
+        column_frame = ttk.LabelFrame(column_tab, text="专栏标签管理", padding=10)
+        column_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        column_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            column_frame,
+            text="新增专栏后写入 src/data/columnTags.json。前端会从 API 读取；勾选云同步后也会上传到服务器。",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
+        ttk.Label(column_frame, text="专栏名称").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(column_frame, textvariable=self.new_column_label_var).grid(
+            row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=2
+        )
+
+        ttk.Label(column_frame, text="匹配关键词").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(column_frame, textvariable=self.new_column_keywords_var).grid(
+            row=2, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=2
+        )
+        ttk.Label(column_frame, text="多个关键词用逗号分隔，留空则默认使用专栏名称").grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+
+        column_actions = ttk.Frame(column_frame)
+        column_actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        ttk.Button(column_actions, text="添加专栏", command=self.add_column_tag).pack(side=tk.LEFT)
+        ttk.Button(column_actions, text="删除选中", command=self.delete_selected_column_tag).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(column_actions, text="刷新列表", command=self.refresh_column_tag_manager).pack(side=tk.LEFT, padx=(8, 0))
+
+        self.column_listbox = tk.Listbox(column_frame, height=12, exportselection=False)
+        self.column_listbox.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(0, 8))
+        column_frame.rowconfigure(5, weight=1)
 
         delete_frame = ttk.LabelFrame(delete_tab, text="资源删除（会同时清理映射）", padding=10)
         delete_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
@@ -430,6 +505,77 @@ class ImageUploaderGUI:
         self.log_text.insert(tk.END, f"{text}\n")
         self.log_text.see(tk.END)
         self.root.update_idletasks()
+
+    def refresh_column_tag_choices(self):
+        tags = load_column_tags()
+        labels = [""] + [str(item.get("label", "")).strip() for item in tags if str(item.get("label", "")).strip()]
+        self.column_tag_id_by_label = {"": ""}
+        for item in tags:
+            label = str(item.get("label", "")).strip()
+            tag_id = str(item.get("id", "")).strip()
+            if label and tag_id:
+                self.column_tag_id_by_label[label] = tag_id
+        self.column_tag_combo["values"] = labels
+        if self.column_tag_var.get() not in labels:
+            self.column_tag_var.set("")
+
+    def refresh_column_tag_manager(self):
+        self.refresh_column_tag_choices()
+        self.column_listbox.delete(0, tk.END)
+        for item in load_column_tags():
+            label = str(item.get("label", "")).strip()
+            tag_id = str(item.get("id", "")).strip()
+            keywords = item.get("keywords") or []
+            keyword_text = "、".join(str(keyword) for keyword in keywords)
+            self.column_listbox.insert(tk.END, f"{label} | {tag_id} | {keyword_text}")
+
+    def get_selected_column_tag_id(self) -> str:
+        label = self.column_tag_var.get().strip()
+        return self.column_tag_id_by_label.get(label, "")
+
+    def add_column_tag(self):
+        label = self.new_column_label_var.get().strip()
+        if not label:
+            messagebox.showerror("失败", "请填写专栏名称")
+            return
+
+        tags = load_column_tags()
+        existing_labels = {str(item.get("label", "")).strip() for item in tags}
+        if label in existing_labels:
+            messagebox.showerror("失败", f"专栏「{label}」已存在")
+            return
+
+        keywords = parse_keywords(self.new_column_keywords_var.get(), label)
+        existing_ids = {str(item.get("id", "")).strip() for item in tags if str(item.get("id", "")).strip()}
+        tag_id = make_column_id(label, existing_ids)
+        tags.append({"id": tag_id, "label": label, "keywords": keywords})
+        save_column_tags(tags)
+        self.new_column_label_var.set("")
+        self.new_column_keywords_var.set("")
+        self.refresh_column_tag_manager()
+        self.column_tag_var.set(label)
+        self.log(f"已新增专栏: {label} ({tag_id})")
+
+    def delete_selected_column_tag(self):
+        selection = self.column_listbox.curselection()
+        if not selection:
+            messagebox.showerror("失败", "请先选择要删除的专栏")
+            return
+
+        tags = load_column_tags()
+        index = selection[0]
+        if index < 0 or index >= len(tags):
+            return
+
+        target = tags[index]
+        label = str(target.get("label", "")).strip() or target.get("id", "")
+        if not messagebox.askyesno("确认删除", f"确定删除专栏「{label}」？"):
+            return
+
+        tags.pop(index)
+        save_column_tags(tags)
+        self.refresh_column_tag_manager()
+        self.log(f"已删除专栏: {label}")
 
     def choose_media(self):
         material_type = self.material_type_var.get().strip()
@@ -509,6 +655,7 @@ class ImageUploaderGUI:
 
         upload_pairs = [
             (RESOURCES_PATH, f"{base_path}/src/data/resources.json"),
+            (COLUMN_TAGS_PATH, f"{base_path}/src/data/columnTags.json"),
             (IMAGE_MAP_PATH, f"{base_path}/backend/config/image_map.json"),
             (RESOURCE_MAP_PATH, f"{base_path}/backend/config/resource_map.json"),
         ]
@@ -672,7 +819,7 @@ class ImageUploaderGUI:
             title_input = self.title_var.get().strip()
             desc_input = self.desc_var.get().strip()
             author_input = self.author_var.get().strip()
-            column_tag_input = self.column_tag_var.get().strip()
+            column_tag_input = self.get_selected_column_tag_id()
             if not is_batch and material_type != "gif" and (not title_input or not desc_input):
                 raise RuntimeError("标题和描述不能为空")
             if is_batch and material_type == "gif" and (self.cover_path_var.get().strip() or self.cover_url_var.get().strip()):
