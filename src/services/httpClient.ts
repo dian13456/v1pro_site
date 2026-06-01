@@ -3,6 +3,9 @@ import { isAllowedUsbDevice } from "../config/allowedDevices";
 const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 const DEV_LIKE_COUNTS_KEY = "jiadian_dev_like_counts";
 const DEV_LIKED_DEVICES_KEY = "jiadian_dev_like_devices";
+const DEV_DOWNLOAD_TOTAL_KEY = "jiadian_dev_download_total_counts";
+const DEV_DOWNLOAD_WEEKLY_KEY = "jiadian_dev_download_weekly_counts";
+const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -100,6 +103,47 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       alreadyLiked,
       liked: true,
       likeCount: Math.max(0, Number(counts[resourceId] || 0)),
+    };
+  }
+
+  if (path === "/api/resource-downloads") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const weekKey = localStorage.getItem(DEV_DOWNLOAD_WEEK_KEY) || "dev-week";
+    const totalRaw = localStorage.getItem(DEV_DOWNLOAD_TOTAL_KEY);
+    const weeklyRaw = localStorage.getItem(DEV_DOWNLOAD_WEEKLY_KEY);
+    return {
+      success: true,
+      weekKey,
+      totalCounts: totalRaw ? (JSON.parse(totalRaw) as Record<string, number>) : {},
+      weeklyCounts: weeklyRaw ? (JSON.parse(weeklyRaw) as Record<string, number>) : {},
+    };
+  }
+
+  if (path === "/api/resource-download") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const resourceId = String(body.resourceId || "");
+    if (!resourceId) {
+      return { success: false, message: "resourceId 不能为空" };
+    }
+    const weekKey = localStorage.getItem(DEV_DOWNLOAD_WEEK_KEY) || "dev-week";
+    const totalCounts = localStorage.getItem(DEV_DOWNLOAD_TOTAL_KEY);
+    const weeklyCounts = localStorage.getItem(DEV_DOWNLOAD_WEEKLY_KEY);
+    const totals = totalCounts ? (JSON.parse(totalCounts) as Record<string, number>) : {};
+    const weekly = weeklyCounts ? (JSON.parse(weeklyCounts) as Record<string, number>) : {};
+    totals[resourceId] = Math.max(0, Number(totals[resourceId] || 0)) + 1;
+    weekly[resourceId] = Math.max(0, Number(weekly[resourceId] || 0)) + 1;
+    localStorage.setItem(DEV_DOWNLOAD_WEEK_KEY, weekKey);
+    localStorage.setItem(DEV_DOWNLOAD_TOTAL_KEY, JSON.stringify(totals));
+    localStorage.setItem(DEV_DOWNLOAD_WEEKLY_KEY, JSON.stringify(weekly));
+    return {
+      success: true,
+      weekKey,
+      totalCount: totals[resourceId],
+      weeklyCount: weekly[resourceId],
     };
   }
 

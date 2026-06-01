@@ -10,6 +10,7 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
+import { fetchResourceDownloads, recordResourceDownload } from "../services/downloadStatsService";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { isStaticMode } from "../services/runtimeMode";
@@ -17,6 +18,7 @@ import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 
 const RANDOM_PAGE_SIZE = 4;
+const WEEKLY_TOP_LIMIT = 20;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
@@ -27,6 +29,9 @@ export default function ResourcesPage() {
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
+  const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
+  const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
+  const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [randomMode, setRandomMode] = useState(false);
@@ -51,14 +56,29 @@ export default function ResourcesPage() {
     setSortMode,
   } = useResourceCatalog();
   const sortedResources = useMemo(() => {
-    if (sortMode !== "hot") return filtered;
-    return [...filtered].sort((a, b) => {
-      const likeA = likeCounts[a.id] || 0;
-      const likeB = likeCounts[b.id] || 0;
-      if (likeA !== likeB) return likeB - likeA;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  }, [filtered, sortMode, likeCounts]);
+    if (sortMode === "hot") {
+      return [...filtered].sort((a, b) => {
+        const likeA = likeCounts[a.id] || 0;
+        const likeB = likeCounts[b.id] || 0;
+        if (likeA !== likeB) return likeB - likeA;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+    }
+    if (sortMode === "weeklyTop") {
+      return [...filtered]
+        .sort((a, b) => {
+          const weeklyA = weeklyDownloadCounts[a.id] || 0;
+          const weeklyB = weeklyDownloadCounts[b.id] || 0;
+          if (weeklyA !== weeklyB) return weeklyB - weeklyA;
+          const totalA = totalDownloadCounts[a.id] || 0;
+          const totalB = totalDownloadCounts[b.id] || 0;
+          if (totalA !== totalB) return totalB - totalA;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        })
+        .slice(0, WEEKLY_TOP_LIMIT);
+    }
+    return filtered;
+  }, [filtered, sortMode, likeCounts, weeklyDownloadCounts, totalDownloadCounts]);
   const totalItems = sortedResources.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
@@ -67,6 +87,13 @@ export default function ResourcesPage() {
     setRandomMode(false);
     setRandomItems([]);
   }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
+
+  useEffect(() => {
+    if (sortMode === "weeklyTop") {
+      setRandomMode(false);
+      setRandomItems([]);
+    }
+  }, [sortMode]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -78,9 +105,12 @@ export default function ResourcesPage() {
     if (randomMode) {
       return randomItems;
     }
+    if (sortMode === "weeklyTop") {
+      return sortedResources;
+    }
     const start = (currentPage - 1) * pageSize;
     return sortedResources.slice(start, start + pageSize);
-  }, [randomMode, randomItems, sortedResources, currentPage, pageSize]);
+  }, [randomMode, randomItems, sortMode, sortedResources, currentPage, pageSize]);
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -114,6 +144,16 @@ export default function ResourcesPage() {
       })
       .catch(() => {
         // Ignore like init errors, download flow handles auth failures explicitly.
+      });
+    fetchResourceDownloads()
+      .then((state) => {
+        if (!active) return;
+        setTotalDownloadCounts(state.totalCounts);
+        setWeeklyDownloadCounts(state.weeklyCounts);
+        setDownloadWeekKey(state.weekKey);
+      })
+      .catch(() => {
+        // Ignore download stats init errors.
       });
     return () => {
       active = false;
@@ -159,6 +199,20 @@ export default function ResourcesPage() {
         resource.materialType === "image"
           ? await createImageUrl(resource.id, resource.image)
           : await createDownloadUrl(resource.id, resource.download);
+      try {
+        const stats = await recordResourceDownload(resource.id);
+        setTotalDownloadCounts((prev) => ({
+          ...prev,
+          [resource.id]: stats.totalCount,
+        }));
+        setWeeklyDownloadCounts((prev) => ({
+          ...prev,
+          [resource.id]: stats.weeklyCount,
+        }));
+        setDownloadWeekKey(stats.weekKey);
+      } catch {
+        // Download should still proceed even if stats recording fails.
+      }
       window.open(signedUrl || resource.download, "_blank", "noopener,noreferrer");
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
@@ -309,6 +363,7 @@ export default function ResourcesPage() {
           {[
             { value: "latest", label: "最新优先" },
             { value: "hot", label: "热门排行" },
+            { value: "weeklyTop", label: "周下载TOP20" },
           ].map((item) => {
             const active = sortMode === item.value;
             return (
@@ -361,6 +416,10 @@ export default function ResourcesPage() {
           {randomMode ? (
             <span className="text-sm text-violet-700 dark:text-violet-200">
               随机推荐 {visibleItems.length} 张素材（从素材库随机抽取）
+            </span>
+          ) : sortMode === "weeklyTop" ? (
+            <span className="text-sm text-sky-700 dark:text-sky-200">
+              周下载 TOP20{downloadWeekKey ? `（${downloadWeekKey}）` : ""}，显示 {visibleItems.length} 张
             </span>
           ) : (
             <>
@@ -415,6 +474,9 @@ export default function ResourcesPage() {
                 liking={likingId === resource.id}
                 liked={likedIds.has(resource.id)}
                 likeCount={likeCounts[resource.id] || 0}
+                downloadCount={totalDownloadCounts[resource.id] || 0}
+                weeklyDownloadCount={weeklyDownloadCounts[resource.id] || 0}
+                showWeeklyDownloadCount={sortMode === "weeklyTop"}
               />
             ))}
           </section>
@@ -426,7 +488,7 @@ export default function ResourcesPage() {
           </div>
         ) : null}
 
-        {!loading && !randomMode && totalItems > 0 ? (
+        {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
           <section className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"

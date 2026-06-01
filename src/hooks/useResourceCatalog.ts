@@ -4,7 +4,7 @@ import { fetchResources } from "../services/resourceService";
 import { useColumnTags } from "./useColumnTags";
 import { resourceMatchesColumn } from "../utils/columnMatch";
 
-export type ResourceSortMode = "latest" | "hot";
+export type ResourceSortMode = "latest" | "hot" | "weeklyTop";
 
 export function useResourceCatalog() {
   const { columnTagOptions, columnTagFilterOptions, columnTagsLoading } = useColumnTags();

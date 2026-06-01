@@ -40,6 +40,16 @@ type likeRequest struct {
 	ResourceID string `json:"resourceId"`
 }
 
+type downloadsStore struct {
+	TotalCounts  map[string]int `json:"totalCounts"`
+	WeekKey      string         `json:"weekKey"`
+	WeeklyCounts map[string]int `json:"weeklyCounts"`
+}
+
+type downloadRequest struct {
+	ResourceID string `json:"resourceId"`
+}
+
 type runtimeResourceMap struct {
 	path        string
 	mu          sync.RWMutex
@@ -175,6 +185,80 @@ func saveLikesStore(path string, store likesStore) error {
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+func currentWeekKey(now time.Time) string {
+	year, week := now.ISOWeek()
+	return fmt.Sprintf("%d-W%02d", year, week)
+}
+
+func loadDownloadsStore(path string) (downloadsStore, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			now := time.Now()
+			return downloadsStore{
+				TotalCounts:  map[string]int{},
+				WeekKey:      currentWeekKey(now),
+				WeeklyCounts: map[string]int{},
+			}, nil
+		}
+		return downloadsStore{}, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		now := time.Now()
+		return downloadsStore{
+			TotalCounts:  map[string]int{},
+			WeekKey:      currentWeekKey(now),
+			WeeklyCounts: map[string]int{},
+		}, nil
+	}
+	var store downloadsStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		return downloadsStore{}, err
+	}
+	if store.TotalCounts == nil {
+		store.TotalCounts = map[string]int{}
+	}
+	if store.WeeklyCounts == nil {
+		store.WeeklyCounts = map[string]int{}
+	}
+	if strings.TrimSpace(store.WeekKey) == "" {
+		store.WeekKey = currentWeekKey(time.Now())
+	}
+	return store, nil
+}
+
+func saveDownloadsStore(path string, store downloadsStore) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return os.WriteFile(path, raw, 0o644)
+}
+
+func (store *downloadsStore) ensureCurrentWeek(now time.Time) {
+	weekKey := currentWeekKey(now)
+	if store.WeekKey != weekKey {
+		store.WeekKey = weekKey
+		store.WeeklyCounts = map[string]int{}
+	}
+}
+
+func (store *downloadsStore) recordDownload(resourceID string, now time.Time) {
+	store.ensureCurrentWeek(now)
+	if store.TotalCounts == nil {
+		store.TotalCounts = map[string]int{}
+	}
+	if store.WeeklyCounts == nil {
+		store.WeeklyCounts = map[string]int{}
+	}
+	store.TotalCounts[resourceID] = store.TotalCounts[resourceID] + 1
+	store.WeeklyCounts[resourceID] = store.WeeklyCounts[resourceID] + 1
 }
 
 func normalizeHexID(v string) string {
@@ -477,6 +561,10 @@ func main() {
 	if resourceLikesPath == "" {
 		resourceLikesPath = filepath.Join("config", "resource_likes.json")
 	}
+	resourceDownloadsPath := os.Getenv("RESOURCE_DOWNLOADS_PATH")
+	if resourceDownloadsPath == "" {
+		resourceDownloadsPath = filepath.Join("config", "resource_downloads.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -501,6 +589,10 @@ func main() {
 	likes, err := loadLikesStore(resourceLikesPath)
 	if err != nil {
 		log.Fatalf("load resource likes failed: %v", err)
+	}
+	downloads, err := loadDownloadsStore(resourceDownloadsPath)
+	if err != nil {
+		log.Fatalf("load resource downloads failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -559,6 +651,7 @@ func main() {
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
 	var likesMu sync.RWMutex
+	var downloadsMu sync.Mutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -682,6 +775,78 @@ func main() {
 			"alreadyLiked": alreadyLiked,
 			"liked":        true,
 			"likeCount":    likeCount,
+		})
+	})
+
+	router.GET("/api/resource-downloads", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		downloadsMu.Lock()
+		downloads.ensureCurrentWeek(time.Now())
+		totalCounts := make(map[string]int, len(downloads.TotalCounts))
+		for id, count := range downloads.TotalCounts {
+			if count < 0 {
+				count = 0
+			}
+			totalCounts[id] = count
+		}
+		weeklyCounts := make(map[string]int, len(downloads.WeeklyCounts))
+		for id, count := range downloads.WeeklyCounts {
+			if count < 0 {
+				count = 0
+			}
+			weeklyCounts[id] = count
+		}
+		weekKey := downloads.WeekKey
+		downloadsMu.Unlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":      true,
+			"weekKey":      weekKey,
+			"totalCounts":  totalCounts,
+			"weeklyCounts": weeklyCounts,
+		})
+	})
+
+	router.POST("/api/resource-download", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req downloadRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		resourceID := strings.TrimSpace(req.ResourceID)
+		if resourceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 不能为空"})
+			return
+		}
+
+		downloadsMu.Lock()
+		downloads.recordDownload(resourceID, time.Now())
+		totalCount := downloads.TotalCounts[resourceID]
+		weeklyCount := downloads.WeeklyCounts[resourceID]
+		weekKey := downloads.WeekKey
+		saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+		downloadsMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "下载统计保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":      true,
+			"weekKey":      weekKey,
+			"totalCount":   totalCount,
+			"weeklyCount":  weeklyCount,
 		})
 	})
 

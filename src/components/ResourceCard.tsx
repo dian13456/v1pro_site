@@ -15,6 +15,9 @@ interface ResourceCardProps {
   liking: boolean;
   liked: boolean;
   likeCount: number;
+  downloadCount: number;
+  weeklyDownloadCount: number;
+  showWeeklyDownloadCount?: boolean;
 }
 
 function ResourceCardComponent({
@@ -30,6 +33,9 @@ function ResourceCardComponent({
   liking,
   liked,
   likeCount,
+  downloadCount,
+  weeklyDownloadCount,
+  showWeeklyDownloadCount = false,
 }: ResourceCardProps) {
   if (resource.category === "software") {
     return (
@@ -96,9 +102,15 @@ function ResourceCardComponent({
         <div className="inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs text-white dark:bg-white dark:text-slate-900">
           {materialLabel}
         </div>
-        {resource.author ? (
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">上传人：{resource.author}</div>
-        ) : null}
+        <div className="flex flex-col items-end gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+          {showWeeklyDownloadCount && weeklyDownloadCount > 0 ? (
+            <div className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+              本周 {weeklyDownloadCount}
+            </div>
+          ) : null}
+          {downloadCount > 0 ? <div>总下载 {downloadCount}</div> : null}
+          {resource.author ? <div>上传人：{resource.author}</div> : null}
+        </div>
       </div>
       <div className="rounded-[1.4rem] bg-black p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition duration-300 group-hover:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.45),0_0_26px_-10px_rgba(56,189,248,0.8)]">
         <div className="overflow-hidden rounded-[1rem] bg-slate-900" style={{ aspectRatio: "320 / 170" }}>
