@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 
 const NAV_ITEMS = [
   { to: "/", label: "素材中心" },
+  { to: "/guide", label: "AI 导览" },
   { to: "/board", label: "留言板" },
 ];
 

@@ -83,6 +83,10 @@ type messagePostRequest struct {
 	Content string `json:"content"`
 }
 
+type aiGuideRequest struct {
+	Question string `json:"question"`
+}
+
 type runtimeResourceMap struct {
 	path        string
 	mu          sync.RWMutex
@@ -727,6 +731,13 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+	deepseekAPIKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	deepseekModel := strings.TrimSpace(os.Getenv("DEEPSEEK_MODEL"))
+	deepseekBaseURL := strings.TrimSpace(os.Getenv("DEEPSEEK_BASE_URL"))
+	deepseekClient := service.NewDeepSeekClient(deepseekAPIKey, deepseekModel, deepseekBaseURL)
+	if deepseekAPIKey == "" {
+		log.Printf("warn: DEEPSEEK_API_KEY not set, /api/ai-guide will use keyword fallback")
+	}
 
 	resourceMapStore, err := newRuntimeResourceMap(resourceMapPath)
 	if err != nil {
@@ -856,6 +867,60 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, items)
+	})
+
+	router.POST("/api/ai-guide", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req aiGuideRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		question := strings.TrimSpace(req.Question)
+		if question == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "question 不能为空"})
+			return
+		}
+
+		rawResources, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		rawTags, err := loadColumnTags(columnTagsPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "专栏标签加载失败"})
+			return
+		}
+
+		catalog := service.BuildAIGuideCatalog(rawResources, question)
+		columnSummary := service.BuildColumnTagSummary(rawTags)
+
+		mode := "fallback"
+		var result *service.AIGuideResult
+		if deepseekClient.APIKey != "" {
+			result, err = deepseekClient.GenerateGuide(c.Request.Context(), question, catalog, columnSummary)
+			if err != nil {
+				log.Printf("warn: deepseek ai guide failed: %v", err)
+				result = service.LocalAIGuideFallback(question, catalog)
+			} else {
+				mode = "deepseek"
+			}
+		} else {
+			result = service.LocalAIGuideFallback(question, catalog)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"answer":      result.Answer,
+			"resourceIds": result.ResourceIDs,
+			"mode":        mode,
+		})
 	})
 
 	router.GET("/api/resource-likes", func(c *gin.Context) {

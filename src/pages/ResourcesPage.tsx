@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { SearchBar } from "../components/SearchBar";
@@ -25,6 +25,7 @@ const WEEKLY_TOP_LIMIT = 20;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -58,6 +59,15 @@ export default function ResourcesPage() {
     sortMode,
     setSortMode,
   } = useResourceCatalog();
+
+  useEffect(() => {
+    const search = searchParams.get("search")?.trim();
+    if (search) {
+      setKeyword(search);
+      setCurrentPage(1);
+    }
+  }, [searchParams, setKeyword]);
+
   const sortedResources = useMemo(() => {
     if (sortMode === "hot") {
       return [...filtered].sort((a, b) => {

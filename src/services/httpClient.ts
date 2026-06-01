@@ -367,6 +367,22 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     return { success: true, messages, total: all.length };
   }
 
+  if (path === "/api/ai-guide") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const question = String(body.question || "").trim();
+    if (!question) {
+      return { success: false, message: "question 不能为空" };
+    }
+    return {
+      success: true,
+      answer: `（开发模式）已收到你的问题：「${question}」。上线后将由 DeepSeek 返回更智能的导览结果。`,
+      resourceIds: [],
+      mode: "fallback",
+    };
+  }
+
   return null;
 }
 

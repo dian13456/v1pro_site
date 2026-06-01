@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { TermsAgreementModal } from "./components/TermsAgreementModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
+import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
@@ -52,6 +53,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <MessageBoardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/guide"
+          element={
+            <ProtectedRoute>
+              <AiGuidePage />
             </ProtectedRoute>
           }
         />

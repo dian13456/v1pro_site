@@ -1,0 +1,221 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { SiteFooter } from "../components/SiteFooter";
+import { SiteHeader } from "../components/SiteHeader";
+import { SiteNav } from "../components/SiteNav";
+import { ThemeToggle } from "../components/ThemeToggle";
+import { useThemeMode } from "../hooks/useThemeMode";
+import { MAX_QUESTION_LENGTH, askAiGuide } from "../services/aiGuideService";
+import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { fetchResources } from "../services/resourceService";
+import type { AiGuideMessage } from "../types/aiGuide";
+import type { ResourceItem } from "../types/resource";
+
+const STARTER_PROMPTS = [
+  "有什么适合横屏的可爱 GIF？",
+  "推荐几个视频素材",
+  "月薪喵专栏有什么？",
+  "最近上传了哪些素材？",
+];
+
+export default function AiGuidePage() {
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useThemeMode();
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [messages, setMessages] = useState<AiGuideMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "你好，我是 AI 内容导览。你可以告诉我想要的主题、角色、风格或素材类型，我会从素材库中帮你推荐合适的内容。",
+    },
+  ]);
+  const [resources, setResources] = useState<ResourceItem[]>([]);
+
+  useEffect(() => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    void fetchResources().then(setResources).catch(() => setResources([]));
+  }, [navigate]);
+
+  const resourceMap = useMemo(() => {
+    const map = new Map<number, ResourceItem>();
+    for (const item of resources) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [resources]);
+
+  const handleLogout = () => {
+    clearAuthState();
+    navigate("/auth", { replace: true });
+  };
+
+  const submitQuestion = async (question: string) => {
+    const trimmed = question.trim();
+    if (!trimmed || loading) return;
+
+    setLoading(true);
+    setErrorMessage("");
+    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    setInput("");
+
+    try {
+      const result = await askAiGuide(trimmed);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: result.answer || "已为你整理相关素材。",
+          resourceIds: result.resourceIds,
+          mode: result.mode,
+        },
+      ]);
+    } catch (err) {
+      const message = (err as Error)?.message || "AI 导览失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openInCatalog = (resource: ResourceItem) => {
+    const keyword = resource.title.trim() || resource.description.trim();
+    navigate(`/?search=${encodeURIComponent(keyword)}`);
+  };
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-6 lg:px-8">
+        <SiteHeader
+          title="AI 内容导览"
+          subtitle="由 DeepSeek 驱动的素材推荐助手，帮你快速找到适合 1.9 寸横屏的内容。"
+          rightSlot={
+            <div className="flex flex-wrap items-center gap-2">
+              <SiteNav />
+              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
+              >
+                退出认证
+              </button>
+            </div>
+          }
+        />
+
+        <section className="mb-4 flex flex-wrap gap-2">
+          {STARTER_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              disabled={loading}
+              onClick={() => void submitQuestion(prompt)}
+              className="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-60 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200"
+            >
+              {prompt}
+            </button>
+          ))}
+        </section>
+
+        <section className="space-y-4 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+          {messages.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                  message.role === "user"
+                    ? "bg-cyan-600 text-white"
+                    : "border border-white/20 bg-white/80 text-slate-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200"
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === "assistant" && message.mode ? (
+                  <p className="mt-2 text-[11px] opacity-70">
+                    {message.mode === "deepseek" ? "DeepSeek 智能推荐" : "关键词匹配推荐"}
+                  </p>
+                ) : null}
+                {message.resourceIds && message.resourceIds.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {message.resourceIds.map((id) => {
+                      const resource = resourceMap.get(id);
+                      if (!resource) {
+                        return (
+                          <div
+                            key={id}
+                            className="rounded-xl border border-white/20 bg-white/60 px-3 py-2 text-xs dark:bg-slate-900/60"
+                          >
+                            素材 #{id}
+                          </div>
+                        );
+                      }
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => openInCatalog(resource)}
+                          className="block w-full rounded-xl border border-violet-200/70 bg-violet-50/80 px-3 py-2 text-left transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:hover:bg-violet-500/20"
+                        >
+                          <div className="text-sm font-medium text-violet-800 dark:text-violet-200">
+                            {resource.title}
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-xs text-slate-600 dark:text-slate-300">
+                            {resource.description}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+
+          {loading ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400">AI 正在思考…</div>
+          ) : null}
+
+          {errorMessage ? (
+            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+              {errorMessage}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-3 border-t border-white/20 pt-4 dark:border-white/10">
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value.slice(0, MAX_QUESTION_LENGTH))}
+              rows={3}
+              placeholder="例如：推荐几个孤独摇滚相关的 GIF"
+              className="w-full resize-y rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-cyan-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {input.trim().length}/{MAX_QUESTION_LENGTH}
+              </span>
+              <button
+                type="button"
+                disabled={loading || !input.trim()}
+                onClick={() => void submitQuestion(input)}
+                className="rounded-full bg-cyan-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "发送中..." : "发送"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <SiteFooter />
+      </div>
+    </div>
+  );
+}
