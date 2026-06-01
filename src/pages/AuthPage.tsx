@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { TERMS_TITLE } from "../content/termsOfUse";
 import {
   DEVICE_MISMATCH_MESSAGE,
+  hasGrantedAuthorizedDevice,
   requestUsbAndAuthorize,
   tryAuthorizeGrantedDevice,
 } from "../services/authService";
@@ -12,6 +13,7 @@ import { acceptTerms } from "../services/termsService";
 export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [autoConnecting, setAutoConnecting] = useState(true);
+  const [canSilentConnect, setCanSilentConnect] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,15 +27,33 @@ export default function AuthPage() {
       ? (location.state as { from: { pathname: string } }).from.pathname
       : "/";
 
-  const finishAuth = (serial: string) => {
-    acceptTerms(serial);
-    navigate(redirectTarget, { replace: true });
-  };
+  const finishAuth = useCallback(
+    (serial: string) => {
+      acceptTerms(serial);
+      navigate(redirectTarget, { replace: true });
+    },
+    [navigate, redirectTarget]
+  );
+
+  const attemptSilentConnect = useCallback(async (): Promise<boolean> => {
+    const state = await tryAuthorizeGrantedDevice();
+    if (!state) {
+      return false;
+    }
+    finishAuth(state.serial);
+    return true;
+  }, [finishAuth]);
 
   const handleVerify = async () => {
     try {
       setLoading(true);
       setError("");
+
+      const silent = await attemptSilentConnect();
+      if (silent) {
+        return;
+      }
+
       const state = await requestUsbAndAuthorize();
       finishAuth(state.serial);
     } catch (err) {
@@ -50,10 +70,15 @@ export default function AuthPage() {
     let active = true;
     void (async () => {
       try {
-        const state = await tryAuthorizeGrantedDevice();
-        if (!active) return;
-        if (state) {
-          finishAuth(state.serial);
+        const [connected] = await Promise.all([
+          attemptSilentConnect(),
+          hasGrantedAuthorizedDevice().then((value) => {
+            if (active) {
+              setCanSilentConnect(value);
+            }
+          }),
+        ]);
+        if (connected) {
           return;
         }
       } catch {
@@ -68,7 +93,29 @@ export default function AuthPage() {
     return () => {
       active = false;
     };
-  }, [navigate, redirectTarget]);
+  }, [attemptSilentConnect]);
+
+  useEffect(() => {
+    if (!("usb" in navigator)) {
+      return;
+    }
+
+    const onConnect = () => {
+      void (async () => {
+        setAutoConnecting(true);
+        setError("");
+        const connected = await attemptSilentConnect();
+        if (!connected) {
+          setAutoConnecting(false);
+        }
+      })();
+    };
+
+    navigator.usb.addEventListener("connect", onConnect);
+    return () => {
+      navigator.usb.removeEventListener("connect", onConnect);
+    };
+  }, [attemptSilentConnect]);
 
   const busy = loading || autoConnecting;
 
@@ -79,7 +126,7 @@ export default function AuthPage() {
         <p className="text-xs uppercase tracking-[0.28em] text-cyan-300">USB Authentication</p>
         <h1 className="mt-3 text-3xl font-semibold text-white">请连接设备</h1>
         <p className="mt-3 text-sm text-slate-200">
-          请使用 Edge 或 Chrome。已授权过的设备会自动连接；首次使用请点击下方按钮选择设备。
+          请使用 Edge 或 Chrome。系统会自动识别佳点授权设备；已授权过的设备无需手动选择，插入即可进入。
         </p>
 
         <button
@@ -88,8 +135,14 @@ export default function AuthPage() {
           disabled={busy}
           className="mt-8 w-full rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-200 disabled:opacity-60"
         >
-          {autoConnecting ? "正在查找已授权设备…" : loading ? "连接中..." : "同意条款并连接"}
+          {autoConnecting ? "正在自动连接设备…" : loading ? "连接中..." : "同意条款并连接"}
         </button>
+
+        {!canSilentConnect && !autoConnecting ? (
+          <p className="mt-3 text-xs text-slate-400">
+            首次使用需在浏览器弹窗中确认一次授权，之后将自动连接，无需再手动选择。
+          </p>
+        ) : null}
 
         <p className="mt-4 text-xs leading-6 text-slate-400">
           点击连接即表示您已阅读并同意

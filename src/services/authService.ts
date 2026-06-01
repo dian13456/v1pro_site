@@ -46,15 +46,44 @@ async function ensureDeviceSerial(device: USBDevice): Promise<string> {
   throw new Error(DEVICE_MISMATCH_MESSAGE);
 }
 
-async function findGrantedUsbDevice(): Promise<USBDevice | null> {
+async function findBestGrantedUsbDevice(): Promise<USBDevice | null> {
   const grantedDevices = await navigator.usb.getDevices();
   const matched = grantedDevices.filter((device) =>
     isAllowedUsbDevice(device.vendorId, device.productId)
   );
-  return matched.length > 0 ? matched[0] : null;
+  if (matched.length === 0) {
+    return null;
+  }
+  if (matched.length === 1) {
+    return matched[0];
+  }
+
+  const preferredSerial = getAuthState()?.serial?.trim();
+  if (preferredSerial) {
+    for (const device of matched) {
+      try {
+        const serial = device.serialNumber || (await ensureDeviceSerial(device));
+        if (serial === preferredSerial) {
+          return device;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return matched[0];
 }
 
-async function requestUsbDeviceWithPicker(): Promise<USBDevice> {
+export async function hasGrantedAuthorizedDevice(): Promise<boolean> {
+  if (!("usb" in navigator)) {
+    return false;
+  }
+  const grantedDevices = await navigator.usb.getDevices();
+  return grantedDevices.some((device) => isAllowedUsbDevice(device.vendorId, device.productId));
+}
+
+async function requestFilteredUsbDevice(): Promise<USBDevice> {
   if (window.top !== window.self) {
     throw new Error("当前页面运行在 iframe 中，WebUSB 需要顶层页面打开");
   }
@@ -62,37 +91,15 @@ async function requestUsbDeviceWithPicker(): Promise<USBDevice> {
   try {
     return await navigator.usb.requestDevice({ filters: usbDeviceFilters() });
   } catch (error) {
-    const domError = error as DOMException;
-    if (domError?.name !== "NotFoundError") {
-      throw mapUsbError(error);
-    }
-
-    // 严格 filter 找不到设备时，放宽为全量列表再校验 VID/PID（避免弹窗闪退）。
-    try {
-      const device = await navigator.usb.requestDevice({ filters: [] });
-      if (!isAllowedUsbDevice(device.vendorId, device.productId)) {
-        throw new Error(DEVICE_MISMATCH_MESSAGE);
-      }
-      return device;
-    } catch (fallbackError) {
-      throw mapUsbError(fallbackError);
-    }
+    throw mapUsbError(error);
   }
-}
-
-async function resolveUsbDevice(): Promise<USBDevice> {
-  const granted = await findGrantedUsbDevice();
-  if (granted) {
-    return granted;
-  }
-  return requestUsbDeviceWithPicker();
 }
 
 function mapUsbError(error: unknown): Error {
   const domError = error as DOMException;
   switch (domError?.name) {
     case "NotFoundError":
-      return new Error("未找到设备或未选择设备，请连接 USB 后重试");
+      return new Error("未检测到佳点授权设备，请确认设备已插入 USB 并重试");
     case "NotAllowedError":
     case "AbortError":
       return new Error("浏览器取消了设备授权，请重试");
@@ -214,7 +221,7 @@ export async function tryAuthorizeGrantedDevice(): Promise<AuthState | null> {
     return null;
   }
 
-  const device = await findGrantedUsbDevice();
+  const device = await findBestGrantedUsbDevice();
   if (!device) {
     return null;
   }
@@ -234,8 +241,13 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
     throw new Error("当前页面不是安全上下文，请通过 localhost 或 HTTPS 访问");
   }
 
-  const device = await resolveUsbDevice();
-  return authorizeUsbDevice(device);
+  const granted = await findBestGrantedUsbDevice();
+  if (granted) {
+    return authorizeUsbDevice(granted);
+  }
+
+  const picked = await requestFilteredUsbDevice();
+  return authorizeUsbDevice(picked);
 }
 
 export { ALLOWED_USB_DEVICES };

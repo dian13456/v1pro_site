@@ -30,6 +30,18 @@ interface Navigator {
 interface USB {
   getDevices(): Promise<USBDevice[]>;
   requestDevice(options: USBDeviceRequestOptions): Promise<USBDevice>;
+  addEventListener(
+    type: "connect" | "disconnect",
+    listener: (event: USBConnectionEvent) => void
+  ): void;
+  removeEventListener(
+    type: "connect" | "disconnect",
+    listener: (event: USBConnectionEvent) => void
+  ): void;
+}
+
+interface USBConnectionEvent extends Event {
+  device: USBDevice;
 }
 
 interface USBDeviceRequestOptions {
