@@ -31,7 +31,7 @@ export default function AiGuidePage() {
     {
       role: "assistant",
       content:
-        "你好，我是 AI 内容导览。你可以告诉我想要的主题、角色、风格或素材类型，我会从素材库中帮你推荐合适的内容。",
+        "你好，我是 AI 助手。你可以告诉我想要的主题、角色、风格或素材类型，我会从素材库中帮你推荐合适的内容。",
     },
   ]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
@@ -111,7 +111,7 @@ export default function AiGuidePage() {
         },
       ]);
     } catch (err) {
-      const message = (err as Error)?.message || "AI 导览失败";
+      const message = (err as Error)?.message || "AI 助手请求失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -125,8 +125,8 @@ export default function AiGuidePage() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
-          title="AI 内容导览"
-          subtitle="智能素材推荐助手，帮你快速找到适合 1.9 寸横屏的内容。"
+          title="AI 助手"
+          subtitle="用自然语言描述需求，智能推荐适合 1.9 寸横屏的素材。"
           rightSlot={
             <div className="flex flex-wrap items-center gap-2">
               <SiteNav />
@@ -141,6 +141,21 @@ export default function AiGuidePage() {
             </div>
           }
         />
+
+        <section className="mb-5 overflow-hidden rounded-3xl border border-violet-300/40 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 p-5 text-white shadow-[0_16px_40px_-16px_rgba(139,92,246,0.85)] dark:border-violet-400/20">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/80">Smart Assistant</p>
+              <h2 className="mt-1 text-2xl font-bold">✨ AI 助手在线</h2>
+              <p className="mt-2 max-w-2xl text-sm text-white/90">
+                直接提问或点下方快捷问题，我会用 1.9 寸预览卡片为你推荐素材。
+              </p>
+            </div>
+            <div className="rounded-2xl bg-white/15 px-4 py-3 text-center text-sm font-medium backdrop-blur">
+              已连接素材库
+            </div>
+          </div>
+        </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
           {STARTER_PROMPTS.map((prompt) => (

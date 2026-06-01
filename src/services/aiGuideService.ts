@@ -103,7 +103,7 @@ export async function askAiGuide(question: string): Promise<AiGuideResponse> {
       body: JSON.stringify({ question: trimmed }),
     });
     if (!payload.success) {
-      throw new Error(payload.message || "AI 导览请求失败");
+      throw new Error(payload.message || "AI 助手请求失败");
     }
     return {
       success: true,
