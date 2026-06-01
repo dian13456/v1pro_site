@@ -105,7 +105,7 @@ function ResourceCardComponent({
               autoPlay
               playsInline
               preload="metadata"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
               onEnded={onStopPlay}
             />
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
@@ -114,7 +114,7 @@ function ResourceCardComponent({
               alt={`${resource.title} GIF 播放`}
               loading="eager"
               decoding="async"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
           ) : previewUrl ? (
             <img
@@ -122,7 +122,7 @@ function ResourceCardComponent({
               alt={resource.title}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+              className="h-full w-full object-contain"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">

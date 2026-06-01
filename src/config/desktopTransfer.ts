@@ -10,7 +10,7 @@ export const DESKTOP_IMAGE_TRANSFER = {
   // 横屏写入默认 90（与桌面版一致）
   rotateDeg: Number.isFinite(rotateDeg) ? rotateDeg : 90,
   scalePct: 100,
-  fitMode: "fill" as const,
+  fitMode: "contain" as const,
   swapRgb565: false,
   /** 高速主路径默认关闭逐包 ACK，ACK 仅在 fallback 里启用 */
   ackEachWhenInAvailable: false,
