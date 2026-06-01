@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { MaterialTypeFilter, ResourceCategory, ResourceItem } from "../types/resource";
+import type { ColumnTagFilter, MaterialTypeFilter, ResourceCategory, ResourceItem } from "../types/resource";
 import { fetchResources } from "../services/resourceService";
+import { resourceMatchesColumn } from "../utils/columnMatch";
 
 export type ResourceSortMode = "latest" | "oldest" | "hot";
 
@@ -11,6 +12,7 @@ export function useResourceCatalog() {
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState<ResourceCategory>("all");
   const [materialType, setMaterialType] = useState<MaterialTypeFilter>("all");
+  const [columnTag, setColumnTag] = useState<ColumnTagFilter>("all");
   const [sortMode, setSortMode] = useState<ResourceSortMode>("latest");
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export function useResourceCatalog() {
             ? true
             : resource.materialType === materialType;
       if (!passMaterialType) return false;
+      if (columnTag !== "all" && !resourceMatchesColumn(resource, columnTag)) return false;
       if (!query) return true;
       return (
         resource.title.toLowerCase().includes(query) ||
@@ -58,7 +61,7 @@ export function useResourceCatalog() {
       return bTime - aTime;
     });
     return result;
-  }, [resources, keyword, category, materialType, sortMode]);
+  }, [resources, keyword, category, materialType, columnTag, sortMode]);
 
   return {
     resources,
@@ -71,6 +74,8 @@ export function useResourceCatalog() {
     setCategory,
     materialType,
     setMaterialType,
+    columnTag,
+    setColumnTag,
     sortMode,
     setSortMode,
   };

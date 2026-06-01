@@ -192,6 +192,7 @@ class ImageUploaderGUI:
         self.title_var = tk.StringVar()
         self.desc_var = tk.StringVar()
         self.author_var = tk.StringVar()
+        self.column_tag_var = tk.StringVar(value="")
         self.size_var = tk.StringVar(value="未知")
         self.category_var = tk.StringVar(value="gif")
         self.download_var = tk.StringVar()
@@ -317,17 +318,26 @@ class ImageUploaderGUI:
         ttk.Label(resource, text="上传人(作者，可选，仅填写时前端显示)").grid(row=5, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.author_var).grid(row=5, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
-        ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Entry(resource, textvariable=self.download_var).grid(row=6, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(resource, text="专栏标签(可选)").grid(row=6, column=0, sticky="w", pady=2)
+        ttk.Combobox(
+            resource,
+            textvariable=self.column_tag_var,
+            values=("", "yuexin-miao", "doro", "feibi"),
+            state="readonly",
+        ).grid(row=6, column=1, sticky="ew", padx=(8, 12), pady=2)
+        ttk.Label(resource, text="月薪喵 / doro / 菲比").grid(row=6, column=2, columnspan=2, sticky="w", pady=2)
 
-        ttk.Label(resource, text="封面链接(视频/GIF且不上传封面时可填)").grid(row=7, column=0, sticky="w", pady=2)
-        ttk.Entry(resource, textvariable=self.cover_url_var).grid(row=7, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(resource, text="下载链接(可空，默认按素材类型生成)").grid(row=7, column=0, sticky="w", pady=2)
+        ttk.Entry(resource, textvariable=self.download_var).grid(row=7, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
-        ttk.Label(resource, text="随机码(自动生成)").grid(row=8, column=0, sticky="w", pady=2)
+        ttk.Label(resource, text="封面链接(视频/GIF且不上传封面时可填)").grid(row=8, column=0, sticky="w", pady=2)
+        ttk.Entry(resource, textvariable=self.cover_url_var).grid(row=8, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
+
+        ttk.Label(resource, text="随机码(自动生成)").grid(row=9, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.random_code_var, state="readonly").grid(
-            row=8, column=1, sticky="ew", padx=(8, 12), pady=2
+            row=9, column=1, sticky="ew", padx=(8, 12), pady=2
         )
-        ttk.Button(resource, text="重新生成", command=self.regenerate_random_code).grid(row=8, column=2, columnspan=2, sticky="ew", pady=2)
+        ttk.Button(resource, text="重新生成", command=self.regenerate_random_code).grid(row=9, column=2, columnspan=2, sticky="ew", pady=2)
 
         actions = ttk.Frame(upload_tab)
         actions.pack(fill=tk.X, padx=0, pady=(0, 8))
@@ -662,6 +672,7 @@ class ImageUploaderGUI:
             title_input = self.title_var.get().strip()
             desc_input = self.desc_var.get().strip()
             author_input = self.author_var.get().strip()
+            column_tag_input = self.column_tag_var.get().strip()
             if not is_batch and material_type != "gif" and (not title_input or not desc_input):
                 raise RuntimeError("标题和描述不能为空")
             if is_batch and material_type == "gif" and (self.cover_path_var.get().strip() or self.cover_url_var.get().strip()):
@@ -836,6 +847,8 @@ class ImageUploaderGUI:
                 target["description"] = desc
                 if author_input:
                     target["author"] = author_input
+                if column_tag_input:
+                    target["columnTag"] = column_tag_input
                 target["size"] = size
                 target["image"] = image_key
                 target["download"] = download_url

@@ -8,6 +8,7 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
+import { COLUMN_TAG_FILTER_OPTIONS } from "../data/columnTags";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
 import { createImageUrl } from "../services/imageService";
@@ -16,7 +17,7 @@ import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 
-const RANDOM_PAGE_SIZE = 5;
+const RANDOM_PAGE_SIZE = 4;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
@@ -44,6 +45,8 @@ export default function ResourcesPage() {
     setCategory,
     materialType,
     setMaterialType,
+    columnTag,
+    setColumnTag,
     sortMode,
     setSortMode,
   } = useResourceCatalog();
@@ -63,7 +66,7 @@ export default function ResourcesPage() {
     setCurrentPage(1);
     setRandomMode(false);
     setRandomItems([]);
-  }, [keyword, category, materialType, sortMode, pageSize]);
+  }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -123,7 +126,7 @@ export default function ResourcesPage() {
   };
 
   const handleRandomRecommend = () => {
-    const pool = resources.filter(
+    const pool = filtered.filter(
       (resource) =>
         resource.materialType === "image" ||
         resource.materialType === "video" ||
@@ -274,6 +277,26 @@ export default function ResourcesPage() {
                   active
                     ? "bg-cyan-600 text-white"
                     : "border border-white/25 bg-white/55 text-slate-700 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </section>
+        <section className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-slate-500 dark:text-slate-300">专栏</span>
+          {COLUMN_TAG_FILTER_OPTIONS.map((item) => {
+            const active = columnTag === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setColumnTag(item.value)}
+                className={`rounded-full px-4 py-2 text-sm transition ${
+                  active
+                    ? "bg-amber-500 text-white"
+                    : "border border-amber-200/70 bg-amber-50/80 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
                 }`}
               >
                 {item.label}
