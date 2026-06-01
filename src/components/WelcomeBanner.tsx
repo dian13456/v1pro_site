@@ -133,7 +133,7 @@ export function WelcomeBanner({ className = "" }: WelcomeBannerProps) {
           </div>
 
           {loading ? (
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">正在根据你的位置生成欢迎语…</p>
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">AI 正在根据你的位置与天气生成专属欢迎语…</p>
           ) : (
             <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-200">{welcome?.message}</p>
           )}

@@ -861,6 +861,7 @@ func main() {
 
 		result := service.GenerateWelcome(
 			c.Request.Context(),
+			deepseekClient,
 			serial,
 			c.Query("displayName"),
 			service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP")),

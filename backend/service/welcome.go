@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+const maxWelcomeMessageRunes = 120
 
 type WelcomeContext struct {
 	Username    string
@@ -191,11 +194,6 @@ func timeGreeting(hour int) string {
 	}
 }
 
-func formatLocalTime(t time.Time) string {
-	weekdays := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
-	return fmt.Sprintf("%s %02d:%02d", weekdays[int(t.Weekday())], t.Hour(), t.Minute())
-}
-
 func BuildWelcomeMessage(ctx WelcomeContext) string {
 	greeting := ctx.Greeting
 	if greeting == "" {
@@ -225,7 +223,119 @@ func BuildWelcomeMessage(ctx WelcomeContext) string {
 	return strings.Join(parts, "")
 }
 
-func GenerateWelcome(ctx context.Context, serial, displayName, clientIP string) WelcomeResult {
+func formatLocalTime(t time.Time) string {
+	weekdays := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+	return fmt.Sprintf("%s %02d:%02d", weekdays[int(t.Weekday())], t.Hour(), t.Minute())
+}
+
+func (client *DeepSeekClient) GenerateWelcomeMessage(ctx context.Context, wctx WelcomeContext) (string, error) {
+	if client == nil || client.APIKey == "" {
+		return "", fmt.Errorf("deepseek api key not configured")
+	}
+
+	location := strings.TrimSpace(wctx.City)
+	if location == "" {
+		location = strings.TrimSpace(wctx.Region)
+	}
+	if location == "" {
+		location = "未知"
+	}
+
+	weatherLine := "暂无天气数据"
+	if wctx.WeatherText != "" {
+		if wctx.Temperature != 0 {
+			weatherLine = fmt.Sprintf("%s，%.0f℃", wctx.WeatherText, wctx.Temperature)
+		} else {
+			weatherLine = wctx.WeatherText
+		}
+	}
+
+	systemPrompt := strings.Join([]string{
+		"你是「佳点电子资源中心」的欢迎语助手。",
+		"用户设备为 1.9 寸横屏（320×170），站点提供图片、视频、GIF、V1PRO 素材包。",
+		"根据提供的昵称、当地时间、地点和天气，写一句简短、温暖、个性化的中文欢迎语。",
+		"要求：1-2 句话，60-80 字以内；必须自然包含用户昵称；可结合时段与天气；语气轻松友好。",
+		"只输出欢迎语正文，不要引号、不要 markdown、不要标题、不要额外解释。",
+	}, "\n")
+
+	userPrompt := fmt.Sprintf(
+		"昵称：%s\n时段问候参考：%s\n当地时间：%s\n地点：%s，%s，%s\n天气：%s",
+		wctx.Username,
+		wctx.Greeting,
+		wctx.LocalTime,
+		location,
+		strings.TrimSpace(wctx.Region),
+		strings.TrimSpace(wctx.Country),
+		weatherLine,
+	)
+
+	payload := deepSeekRequest{
+		Model: client.Model,
+		Messages: []ChatMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+		Temperature: 0.75,
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	httpClient := client.HTTP
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 20 * time.Second}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.BaseURL+"/chat/completions", strings.NewReader(string(raw)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+client.APIKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("deepseek http %d: %s", resp.StatusCode, truncateRunes(string(body), 200))
+	}
+
+	var apiResp struct {
+		Choices []struct {
+			Message ChatMessage `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", err
+	}
+	if apiResp.Error != nil && apiResp.Error.Message != "" {
+		return "", fmt.Errorf("deepseek error: %s", apiResp.Error.Message)
+	}
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("deepseek empty response")
+	}
+
+	message := strings.TrimSpace(apiResp.Choices[0].Message.Content)
+	message = strings.Trim(message, "\"'「」")
+	if message == "" {
+		return "", fmt.Errorf("deepseek empty welcome message")
+	}
+	return truncateRunes(message, maxWelcomeMessageRunes), nil
+}
+
+func GenerateWelcome(ctx context.Context, deepseek *DeepSeekClient, serial, displayName, clientIP string) WelcomeResult {
 	username := NormalizeDisplayName(serial, displayName)
 	geo := ipWhoResponse{
 		City:     "",
@@ -271,8 +381,19 @@ func GenerateWelcome(ctx context.Context, serial, displayName, clientIP string) 
 		WeatherText: weatherText(weatherCode),
 	}
 
+	message := BuildWelcomeMessage(wctx)
+	if deepseek != nil && deepseek.APIKey != "" {
+		if aiMessage, err := deepseek.GenerateWelcomeMessage(ctx, wctx); err == nil {
+			if strings.TrimSpace(aiMessage) != "" {
+				message = aiMessage
+			}
+		} else {
+			log.Printf("warn: deepseek welcome failed: %v", err)
+		}
+	}
+
 	return WelcomeResult{
-		Message:     BuildWelcomeMessage(wctx),
+		Message:     message,
 		Username:    username,
 		City:        geo.City,
 		Region:      geo.Region,
