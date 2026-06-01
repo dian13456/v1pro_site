@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
-import { WelcomeBanner } from "../components/WelcomeBanner";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
@@ -142,23 +141,6 @@ export default function AiGuidePage() {
             </div>
           }
         />
-
-        <WelcomeBanner className="mb-5" />
-
-        <section className="mb-5 overflow-hidden rounded-3xl border border-violet-300/40 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 p-5 text-white shadow-[0_16px_40px_-16px_rgba(139,92,246,0.85)] dark:border-violet-400/20">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/80">Smart Assistant</p>
-              <h2 className="mt-1 text-2xl font-bold">✨ AI 助手在线</h2>
-              <p className="mt-2 max-w-2xl text-sm text-white/90">
-                直接提问或点下方快捷问题，我会用 1.9 寸预览卡片为你推荐素材。
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white/15 px-4 py-3 text-center text-sm font-medium backdrop-blur">
-              已连接素材库
-            </div>
-          </div>
-        </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
           {STARTER_PROMPTS.map((prompt) => (

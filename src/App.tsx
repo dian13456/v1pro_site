@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { TermsAgreementModal } from "./components/TermsAgreementModal";
+import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
@@ -33,10 +34,13 @@ export default function App() {
   const location = useLocation();
   const [termsAccepted, setTermsAccepted] = useState(hasAcceptedTerms);
   const showTermsModal = !termsAccepted && location.pathname !== "/terms";
+  const showWelcomeModal =
+    termsAccepted && location.pathname !== "/auth" && location.pathname !== "/terms";
 
   return (
     <>
       {showTermsModal ? <TermsAgreementModal onAccepted={() => setTermsAccepted(true)} /> : null}
+      {showWelcomeModal ? <WelcomeModal /> : null}
       <Routes>
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/auth" element={<AuthPage />} />

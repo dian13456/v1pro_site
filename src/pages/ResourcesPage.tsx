@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { SearchBar } from "../components/SearchBar";
 import { SiteHeader } from "../components/SiteHeader";
-import { WelcomeBanner } from "../components/WelcomeBanner";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -327,22 +326,6 @@ export default function ResourcesPage() {
             </div>
           }
         />
-
-        <WelcomeBanner className="mb-6" />
-
-        <Link
-          to="/guide"
-          className="group mb-6 flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl border border-violet-300/50 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 p-5 text-white shadow-[0_16px_40px_-16px_rgba(139,92,246,0.85)] transition hover:scale-[1.01] hover:brightness-105 dark:border-violet-400/20"
-        >
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/80">Smart Assistant</p>
-            <h2 className="mt-1 text-2xl font-bold">✨ AI 助手</h2>
-            <p className="mt-2 text-sm text-white/90">用自然语言找素材，智能推荐并 1.9 寸预览</p>
-          </div>
-          <span className="rounded-full bg-white/20 px-5 py-2.5 text-sm font-semibold backdrop-blur transition group-hover:bg-white/30">
-            立即体验 →
-          </span>
-        </Link>
 
         <section className="mb-6 grid gap-3 md:grid-cols-[1fr_auto]">
           <SearchBar value={keyword} onChange={setKeyword} />
