@@ -4,6 +4,7 @@ import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { SearchBar } from "../components/SearchBar";
 import { SiteHeader } from "../components/SiteHeader";
+import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -298,7 +299,8 @@ export default function ResourcesPage() {
           title="佳点素材下载中心"
           subtitle="面向 1.9 寸（320×170 横屏）素材商店，支持 GIF、驱动、固件、软件与说明书下载。"
           rightSlot={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <SiteNav />
               <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
               <button
                 type="button"

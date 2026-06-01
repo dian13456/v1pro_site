@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AuthPage from "./pages/AuthPage.tsx";
+import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
 import ResourcesPage from "./pages/ResourcesPage.tsx";
 
@@ -33,6 +34,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ResourcesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/board"
+        element={
+          <ProtectedRoute>
+            <MessageBoardPage />
           </ProtectedRoute>
         }
       />

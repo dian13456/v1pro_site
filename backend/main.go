@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,7 +64,24 @@ type downloadRequest struct {
 const (
 	maxDownloadsPerHour = 50
 	maxDownloadsPerDay  = 100
+	maxMessageLength    = 500
+	maxMessagesPerPage  = 100
 )
+
+type messageEntry struct {
+	ID        string `json:"id"`
+	Username  string `json:"username"`
+	Content   string `json:"content"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+type messagesStore struct {
+	Messages []messageEntry `json:"messages"`
+}
+
+type messagePostRequest struct {
+	Content string `json:"content"`
+}
 
 type runtimeResourceMap struct {
 	path        string
@@ -198,6 +218,59 @@ func saveLikesStore(path string, store likesStore) error {
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+func loadMessagesStore(path string) (messagesStore, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return messagesStore{Messages: []messageEntry{}}, nil
+		}
+		return messagesStore{}, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return messagesStore{Messages: []messageEntry{}}, nil
+	}
+	var store messagesStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		return messagesStore{}, err
+	}
+	if store.Messages == nil {
+		store.Messages = []messageEntry{}
+	}
+	return store, nil
+}
+
+func saveMessagesStore(path string, store messagesStore) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return os.WriteFile(path, raw, 0o644)
+}
+
+func displayUsernameFromSerial(serial string) string {
+	s := strings.TrimSpace(serial)
+	if s == "" {
+		return "anonymous"
+	}
+	runes := []rune(s)
+	if len(runes) <= 10 {
+		return s
+	}
+	return string(runes[len(runes)-10:])
+}
+
+func newMessageID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(buf))
 }
 
 func currentWeekKey(now time.Time) string {
@@ -637,6 +710,10 @@ func main() {
 	if resourceDownloadsPath == "" {
 		resourceDownloadsPath = filepath.Join("config", "resource_downloads.json")
 	}
+	messageBoardPath := os.Getenv("MESSAGE_BOARD_PATH")
+	if messageBoardPath == "" {
+		messageBoardPath = filepath.Join("config", "message_board.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -665,6 +742,10 @@ func main() {
 	downloads, err := loadDownloadsStore(resourceDownloadsPath)
 	if err != nil {
 		log.Fatalf("load resource downloads failed: %v", err)
+	}
+	messages, err := loadMessagesStore(messageBoardPath)
+	if err != nil {
+		log.Fatalf("load message board failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -724,6 +805,7 @@ func main() {
 	var imageURLCacheMu sync.RWMutex
 	var likesMu sync.RWMutex
 	var downloadsMu sync.Mutex
+	var messagesMu sync.RWMutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -1111,6 +1193,89 @@ func main() {
 	})
 	router.GET("/api/image/", func(c *gin.Context) {
 		handleImage(c, c.Query("id"), c.Query("download") == "1")
+	})
+
+	router.GET("/api/messages", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		limit := maxMessagesPerPage
+		if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+			if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+				limit = parsed
+				if limit > maxMessagesPerPage {
+					limit = maxMessagesPerPage
+				}
+			}
+		}
+
+		messagesMu.RLock()
+		total := len(messages.Messages)
+		start := total - limit
+		if start < 0 {
+			start = 0
+		}
+		slice := make([]messageEntry, len(messages.Messages[start:]))
+		copy(slice, messages.Messages[start:])
+		messagesMu.RUnlock()
+
+		for i, j := 0, len(slice)-1; i < j; i, j = i+1, j-1 {
+			slice[i], slice[j] = slice[j], slice[i]
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":  true,
+			"messages": slice,
+			"total":    total,
+		})
+	})
+
+	router.POST("/api/messages", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req messagePostRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		content := strings.TrimSpace(req.Content)
+		if content == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "留言内容不能为空"})
+			return
+		}
+		if len([]rune(content)) > maxMessageLength {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": fmt.Sprintf("留言最多%d字", maxMessageLength)})
+			return
+		}
+
+		entry := messageEntry{
+			ID:        newMessageID(),
+			Username:  displayUsernameFromSerial(serial),
+			Content:   content,
+			CreatedAt: time.Now().UnixMilli(),
+		}
+
+		messagesMu.Lock()
+		messages.Messages = append(messages.Messages, entry)
+		saveErr := saveMessagesStore(messageBoardPath, messages)
+		messagesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "留言保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": entry,
+		})
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

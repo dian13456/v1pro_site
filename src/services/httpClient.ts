@@ -1,4 +1,5 @@
 import { isAllowedUsbDevice } from "../config/allowedDevices";
+import { displayUsernameFromSerial } from "../utils/displayUsername";
 
 const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 const DEV_LIKE_COUNTS_KEY = "jiadian_dev_like_counts";
@@ -7,6 +8,7 @@ const DEV_DOWNLOAD_TOTAL_KEY = "jiadian_dev_download_total_counts";
 const DEV_DOWNLOAD_WEEKLY_KEY = "jiadian_dev_download_weekly_counts";
 const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
 const DEV_DEVICE_WINDOWS_KEY = "jiadian_dev_device_download_windows";
+const DEV_MESSAGES_KEY = "jiadian_dev_messages";
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
 const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
@@ -122,6 +124,37 @@ function parseBody(init: RequestInit): JsonValue {
   } catch {
     return {};
   }
+}
+
+interface DevBoardMessage {
+  id: string;
+  username: string;
+  content: string;
+  createdAt: number;
+}
+
+function readDevMessages(): DevBoardMessage[] {
+  try {
+    const raw = localStorage.getItem(DEV_MESSAGES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as DevBoardMessage[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDevMessages(messages: DevBoardMessage[]): void {
+  localStorage.setItem(DEV_MESSAGES_KEY, JSON.stringify(messages));
+}
+
+function parseDevMessageLimit(path: string): number {
+  const queryIndex = path.indexOf("?");
+  if (queryIndex === -1) return 100;
+  const params = new URLSearchParams(path.slice(queryIndex + 1));
+  const parsed = Number.parseInt(params.get("limit") || "100", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 100;
+  return Math.min(parsed, 100);
 }
 
 function createDevMockResponse(path: string, init: RequestInit): JsonValue | null {
@@ -295,6 +328,36 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       hourlyCount: window.hourCount,
       dailyCount: window.dayCount,
     };
+  }
+
+  if (path.startsWith("/api/messages")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    if ((init.method || "GET").toUpperCase() === "POST") {
+      const content = String(body.content || "").trim();
+      if (!content) {
+        return { success: false, message: "留言内容不能为空" };
+      }
+      if (content.length > 500) {
+        return { success: false, message: "留言最多500字" };
+      }
+      const entry: DevBoardMessage = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        username: displayUsernameFromSerial(serial),
+        content,
+        createdAt: Date.now(),
+      };
+      const messages = readDevMessages();
+      messages.push(entry);
+      writeDevMessages(messages);
+      return { success: true, message: entry };
+    }
+
+    const limit = parseDevMessageLimit(path);
+    const all = readDevMessages();
+    const messages = [...all].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+    return { success: true, messages, total: all.length };
   }
 
   return null;
