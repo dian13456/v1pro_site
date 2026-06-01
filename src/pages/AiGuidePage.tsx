@@ -95,7 +95,7 @@ export default function AiGuidePage() {
       <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="AI 内容导览"
-          subtitle="由 DeepSeek 驱动的素材推荐助手，帮你快速找到适合 1.9 寸横屏的内容。"
+          subtitle="智能素材推荐助手，帮你快速找到适合 1.9 寸横屏的内容。"
           rightSlot={
             <div className="flex flex-wrap items-center gap-2">
               <SiteNav />
@@ -139,11 +139,6 @@ export default function AiGuidePage() {
                 }`}
               >
                 <p className="whitespace-pre-wrap">{message.content}</p>
-                {message.role === "assistant" && message.mode ? (
-                  <p className="mt-2 text-[11px] opacity-70">
-                    {message.mode === "deepseek" ? "DeepSeek 智能推荐" : "关键词匹配推荐"}
-                  </p>
-                ) : null}
                 {message.resourceIds && message.resourceIds.length > 0 ? (
                   <div className="mt-3 space-y-2">
                     {message.resourceIds.map((id) => {
