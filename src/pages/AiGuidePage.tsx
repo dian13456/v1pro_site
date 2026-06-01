@@ -126,7 +126,6 @@ export default function AiGuidePage() {
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="佳点电子资源中心"
-          subtitle="面向 1.9 寸（320×170 横屏）素材商店，支持 GIF、驱动、固件、软件与说明书下载。"
           rightSlot={
             <div className="flex flex-wrap items-center gap-2">
               <SiteNav />
