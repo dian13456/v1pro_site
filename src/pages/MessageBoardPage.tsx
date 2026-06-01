@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader";
+import { SiteFooter } from "../components/SiteFooter";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -177,6 +178,7 @@ export default function MessageBoardPage() {
             ))
           )}
         </section>
+        <SiteFooter />
       </div>
     </div>
   );

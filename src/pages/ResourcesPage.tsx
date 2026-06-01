@@ -4,6 +4,7 @@ import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { SearchBar } from "../components/SearchBar";
 import { SiteHeader } from "../components/SiteHeader";
+import { SiteFooter } from "../components/SiteFooter";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useImagePreload } from "../hooks/useImagePreload";
@@ -527,6 +528,7 @@ export default function ResourcesPage() {
             </button>
           </section>
         ) : null}
+        <SiteFooter />
       </div>
     </div>
   );

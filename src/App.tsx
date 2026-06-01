@@ -1,10 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { TermsAgreementModal } from "./components/TermsAgreementModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AuthPage from "./pages/AuthPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
 import ResourcesPage from "./pages/ResourcesPage.tsx";
+import TermsPage from "./pages/TermsPage.tsx";
+import { hasAcceptedTerms } from "./services/termsService";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -26,26 +29,34 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const [termsAccepted, setTermsAccepted] = useState(hasAcceptedTerms);
+  const showTermsModal = !termsAccepted && location.pathname !== "/terms";
+
   return (
-    <Routes>
-      <Route path="/auth" element={<AuthPage />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <ResourcesPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/board"
-        element={
-          <ProtectedRoute>
-            <MessageBoardPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <>
+      {showTermsModal ? <TermsAgreementModal onAccepted={() => setTermsAccepted(true)} /> : null}
+      <Routes>
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <ResourcesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/board"
+          element={
+            <ProtectedRoute>
+              <MessageBoardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </>
   );
 }
