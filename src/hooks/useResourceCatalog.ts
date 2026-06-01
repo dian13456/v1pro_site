@@ -3,7 +3,7 @@ import type { ColumnTagFilter, MaterialTypeFilter, ResourceCategory, ResourceIte
 import { fetchResources } from "../services/resourceService";
 import { resourceMatchesColumn } from "../utils/columnMatch";
 
-export type ResourceSortMode = "latest" | "oldest" | "hot";
+export type ResourceSortMode = "latest" | "hot";
 
 export function useResourceCatalog() {
   const [resources, setResources] = useState<ResourceItem[]>([]);
@@ -57,7 +57,6 @@ export function useResourceCatalog() {
       if (sortMode === "hot") return 0;
       const aTime = new Date(a.updatedAt).getTime();
       const bTime = new Date(b.updatedAt).getTime();
-      if (sortMode === "oldest") return aTime - bTime;
       return bTime - aTime;
     });
     return result;
