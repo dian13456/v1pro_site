@@ -6,10 +6,114 @@ const DEV_LIKED_DEVICES_KEY = "jiadian_dev_like_devices";
 const DEV_DOWNLOAD_TOTAL_KEY = "jiadian_dev_download_total_counts";
 const DEV_DOWNLOAD_WEEKLY_KEY = "jiadian_dev_download_weekly_counts";
 const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
+const DEV_DEVICE_WINDOWS_KEY = "jiadian_dev_device_download_windows";
+const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
+const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 type JsonValue = Record<string, unknown>;
+
+interface DevDeviceWindow {
+  hourKey: string;
+  dayKey: string;
+  hourCount: number;
+  dayCount: number;
+}
+
+function parseQuery(path: string): URLSearchParams {
+  const queryIndex = path.indexOf("?");
+  if (queryIndex === -1) return new URLSearchParams();
+  return new URLSearchParams(path.slice(queryIndex + 1));
+}
+
+function devHourKey(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}`;
+}
+
+function devDayKey(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function readDevDeviceWindows(): Record<string, DevDeviceWindow> {
+  try {
+    const raw = localStorage.getItem(DEV_DEVICE_WINDOWS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, DevDeviceWindow>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDevDeviceWindows(windows: Record<string, DevDeviceWindow>): void {
+  localStorage.setItem(DEV_DEVICE_WINDOWS_KEY, JSON.stringify(windows));
+}
+
+function ensureDevDeviceWindow(serial: string, now = new Date()): DevDeviceWindow {
+  const hourKey = devHourKey(now);
+  const dayKey = devDayKey(now);
+  const windows = readDevDeviceWindows();
+  const current = windows[serial];
+  const next: DevDeviceWindow = {
+    hourKey,
+    dayKey,
+    hourCount: current?.hourKey === hourKey ? Math.max(0, Number(current.hourCount) || 0) : 0,
+    dayCount: current?.dayKey === dayKey ? Math.max(0, Number(current.dayCount) || 0) : 0,
+  };
+  windows[serial] = next;
+  writeDevDeviceWindows(windows);
+  return next;
+}
+
+function devDeviceLimitMessage(window: DevDeviceWindow): string | null {
+  if (window.hourCount >= DEV_MAX_DOWNLOADS_PER_HOUR) {
+    return `每小时最多下载${DEV_MAX_DOWNLOADS_PER_HOUR}次，请稍后再试`;
+  }
+  if (window.dayCount >= DEV_MAX_DOWNLOADS_PER_DAY) {
+    return `每天最多下载${DEV_MAX_DOWNLOADS_PER_DAY}次，请明天再试`;
+  }
+  return null;
+}
+
+function recordDevDeviceDownload(serial: string, resourceId: string): JsonValue {
+  const window = ensureDevDeviceWindow(serial);
+  const limitMessage = devDeviceLimitMessage(window);
+  if (limitMessage) {
+    return {
+      success: false,
+      error: limitMessage,
+      message: limitMessage,
+      hourlyCount: window.hourCount,
+      dailyCount: window.dayCount,
+    };
+  }
+
+  window.hourCount += 1;
+  window.dayCount += 1;
+  const windows = readDevDeviceWindows();
+  windows[serial] = window;
+  writeDevDeviceWindows(windows);
+
+  const weekKey = localStorage.getItem(DEV_DOWNLOAD_WEEK_KEY) || "dev-week";
+  const totalCounts = localStorage.getItem(DEV_DOWNLOAD_TOTAL_KEY);
+  const weeklyCounts = localStorage.getItem(DEV_DOWNLOAD_WEEKLY_KEY);
+  const totals = totalCounts ? (JSON.parse(totalCounts) as Record<string, number>) : {};
+  const weekly = weeklyCounts ? (JSON.parse(weeklyCounts) as Record<string, number>) : {};
+  totals[resourceId] = Math.max(0, Number(totals[resourceId] || 0)) + 1;
+  weekly[resourceId] = Math.max(0, Number(weekly[resourceId] || 0)) + 1;
+  localStorage.setItem(DEV_DOWNLOAD_WEEK_KEY, weekKey);
+  localStorage.setItem(DEV_DOWNLOAD_TOTAL_KEY, JSON.stringify(totals));
+  localStorage.setItem(DEV_DOWNLOAD_WEEKLY_KEY, JSON.stringify(weekly));
+
+  return {
+    weekKey,
+    totalCount: totals[resourceId],
+    weeklyCount: weekly[resourceId],
+    hourlyCount: window.hourCount,
+    dailyCount: window.dayCount,
+  };
+}
 
 function parseBody(init: RequestInit): JsonValue {
   if (!init.body || typeof init.body !== "string") return {};
@@ -121,6 +225,45 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/resource")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { error: "token 无效" };
+    }
+    const resourceId = parseQuery(path).get("id") || "0";
+    const stats = recordDevDeviceDownload(serial, resourceId);
+    if ("error" in stats) {
+      return stats;
+    }
+    const expires = Math.floor(Date.now() / 1000) + 600;
+    return {
+      url: `https://example.com/dev-resource/${resourceId}?exp=${expires}&sig=dev`,
+      downloadStats: stats,
+    };
+  }
+
+  if (path.startsWith("/api/image")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { error: "token 无效" };
+    }
+    const query = parseQuery(path);
+    const resourceId = query.get("id") || "0";
+    const forDownload = query.get("download") === "1";
+    const expires = Math.floor(Date.now() / 1000) + 600;
+    if (forDownload) {
+      const stats = recordDevDeviceDownload(serial, resourceId);
+      if ("error" in stats) {
+        return stats;
+      }
+      return {
+        url: `https://example.com/dev-image/${resourceId}?exp=${expires}&sig=dev`,
+        downloadStats: stats,
+      };
+    }
+    return {
+      url: `https://example.com/dev-image/${resourceId}?exp=${expires}&sig=dev`,
+    };
+  }
+
   if (path === "/api/resource-download") {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
@@ -129,21 +272,28 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     if (!resourceId) {
       return { success: false, message: "resourceId 不能为空" };
     }
+    const window = ensureDevDeviceWindow(serial);
+    const limitMessage = devDeviceLimitMessage(window);
+    if (limitMessage) {
+      return {
+        success: false,
+        message: limitMessage,
+        hourlyCount: window.hourCount,
+        dailyCount: window.dayCount,
+      };
+    }
     const weekKey = localStorage.getItem(DEV_DOWNLOAD_WEEK_KEY) || "dev-week";
     const totalCounts = localStorage.getItem(DEV_DOWNLOAD_TOTAL_KEY);
     const weeklyCounts = localStorage.getItem(DEV_DOWNLOAD_WEEKLY_KEY);
     const totals = totalCounts ? (JSON.parse(totalCounts) as Record<string, number>) : {};
     const weekly = weeklyCounts ? (JSON.parse(weeklyCounts) as Record<string, number>) : {};
-    totals[resourceId] = Math.max(0, Number(totals[resourceId] || 0)) + 1;
-    weekly[resourceId] = Math.max(0, Number(weekly[resourceId] || 0)) + 1;
-    localStorage.setItem(DEV_DOWNLOAD_WEEK_KEY, weekKey);
-    localStorage.setItem(DEV_DOWNLOAD_TOTAL_KEY, JSON.stringify(totals));
-    localStorage.setItem(DEV_DOWNLOAD_WEEKLY_KEY, JSON.stringify(weekly));
     return {
       success: true,
       weekKey,
-      totalCount: totals[resourceId],
-      weeklyCount: weekly[resourceId],
+      totalCount: Math.max(0, Number(totals[resourceId] || 0)),
+      weeklyCount: Math.max(0, Number(weekly[resourceId] || 0)),
+      hourlyCount: window.hourCount,
+      dailyCount: window.dayCount,
     };
   }
 
@@ -180,7 +330,8 @@ export async function apiFetch<T extends JsonValue>(path: string, init: RequestI
       const mocked = createDevMockResponse(path, init);
       if (mocked) return mocked as T;
     }
-    const message = (payload?.message as string) || `请求失败（HTTP ${response.status})`;
+    const message =
+      (payload?.message as string) || (payload?.error as string) || `请求失败（HTTP ${response.status})`;
     throw new Error(message);
   }
 

@@ -75,14 +75,14 @@ function ResourceCardComponent({
           const fallbackCover = /^https?:\/\//i.test(resource.image) ? resource.image : "";
           const videoUrl = await createImageUrl(resource.id, fallbackCover);
           if (!cancelled) {
-            setPreviewUrl(videoUrl || fallbackCover);
+            setPreviewUrl(videoUrl.url || fallbackCover);
           }
           return;
         }
         const fallbackUrl = /^https?:\/\//i.test(resource.download) ? resource.download : resource.image;
         const imageUrl = await createImageUrl(resource.id, fallbackUrl);
         if (!cancelled) {
-          setPreviewUrl(imageUrl);
+          setPreviewUrl(imageUrl.url);
         }
       } catch {
         if (!cancelled) {

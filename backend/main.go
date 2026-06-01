@@ -41,14 +41,27 @@ type likeRequest struct {
 }
 
 type downloadsStore struct {
-	TotalCounts  map[string]int `json:"totalCounts"`
-	WeekKey      string         `json:"weekKey"`
-	WeeklyCounts map[string]int `json:"weeklyCounts"`
+	TotalCounts   map[string]int                    `json:"totalCounts"`
+	WeekKey       string                            `json:"weekKey"`
+	WeeklyCounts  map[string]int                    `json:"weeklyCounts"`
+	DeviceWindows map[string]deviceDownloadWindow   `json:"deviceWindows"`
+}
+
+type deviceDownloadWindow struct {
+	HourKey   string `json:"hourKey"`
+	DayKey    string `json:"dayKey"`
+	HourCount int    `json:"hourCount"`
+	DayCount  int    `json:"dayCount"`
 }
 
 type downloadRequest struct {
 	ResourceID string `json:"resourceId"`
 }
+
+const (
+	maxDownloadsPerHour = 50
+	maxDownloadsPerDay  = 100
+)
 
 type runtimeResourceMap struct {
 	path        string
@@ -198,9 +211,10 @@ func loadDownloadsStore(path string) (downloadsStore, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			now := time.Now()
 			return downloadsStore{
-				TotalCounts:  map[string]int{},
-				WeekKey:      currentWeekKey(now),
-				WeeklyCounts: map[string]int{},
+				TotalCounts:   map[string]int{},
+				WeekKey:       currentWeekKey(now),
+				WeeklyCounts:  map[string]int{},
+				DeviceWindows: map[string]deviceDownloadWindow{},
 			}, nil
 		}
 		return downloadsStore{}, err
@@ -223,6 +237,9 @@ func loadDownloadsStore(path string) (downloadsStore, error) {
 	if store.WeeklyCounts == nil {
 		store.WeeklyCounts = map[string]int{}
 	}
+	if store.DeviceWindows == nil {
+		store.DeviceWindows = map[string]deviceDownloadWindow{}
+	}
 	if strings.TrimSpace(store.WeekKey) == "" {
 		store.WeekKey = currentWeekKey(time.Now())
 	}
@@ -239,6 +256,61 @@ func saveDownloadsStore(path string, store downloadsStore) error {
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+func currentDayKey(now time.Time) string {
+	return now.Format("2006-01-02")
+}
+
+func currentHourKey(now time.Time) string {
+	return now.Format("2006-01-02T15")
+}
+
+func (store *downloadsStore) ensureDeviceWindow(serial string, now time.Time) {
+	if store.DeviceWindows == nil {
+		store.DeviceWindows = map[string]deviceDownloadWindow{}
+	}
+	hourKey := currentHourKey(now)
+	dayKey := currentDayKey(now)
+	window := store.DeviceWindows[serial]
+	if window.HourKey != hourKey {
+		window.HourKey = hourKey
+		window.HourCount = 0
+	}
+	if window.DayKey != dayKey {
+		window.DayKey = dayKey
+		window.DayCount = 0
+	}
+	store.DeviceWindows[serial] = window
+}
+
+func (store *downloadsStore) deviceDownloadLimitMessage(serial string, now time.Time) string {
+	store.ensureDeviceWindow(serial, now)
+	window := store.DeviceWindows[serial]
+	if window.HourCount >= maxDownloadsPerHour {
+		return fmt.Sprintf("每小时最多下载%d次，请稍后再试", maxDownloadsPerHour)
+	}
+	if window.DayCount >= maxDownloadsPerDay {
+		return fmt.Sprintf("每天最多下载%d次，请明天再试", maxDownloadsPerDay)
+	}
+	return ""
+}
+
+func (store *downloadsStore) attemptDeviceDownload(serial, resourceID string, now time.Time) (deviceDownloadWindow, int, int, string) {
+	store.ensureDeviceWindow(serial, now)
+	if limitMsg := store.deviceDownloadLimitMessage(serial, now); limitMsg != "" {
+		window := store.DeviceWindows[serial]
+		totalCount := store.TotalCounts[resourceID]
+		weeklyCount := store.WeeklyCounts[resourceID]
+		return window, totalCount, weeklyCount, limitMsg
+	}
+
+	window := store.DeviceWindows[serial]
+	window.HourCount++
+	window.DayCount++
+	store.DeviceWindows[serial] = window
+	store.recordDownload(resourceID, now)
+	return window, store.TotalCounts[resourceID], store.WeeklyCounts[resourceID], ""
 }
 
 func (store *downloadsStore) ensureCurrentWeek(now time.Time) {
@@ -814,7 +886,8 @@ func main() {
 
 	router.POST("/api/resource-download", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
@@ -830,15 +903,24 @@ func main() {
 			return
 		}
 
+		now := time.Now()
 		downloadsMu.Lock()
-		downloads.recordDownload(resourceID, time.Now())
+		downloads.ensureDeviceWindow(serial, now)
+		downloads.ensureCurrentWeek(now)
+		window := downloads.DeviceWindows[serial]
 		totalCount := downloads.TotalCounts[resourceID]
 		weeklyCount := downloads.WeeklyCounts[resourceID]
 		weekKey := downloads.WeekKey
-		saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+		limitMsg := downloads.deviceDownloadLimitMessage(serial, now)
 		downloadsMu.Unlock()
-		if saveErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "下载统计保存失败"})
+
+		if limitMsg != "" {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":     false,
+				"message":     limitMsg,
+				"hourlyCount": window.HourCount,
+				"dailyCount":  window.DayCount,
+			})
 			return
 		}
 
@@ -847,12 +929,15 @@ func main() {
 			"weekKey":      weekKey,
 			"totalCount":   totalCount,
 			"weeklyCount":  weeklyCount,
+			"hourlyCount":  window.HourCount,
+			"dailyCount":   window.DayCount,
 		})
 	})
 
 	handleResource := func(c *gin.Context, id string) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
 			return
 		}
@@ -861,6 +946,25 @@ func main() {
 		objectKey := normalizeObjectKey(rawObjectKey)
 		if !ok || objectKey == "" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+			return
+		}
+
+		now := time.Now()
+		downloadsMu.Lock()
+		window, totalCount, weeklyCount, limitMsg := downloads.attemptDeviceDownload(serial, id, now)
+		weekKey := downloads.WeekKey
+		saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+		downloadsMu.Unlock()
+		if limitMsg != "" {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":       limitMsg,
+				"hourlyCount": window.HourCount,
+				"dailyCount":  window.DayCount,
+			})
+			return
+		}
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
 			return
 		}
 
@@ -879,12 +983,22 @@ func main() {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"url": url})
+		c.JSON(http.StatusOK, gin.H{
+			"url": url,
+			"downloadStats": gin.H{
+				"weekKey":     weekKey,
+				"totalCount":  totalCount,
+				"weeklyCount": weeklyCount,
+				"hourlyCount": window.HourCount,
+				"dailyCount":  window.DayCount,
+			},
+		})
 	}
 
-	handleImage := func(c *gin.Context, id string) {
+	handleImage := func(c *gin.Context, id string, forDownload bool) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
 			return
 		}
@@ -911,10 +1025,48 @@ func main() {
 		cacheKey := cacheKeyPrefix + objectKey
 
 		now := time.Now()
+		var window deviceDownloadWindow
+		var totalCount int
+		var weeklyCount int
+		var weekKey string
+		if forDownload {
+			downloadsMu.Lock()
+			var limitMsg string
+			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
+			weekKey = downloads.WeekKey
+			saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+			downloadsMu.Unlock()
+			if limitMsg != "" {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":       limitMsg,
+					"hourlyCount": window.HourCount,
+					"dailyCount":  window.DayCount,
+				})
+				return
+			}
+			if saveErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
+				return
+			}
+		}
+
 		imageURLCacheMu.RLock()
 		cached, hasCached := imageURLCache[cacheKey]
 		imageURLCacheMu.RUnlock()
 		if hasCached && cached.expiresAt.After(now) {
+			if forDownload {
+				c.JSON(http.StatusOK, gin.H{
+					"url": cached.url,
+					"downloadStats": gin.H{
+						"weekKey":     weekKey,
+						"totalCount":  totalCount,
+						"weeklyCount": weeklyCount,
+						"hourlyCount": window.HourCount,
+						"dailyCount":  window.DayCount,
+					},
+				})
+				return
+			}
 			c.JSON(http.StatusOK, gin.H{"url": cached.url})
 			return
 		}
@@ -931,6 +1083,20 @@ func main() {
 		}
 		imageURLCacheMu.Unlock()
 
+		if forDownload {
+			c.JSON(http.StatusOK, gin.H{
+				"url": url,
+				"downloadStats": gin.H{
+					"weekKey":     weekKey,
+					"totalCount":  totalCount,
+					"weeklyCount": weeklyCount,
+					"hourlyCount": window.HourCount,
+					"dailyCount":  window.DayCount,
+				},
+			})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"url": url})
 	}
 
@@ -941,10 +1107,10 @@ func main() {
 		handleResource(c, c.Query("id"))
 	})
 	router.GET("/api/image/:id", func(c *gin.Context) {
-		handleImage(c, c.Param("id"))
+		handleImage(c, c.Param("id"), c.Query("download") == "1")
 	})
 	router.GET("/api/image/", func(c *gin.Context) {
-		handleImage(c, c.Query("id"))
+		handleImage(c, c.Query("id"), c.Query("download") == "1")
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

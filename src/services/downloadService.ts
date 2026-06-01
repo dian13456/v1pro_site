@@ -1,6 +1,9 @@
 import { apiFetch } from "./httpClient";
 import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authService";
+import { recordLocalDeviceDownload } from "./downloadStatsService";
 import { isStaticMode } from "./runtimeMode";
+import { parseDownloadStats } from "../types/downloadStats";
+import type { SignedDownloadResult } from "../types/downloadStats";
 
 interface DownloadSignResponse {
   success: boolean;
@@ -11,9 +14,13 @@ interface DownloadSignResponse {
 interface GinResourceResponse {
   url?: string;
   error?: string;
+  downloadStats?: Record<string, unknown>;
 }
 
-export async function createDownloadUrl(resourceId: number, fallbackDownloadUrl?: string): Promise<string> {
+export async function createDownloadUrl(
+  resourceId: number,
+  fallbackDownloadUrl?: string
+): Promise<SignedDownloadResult> {
   const auth = getAuthState();
   if (!hasValidLocalAuth() || !auth?.token) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -27,7 +34,8 @@ export async function createDownloadUrl(resourceId: number, fallbackDownloadUrl?
     if (!fallbackDownloadUrl) {
       throw new Error("静态模式下缺少下载地址");
     }
-    return fallbackDownloadUrl;
+    const stats = recordLocalDeviceDownload(auth.serial, resourceId);
+    return { url: fallbackDownloadUrl, stats };
   }
 
   try {
@@ -39,11 +47,13 @@ export async function createDownloadUrl(resourceId: number, fallbackDownloadUrl?
     });
 
     if (signed.url) {
-      return signed.url;
+      return {
+        url: signed.url,
+        stats: parseDownloadStats(signed),
+      };
     }
     throw new Error(signed.error || "下载链接生成失败");
   } catch {
-    // Fallback to existing Worker endpoint for compatibility.
     const result = await apiFetch<DownloadSignResponse>("/api/download-sign", {
       method: "POST",
       headers: {
@@ -58,6 +68,6 @@ export async function createDownloadUrl(resourceId: number, fallbackDownloadUrl?
       throw new Error(result.message || "下载链接生成失败");
     }
 
-    return result.url;
+    return { url: result.url };
   }
 }

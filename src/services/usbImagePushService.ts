@@ -25,10 +25,10 @@ export async function pushResourceImageToDevice(
   }
 
   onProgress?.({ phase: "prepare", sent: 0, total: 0 });
-  const signedUrl = await createImageUrl(resourceId, fallbackImageUrl);
+  const signed = await createImageUrl(resourceId, fallbackImageUrl);
 
   onProgress?.({ phase: "convert", sent: 0, total: 0 });
-  let raw = await fetchImageToRgb565(signedUrl, {
+  let raw = await fetchImageToRgb565(signed.url, {
     width: DESKTOP_IMAGE_TRANSFER.width,
     height: DESKTOP_IMAGE_TRANSFER.height,
     fitMode: DESKTOP_IMAGE_TRANSFER.fitMode,

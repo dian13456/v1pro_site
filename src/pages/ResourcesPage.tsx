@@ -10,7 +10,8 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
-import { fetchResourceDownloads, recordResourceDownload, displayDownloadCount } from "../services/downloadStatsService";
+import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
+import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { isStaticMode } from "../services/runtimeMode";
@@ -186,6 +187,21 @@ export default function ResourcesPage() {
     setCurrentPage(1);
   };
 
+  const applyDownloadStats = (resourceId: number, stats?: DownloadStatsSnapshot | null) => {
+    if (!stats) return;
+    setTotalDownloadCounts((prev) => ({
+      ...prev,
+      [resourceId]: stats.totalCount,
+    }));
+    setWeeklyDownloadCounts((prev) => ({
+      ...prev,
+      [resourceId]: stats.weeklyCount,
+    }));
+    if (stats.weekKey) {
+      setDownloadWeekKey(stats.weekKey);
+    }
+  };
+
   const handleDownload = async (resource: ResourceItem) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
@@ -195,25 +211,12 @@ export default function ResourcesPage() {
     try {
       setDownloadingId(resource.id);
       setErrorMessage("");
-      const signedUrl =
+      const downloadResult =
         resource.materialType === "image"
-          ? await createImageUrl(resource.id, resource.image)
+          ? await createImageUrl(resource.id, resource.image, { forDownload: true })
           : await createDownloadUrl(resource.id, resource.download);
-      try {
-        const stats = await recordResourceDownload(resource.id);
-        setTotalDownloadCounts((prev) => ({
-          ...prev,
-          [resource.id]: stats.totalCount,
-        }));
-        setWeeklyDownloadCounts((prev) => ({
-          ...prev,
-          [resource.id]: stats.weeklyCount,
-        }));
-        setDownloadWeekKey(stats.weekKey);
-      } catch {
-        // Download should still proceed even if stats recording fails.
-      }
-      window.open(signedUrl || resource.download, "_blank", "noopener,noreferrer");
+      applyDownloadStats(resource.id, downloadResult.stats);
+      window.open(downloadResult.url || resource.download, "_blank", "noopener,noreferrer");
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
       setErrorMessage(message);
