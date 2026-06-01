@@ -22,6 +22,13 @@ export interface ResourceDownloadStats {
   weeklyCounts: Record<number, number>;
 }
 
+/** 前端展示倍数（不影响服务端真实统计） */
+export const DOWNLOAD_COUNT_DISPLAY_MULTIPLIER = 2;
+
+export function displayDownloadCount(count: number): number {
+  return Math.max(0, Math.floor(count)) * DOWNLOAD_COUNT_DISPLAY_MULTIPLIER;
+}
+
 const LOCAL_TOTAL_COUNTS_KEY = "jiadian_hub_download_total_counts";
 const LOCAL_WEEKLY_COUNTS_KEY = "jiadian_hub_download_weekly_counts";
 const LOCAL_WEEK_KEY = "jiadian_hub_download_week_key";

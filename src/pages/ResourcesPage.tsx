@@ -10,7 +10,7 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
-import { fetchResourceDownloads, recordResourceDownload } from "../services/downloadStatsService";
+import { fetchResourceDownloads, recordResourceDownload, displayDownloadCount } from "../services/downloadStatsService";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { isStaticMode } from "../services/runtimeMode";
@@ -474,8 +474,8 @@ export default function ResourcesPage() {
                 liking={likingId === resource.id}
                 liked={likedIds.has(resource.id)}
                 likeCount={likeCounts[resource.id] || 0}
-                downloadCount={totalDownloadCounts[resource.id] || 0}
-                weeklyDownloadCount={weeklyDownloadCounts[resource.id] || 0}
+                downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
                 showWeeklyDownloadCount={sortMode === "weeklyTop"}
               />
             ))}
