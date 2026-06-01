@@ -1,7 +1,7 @@
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
-import { displayUsernameFromSerial } from "../utils/displayUsername";
+import { getDisplayName } from "./welcomeService";
 import type { BoardMessage, MessageBoardState } from "../types/messageBoard";
 
 interface MessagesResponse {
@@ -96,7 +96,7 @@ export async function postMessage(content: string): Promise<BoardMessage> {
   if (isStaticMode()) {
     const entry: BoardMessage = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-      username: displayUsernameFromSerial(auth.serial),
+      username: getDisplayName(auth.serial),
       content: trimmed,
       createdAt: Date.now(),
     };
@@ -111,7 +111,10 @@ export async function postMessage(content: string): Promise<BoardMessage> {
     headers: {
       Authorization: `Bearer ${auth.token}`,
     },
-    body: JSON.stringify({ content: trimmed }),
+    body: JSON.stringify({
+      content: trimmed,
+      displayName: getDisplayName(auth.serial),
+    }),
   });
 
   const message = normalizeMessage(payload.message);

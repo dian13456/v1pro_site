@@ -7,23 +7,45 @@ interface TermsAcceptanceRecord {
   acceptedAt: number;
 }
 
-export function hasAcceptedTerms(): boolean {
+function serialTermsKey(serial: string): string {
+  return `${TERMS_STORAGE_KEY}_${serial}`;
+}
+
+function readTermsRecord(key: string): TermsAcceptanceRecord | null {
   try {
-    const raw = localStorage.getItem(TERMS_STORAGE_KEY);
-    if (!raw) return false;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as TermsAcceptanceRecord;
-    return parsed.version === TERMS_VERSION && Number.isFinite(parsed.acceptedAt);
+    if (parsed.version !== TERMS_VERSION || !Number.isFinite(parsed.acceptedAt)) {
+      return null;
+    }
+    return parsed;
   } catch {
-    return false;
+    return null;
   }
 }
 
-export function acceptTerms(): void {
+export function hasAcceptedTerms(serial?: string): boolean {
+  if (readTermsRecord(TERMS_STORAGE_KEY)) {
+    return true;
+  }
+  const normalizedSerial = serial?.trim();
+  if (normalizedSerial && readTermsRecord(serialTermsKey(normalizedSerial))) {
+    return true;
+  }
+  return false;
+}
+
+export function acceptTerms(serial?: string): void {
   const record: TermsAcceptanceRecord = {
     version: TERMS_VERSION,
     acceptedAt: Date.now(),
   };
   localStorage.setItem(TERMS_STORAGE_KEY, JSON.stringify(record));
+  const normalizedSerial = serial?.trim();
+  if (normalizedSerial) {
+    localStorage.setItem(serialTermsKey(normalizedSerial), JSON.stringify(record));
+  }
 }
 
 export function clearTermsAcceptance(): void {

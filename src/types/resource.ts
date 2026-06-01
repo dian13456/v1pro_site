@@ -25,4 +25,5 @@ export interface AuthState {
   vendorId: number;
   productId: number;
   verifiedAt: number;
+  displayName?: string;
 }

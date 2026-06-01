@@ -80,7 +80,12 @@ type messagesStore struct {
 }
 
 type messagePostRequest struct {
-	Content string `json:"content"`
+	Content     string `json:"content"`
+	DisplayName string `json:"displayName"`
+}
+
+type profilePostRequest struct {
+	DisplayName string `json:"displayName"`
 }
 
 type aiGuideRequest struct {
@@ -719,6 +724,10 @@ func main() {
 	if messageBoardPath == "" {
 		messageBoardPath = filepath.Join("config", "message_board.json")
 	}
+	userProfilesPath := os.Getenv("USER_PROFILES_PATH")
+	if userProfilesPath == "" {
+		userProfilesPath = filepath.Join("config", "user_profiles.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -758,6 +767,10 @@ func main() {
 	messages, err := loadMessagesStore(messageBoardPath)
 	if err != nil {
 		log.Fatalf("load message board failed: %v", err)
+	}
+	userProfiles, err := service.LoadUserProfiles(userProfilesPath)
+	if err != nil {
+		log.Fatalf("load user profiles failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -818,6 +831,7 @@ func main() {
 	var likesMu sync.RWMutex
 	var downloadsMu sync.Mutex
 	var messagesMu sync.RWMutex
+	var profilesMu sync.RWMutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -859,11 +873,15 @@ func main() {
 			return
 		}
 
+		profilesMu.RLock()
+		displayName := service.ResolveStoredDisplayName(userProfiles, serial, c.Query("displayName"))
+		profilesMu.RUnlock()
+
 		result := service.GenerateWelcome(
 			c.Request.Context(),
 			deepseekClient,
 			serial,
-			c.Query("displayName"),
+			displayName,
 			service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP")),
 		)
 		c.JSON(http.StatusOK, gin.H{
@@ -875,6 +893,53 @@ func main() {
 			"localTime":   result.LocalTime,
 			"temperature": result.Temperature,
 			"weatherText": result.WeatherText,
+		})
+	})
+
+	router.GET("/api/profile", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		profilesMu.RLock()
+		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"displayName": displayName,
+		})
+	})
+
+	router.POST("/api/profile", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req profilePostRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		profilesMu.Lock()
+		displayName := service.SetStoredDisplayName(&userProfiles, serial, req.DisplayName)
+		saveErr := service.SaveUserProfiles(userProfilesPath, userProfiles)
+		profilesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "昵称保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"displayName": displayName,
 		})
 	})
 
@@ -1363,7 +1428,11 @@ func main() {
 
 		entry := messageEntry{
 			ID:        newMessageID(),
-			Username:  displayUsernameFromSerial(serial),
+			Username:  func() string {
+				profilesMu.RLock()
+				defer profilesMu.RUnlock()
+				return service.ResolveStoredDisplayName(userProfiles, serial, req.DisplayName)
+			}(),
 			Content:   content,
 			CreatedAt: time.Now().UnixMilli(),
 		}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { TermsAgreementModal } from "./components/TermsAgreementModal";
 import { WelcomeModal } from "./components/WelcomeModal";
@@ -9,7 +9,8 @@ import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
 import ResourcesPage from "./pages/ResourcesPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
-import { hasAcceptedTerms } from "./services/termsService";
+import { getAuthState } from "./services/authService";
+import { acceptTerms, hasAcceptedTerms } from "./services/termsService";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -32,14 +33,28 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   const location = useLocation();
-  const [termsAccepted, setTermsAccepted] = useState(hasAcceptedTerms);
+  const serial = getAuthState()?.serial || "";
+  const [termsAccepted, setTermsAccepted] = useState(() => hasAcceptedTerms(serial));
+
+  useEffect(() => {
+    const currentSerial = getAuthState()?.serial || "";
+    if (hasAcceptedTerms(currentSerial)) {
+      setTermsAccepted(true);
+    }
+  }, [location.pathname, serial]);
+
   const showTermsModal = !termsAccepted && location.pathname !== "/terms";
   const showWelcomeModal =
     termsAccepted && location.pathname !== "/auth" && location.pathname !== "/terms";
 
+  const handleTermsAccepted = () => {
+    acceptTerms(getAuthState()?.serial || serial || undefined);
+    setTermsAccepted(true);
+  };
+
   return (
     <>
-      {showTermsModal ? <TermsAgreementModal onAccepted={() => setTermsAccepted(true)} /> : null}
+      {showTermsModal ? <TermsAgreementModal serial={serial} onAccepted={handleTermsAccepted} /> : null}
       {showWelcomeModal ? <WelcomeModal /> : null}
       <Routes>
         <Route path="/terms" element={<TermsPage />} />

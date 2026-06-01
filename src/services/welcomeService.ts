@@ -1,4 +1,4 @@
-import { getAuthState } from "./authService";
+import { getAuthState, updateAuthDisplayName } from "./authService";
 import { displayUsernameFromSerial } from "../utils/displayUsername";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
@@ -11,11 +11,7 @@ function displayNameKey(serial: string): string {
   return `${DISPLAY_NAME_PREFIX}${serial}`;
 }
 
-export function getDefaultDisplayName(serial: string): string {
-  return displayUsernameFromSerial(serial);
-}
-
-export function getDisplayName(serial: string): string {
+function readLocalDisplayName(serial: string): string {
   try {
     const saved = localStorage.getItem(displayNameKey(serial))?.trim();
     if (saved) {
@@ -24,17 +20,109 @@ export function getDisplayName(serial: string): string {
   } catch {
     // ignore
   }
+  return "";
+}
+
+export function getDefaultDisplayName(serial: string): string {
+  return displayUsernameFromSerial(serial);
+}
+
+export function getDisplayName(serial: string): string {
+  if (!serial) return "用户";
+
+  const auth = getAuthState();
+  if (auth?.serial === serial) {
+    const fromAuth = auth.displayName?.trim();
+    if (fromAuth) {
+      return fromAuth.slice(0, MAX_DISPLAY_NAME_LENGTH);
+    }
+  }
+
+  const fromLocal = readLocalDisplayName(serial);
+  if (fromLocal) {
+    return fromLocal;
+  }
+
   return getDefaultDisplayName(serial);
 }
 
-export function setDisplayName(serial: string, name: string): string {
+function persistDisplayNameLocally(serial: string, name: string): string {
   const trimmed = name.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
-  if (!trimmed) {
+  const defaultName = getDefaultDisplayName(serial);
+  const nextName = trimmed || defaultName;
+
+  if (!trimmed || trimmed === defaultName) {
     localStorage.removeItem(displayNameKey(serial));
-    return getDefaultDisplayName(serial);
+    updateAuthDisplayName(serial, undefined);
+    return defaultName;
   }
+
   localStorage.setItem(displayNameKey(serial), trimmed);
-  return trimmed;
+  updateAuthDisplayName(serial, trimmed);
+  return nextName;
+}
+
+export function setDisplayName(serial: string, name: string): string {
+  return persistDisplayNameLocally(serial, name);
+}
+
+export async function saveDisplayName(serial: string, name: string): Promise<string> {
+  const saved = persistDisplayNameLocally(serial, name);
+
+  if (isStaticMode()) {
+    return saved;
+  }
+
+  const auth = getAuthState();
+  if (!auth?.token || auth.serial !== serial) {
+    return saved;
+  }
+
+  try {
+    const payload = await apiFetch<{ success?: boolean; displayName?: string }>("/api/profile", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ displayName: saved }),
+    });
+    if (payload.displayName) {
+      return persistDisplayNameLocally(serial, payload.displayName);
+    }
+  } catch {
+    // keep local copy
+  }
+
+  return saved;
+}
+
+export async function syncDisplayNameFromServer(serial: string): Promise<string> {
+  const current = getDisplayName(serial);
+  if (isStaticMode() || !serial) {
+    return current;
+  }
+
+  const auth = getAuthState();
+  if (!auth?.token || auth.serial !== serial) {
+    return current;
+  }
+
+  try {
+    const payload = await apiFetch<{ success?: boolean; displayName?: string }>("/api/profile", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+      },
+    });
+    const fromServer = payload.displayName?.trim();
+    if (fromServer) {
+      return persistDisplayNameLocally(serial, fromServer);
+    }
+  } catch {
+    // ignore
+  }
+
+  return current;
 }
 
 function buildLocalWelcome(username: string): WelcomePayload {
@@ -69,6 +157,9 @@ function buildLocalWelcome(username: string): WelcomePayload {
 export async function fetchWelcomeMessage(): Promise<WelcomePayload> {
   const auth = getAuthState();
   const serial = auth?.serial || "";
+  if (serial) {
+    await syncDisplayNameFromServer(serial);
+  }
   const displayName = serial ? getDisplayName(serial) : "用户";
 
   if (isStaticMode()) {
@@ -90,7 +181,10 @@ export async function fetchWelcomeMessage(): Promise<WelcomePayload> {
     if (!payload.message) {
       return buildLocalWelcome(displayName);
     }
-    return payload;
+    return {
+      ...payload,
+      username: payload.username || displayName,
+    };
   } catch {
     return buildLocalWelcome(displayName);
   }

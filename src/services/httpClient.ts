@@ -9,6 +9,7 @@ const DEV_DOWNLOAD_WEEKLY_KEY = "jiadian_dev_download_weekly_counts";
 const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
 const DEV_DEVICE_WINDOWS_KEY = "jiadian_dev_device_download_windows";
 const DEV_MESSAGES_KEY = "jiadian_dev_messages";
+const DEV_PROFILES_KEY = "jiadian_dev_profiles";
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
 const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
@@ -337,6 +338,35 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/profile")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    let profiles: Record<string, string> = {};
+    try {
+      profiles = JSON.parse(localStorage.getItem(DEV_PROFILES_KEY) || "{}") as Record<string, string>;
+    } catch {
+      profiles = {};
+    }
+    if ((init.method || "GET").toUpperCase() === "POST") {
+      const displayName = String(body.displayName || "").trim().slice(0, 20);
+      if (displayName) {
+        profiles[serial] = displayName;
+      } else {
+        delete profiles[serial];
+      }
+      localStorage.setItem(DEV_PROFILES_KEY, JSON.stringify(profiles));
+      return {
+        success: true,
+        displayName: displayName || displayUsernameFromSerial(serial),
+      };
+    }
+    return {
+      success: true,
+      displayName: profiles[serial] || displayUsernameFromSerial(serial),
+    };
+  }
+
   if (path.startsWith("/api/welcome")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
@@ -379,7 +409,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       }
       const entry: DevBoardMessage = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        username: displayUsernameFromSerial(serial),
+        username: String(body.displayName || "").trim() || displayUsernameFromSerial(serial),
         content,
         createdAt: Date.now(),
       };

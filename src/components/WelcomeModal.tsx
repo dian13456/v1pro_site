@@ -5,26 +5,42 @@ import {
   fetchWelcomeMessage,
   getDefaultDisplayName,
   getDisplayName,
-  setDisplayName,
+  saveDisplayName,
+  syncDisplayNameFromServer,
 } from "../services/welcomeService";
 import type { WelcomePayload } from "../types/welcome";
 
-const DISMISS_KEY = "jiadian_hub_welcome_dismissed";
+function welcomeDismissKey(serial: string): string {
+  return `jiadian_hub_welcome_dismissed_${serial}`;
+}
+
+function hasDismissedWelcome(serial: string): boolean {
+  if (!serial) return true;
+  try {
+    return localStorage.getItem(welcomeDismissKey(serial)) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function WelcomeModal() {
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [welcome, setWelcome] = useState<WelcomePayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(() => sessionStorage.getItem(DISMISS_KEY) !== "1");
+  const [open, setOpen] = useState(() => !hasDismissedWelcome(serial));
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [displayName, setDisplayNameState] = useState(() => getDisplayName(serial));
 
   const loadWelcome = async () => {
     setLoading(true);
     try {
       const payload = await fetchWelcomeMessage();
       setWelcome(payload);
+      if (payload.username) {
+        setDisplayNameState(payload.username);
+      }
     } finally {
       setLoading(false);
     }
@@ -35,7 +51,10 @@ export function WelcomeModal() {
       setLoading(false);
       return;
     }
-    void loadWelcome();
+    void syncDisplayNameFromServer(serial).then((name) => {
+      setDisplayNameState(name);
+      void loadWelcome();
+    });
   }, [serial, open]);
 
   if (!serial || !open) {
@@ -43,18 +62,19 @@ export function WelcomeModal() {
   }
 
   const handleDismiss = () => {
-    sessionStorage.setItem(DISMISS_KEY, "1");
+    localStorage.setItem(welcomeDismissKey(serial), "1");
     setOpen(false);
   };
 
   const handleSaveName = async () => {
-    const nextName = setDisplayName(serial, nameInput);
+    const nextName = await saveDisplayName(serial, nameInput);
     setEditing(false);
     setNameInput(nextName);
+    setDisplayNameState(nextName);
     await loadWelcome();
   };
 
-  const currentName = welcome?.username || getDisplayName(serial);
+  const currentName = displayName || welcome?.username || getDisplayName(serial);
   const metaParts = [
     welcome?.localTime,
     welcome?.city ? `${welcome.city}${welcome.region ? ` · ${welcome.region}` : ""}` : "",

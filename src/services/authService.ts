@@ -83,6 +83,19 @@ export function clearAuthState(): void {
   localStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
+export function updateAuthDisplayName(serial: string, displayName?: string): void {
+  const state = getAuthState();
+  if (!state || state.serial !== serial) return;
+
+  const nextState = { ...state };
+  if (displayName?.trim()) {
+    nextState.displayName = displayName.trim().slice(0, 20);
+  } else {
+    delete nextState.displayName;
+  }
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextState));
+}
+
 export function hasValidLocalAuth(): boolean {
   const state = getAuthState();
   return Boolean(
@@ -127,6 +140,13 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
   const serialNumber = await readDeviceSerial(device);
 
   const { vid, pid } = formatUsbDeviceId(vendorId, productId);
+  const previous = getAuthState();
+  const preservedDisplayName =
+    previous?.serial === serialNumber
+      ? previous.displayName?.trim() ||
+        localStorage.getItem(`jiadian_hub_display_name_${serialNumber}`)?.trim() ||
+        undefined
+      : undefined;
 
   let token = "";
   if (isStaticMode()) {
@@ -153,6 +173,7 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
     vendorId,
     productId,
     verifiedAt: Date.now(),
+    ...(preservedDisplayName ? { displayName: preservedDisplayName.slice(0, 20) } : {}),
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
   return state;

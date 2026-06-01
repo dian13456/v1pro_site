@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { TERMS_TITLE } from "../content/termsOfUse";
-import { acceptTerms } from "../services/termsService";
 
 interface TermsAgreementModalProps {
+  serial?: string;
   onAccepted: () => void;
 }
 
@@ -12,7 +12,6 @@ export function TermsAgreementModal({ onAccepted }: TermsAgreementModalProps) {
 
   const handleAccept = () => {
     if (!checked) return;
-    acceptTerms();
     onAccepted();
   };
 
