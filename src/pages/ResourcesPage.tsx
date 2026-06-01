@@ -22,7 +22,7 @@ import { pickRandomItems } from "../utils/randomPick";
 
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
-const DEFAULT_PAGE_SIZE = 15;
+const DEFAULT_PAGE_SIZE = 16;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
@@ -462,7 +462,7 @@ export default function ResourcesPage() {
                 onChange={(event) => setPageSize(Number(event.target.value))}
                 className="rounded-full border border-white/25 bg-white/55 px-3 py-2 text-sm text-slate-700 outline-none dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
               >
-                {[15, 20, 40, 60, 100].map((size) => (
+                {[16, 20, 40, 60, 100].map((size) => (
                   <option key={size} value={size}>
                     {size} 张
                   </option>
