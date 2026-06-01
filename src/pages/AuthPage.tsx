@@ -1,25 +1,73 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
-import { DEVICE_MISMATCH_MESSAGE, requestUsbAndAuthorize } from "../services/authService";
+import {
+  DEVICE_MISMATCH_MESSAGE,
+  requestUsbAndAuthorize,
+  tryAuthorizeGrantedDevice,
+} from "../services/authService";
 
 export default function AuthPage() {
   const [loading, setLoading] = useState(false);
+  const [autoConnecting, setAutoConnecting] = useState(true);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
+  const autoTriedRef = useRef(false);
+
+  const redirectTarget =
+    typeof location.state === "object" &&
+    location.state &&
+    "from" in location.state &&
+    typeof (location.state as { from?: { pathname?: string } }).from?.pathname === "string"
+      ? (location.state as { from: { pathname: string } }).from.pathname
+      : "/";
+
+  const enterSite = () => {
+    navigate(redirectTarget, { replace: true });
+  };
 
   const handleVerify = async () => {
     try {
       setLoading(true);
       setError("");
       await requestUsbAndAuthorize();
-      navigate("/", { replace: true });
+      enterSite();
     } catch (err) {
       setError((err as Error)?.message || DEVICE_MISMATCH_MESSAGE);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (autoTriedRef.current) return;
+    autoTriedRef.current = true;
+
+    let active = true;
+    void (async () => {
+      try {
+        const state = await tryAuthorizeGrantedDevice();
+        if (!active) return;
+        if (state) {
+          navigate(redirectTarget, { replace: true });
+          return;
+        }
+      } catch {
+        // 等待用户手动点击连接
+      } finally {
+        if (active) {
+          setAutoConnecting(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, redirectTarget]);
+
+  const busy = loading || autoConnecting;
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-8">
@@ -28,16 +76,16 @@ export default function AuthPage() {
         <p className="text-xs uppercase tracking-[0.28em] text-cyan-300">USB Authentication</p>
         <h1 className="mt-3 text-3xl font-semibold text-white">请连接设备</h1>
         <p className="mt-3 text-sm text-slate-200">
-          请使用 Edge 或 Chrome。点击后将自动查找授权设备并进入资源页。
+          请使用 Edge 或 Chrome。已授权过的设备会自动连接；首次使用请点击下方按钮选择设备。
         </p>
 
         <button
           type="button"
-          onClick={handleVerify}
-          disabled={loading}
+          onClick={() => void handleVerify()}
+          disabled={busy}
           className="mt-8 w-full rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-200 disabled:opacity-60"
         >
-          {loading ? "连接中..." : "连接设备"}
+          {autoConnecting ? "正在查找已授权设备…" : loading ? "连接中..." : "选择设备并连接"}
         </button>
 
         {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}

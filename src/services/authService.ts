@@ -24,38 +24,75 @@ function mapAuthMessage(message?: string): string {
   return message;
 }
 
-async function readDeviceSerial(device: USBDevice): Promise<string> {
-  if (device.serialNumber) return device.serialNumber;
+async function ensureDeviceSerial(device: USBDevice): Promise<string> {
+  if (device.serialNumber) {
+    return device.serialNumber;
+  }
+
   try {
-    if (!device.opened) await device.open();
+    if (!device.opened) {
+      await device.open();
+    }
+    if (!device.configuration) {
+      await device.selectConfiguration(1);
+    }
   } catch {
     throw new Error(DEVICE_MISMATCH_MESSAGE);
   }
-  if (device.serialNumber) return device.serialNumber;
+
+  if (device.serialNumber) {
+    return device.serialNumber;
+  }
   throw new Error(DEVICE_MISMATCH_MESSAGE);
 }
 
-async function resolveUsbDevice(): Promise<USBDevice> {
+async function findGrantedUsbDevice(): Promise<USBDevice | null> {
   const grantedDevices = await navigator.usb.getDevices();
   const matched = grantedDevices.filter((device) =>
     isAllowedUsbDevice(device.vendorId, device.productId)
   );
-  if (matched.length > 0) {
-    return matched[0];
+  return matched.length > 0 ? matched[0] : null;
+}
+
+async function requestUsbDeviceWithPicker(): Promise<USBDevice> {
+  if (window.top !== window.self) {
+    throw new Error("当前页面运行在 iframe 中，WebUSB 需要顶层页面打开");
   }
 
   try {
     return await navigator.usb.requestDevice({ filters: usbDeviceFilters() });
   } catch (error) {
-    throw mapUsbError(error);
+    const domError = error as DOMException;
+    if (domError?.name !== "NotFoundError") {
+      throw mapUsbError(error);
+    }
+
+    // 严格 filter 找不到设备时，放宽为全量列表再校验 VID/PID（避免弹窗闪退）。
+    try {
+      const device = await navigator.usb.requestDevice({ filters: [] });
+      if (!isAllowedUsbDevice(device.vendorId, device.productId)) {
+        throw new Error(DEVICE_MISMATCH_MESSAGE);
+      }
+      return device;
+    } catch (fallbackError) {
+      throw mapUsbError(fallbackError);
+    }
   }
+}
+
+async function resolveUsbDevice(): Promise<USBDevice> {
+  const granted = await findGrantedUsbDevice();
+  if (granted) {
+    return granted;
+  }
+  return requestUsbDeviceWithPicker();
 }
 
 function mapUsbError(error: unknown): Error {
   const domError = error as DOMException;
   switch (domError?.name) {
     case "NotFoundError":
-      return new Error(DEVICE_MISMATCH_MESSAGE);
+      return new Error("未找到设备或未选择设备，请连接 USB 后重试");
     case "NotAllowedError":
     case "AbortError":
       return new Error("浏览器取消了设备授权，请重试");
@@ -124,20 +161,12 @@ export async function verifyTokenRemote(): Promise<boolean> {
   }
 }
 
-export async function requestUsbAndAuthorize(): Promise<AuthState> {
-  if (!("usb" in navigator)) {
-    throw new Error("当前浏览器不支持 WebUSB，请使用最新版 Edge/Chrome");
-  }
-  if (!window.isSecureContext) {
-    throw new Error("当前页面不是安全上下文，请通过 localhost 或 HTTPS 访问");
-  }
-
-  const device = await resolveUsbDevice();
+export async function authorizeUsbDevice(device: USBDevice): Promise<AuthState> {
   const { vendorId, productId } = device;
   if (!isAllowedUsbDevice(vendorId, productId)) {
     throw new Error(DEVICE_MISMATCH_MESSAGE);
   }
-  const serialNumber = await readDeviceSerial(device);
+  const serialNumber = await ensureDeviceSerial(device);
 
   const { vid, pid } = formatUsbDeviceId(vendorId, productId);
   const previous = getAuthState();
@@ -177,6 +206,36 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
   return state;
+}
+
+/** 静默连接：仅使用浏览器已授权过的设备，不弹出选择器。 */
+export async function tryAuthorizeGrantedDevice(): Promise<AuthState | null> {
+  if (!("usb" in navigator) || !window.isSecureContext) {
+    return null;
+  }
+
+  const device = await findGrantedUsbDevice();
+  if (!device) {
+    return null;
+  }
+
+  try {
+    return await authorizeUsbDevice(device);
+  } catch {
+    return null;
+  }
+}
+
+export async function requestUsbAndAuthorize(): Promise<AuthState> {
+  if (!("usb" in navigator)) {
+    throw new Error("当前浏览器不支持 WebUSB，请使用最新版 Edge/Chrome");
+  }
+  if (!window.isSecureContext) {
+    throw new Error("当前页面不是安全上下文，请通过 localhost 或 HTTPS 访问");
+  }
+
+  const device = await resolveUsbDevice();
+  return authorizeUsbDevice(device);
 }
 
 export { ALLOWED_USB_DEVICES };

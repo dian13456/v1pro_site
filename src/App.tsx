@@ -43,7 +43,8 @@ export default function App() {
     }
   }, [location.pathname, serial]);
 
-  const showTermsModal = !termsAccepted && location.pathname !== "/terms";
+  const showTermsModal =
+    !termsAccepted && location.pathname !== "/auth" && location.pathname !== "/terms";
   const showWelcomeModal =
     termsAccepted && location.pathname !== "/auth" && location.pathname !== "/terms";
 
