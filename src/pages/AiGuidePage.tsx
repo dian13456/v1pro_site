@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
+import { WelcomeBanner } from "../components/WelcomeBanner";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
@@ -141,6 +142,8 @@ export default function AiGuidePage() {
             </div>
           }
         />
+
+        <WelcomeBanner className="mb-5" />
 
         <section className="mb-5 overflow-hidden rounded-3xl border border-violet-300/40 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 p-5 text-white shadow-[0_16px_40px_-16px_rgba(139,92,246,0.85)] dark:border-violet-400/20">
           <div className="flex flex-wrap items-center justify-between gap-4">

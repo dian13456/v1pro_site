@@ -337,6 +337,34 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/welcome")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const displayName = parseQuery(path).get("displayName") || displayUsernameFromSerial(serial);
+    const hour = new Date().getHours();
+    const greeting =
+      hour >= 5 && hour < 9
+        ? "早上好"
+        : hour >= 9 && hour < 12
+          ? "上午好"
+          : hour >= 14 && hour < 18
+            ? "下午好"
+            : hour >= 18 && hour < 23
+              ? "晚上好"
+              : "你好";
+    return {
+      success: true,
+      message: `${greeting}，${displayName}！欢迎来到佳点电子资源中心。（开发模式欢迎语）`,
+      username: displayName,
+      city: "深圳",
+      region: "广东",
+      localTime: "周一 12:00",
+      temperature: 26,
+      weatherText: "多云",
+    };
+  }
+
   if (path.startsWith("/api/messages")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };

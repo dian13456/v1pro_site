@@ -4,6 +4,7 @@ import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { SearchBar } from "../components/SearchBar";
 import { SiteHeader } from "../components/SiteHeader";
+import { WelcomeBanner } from "../components/WelcomeBanner";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -326,6 +327,8 @@ export default function ResourcesPage() {
             </div>
           }
         />
+
+        <WelcomeBanner className="mb-6" />
 
         <Link
           to="/guide"

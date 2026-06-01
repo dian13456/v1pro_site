@@ -851,6 +851,32 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"success": valid})
 	})
 
+	router.GET("/api/welcome", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		result := service.GenerateWelcome(
+			c.Request.Context(),
+			serial,
+			c.Query("displayName"),
+			service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP")),
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"message":     result.Message,
+			"username":    result.Username,
+			"city":        result.City,
+			"region":      result.Region,
+			"localTime":   result.LocalTime,
+			"temperature": result.Temperature,
+			"weatherText": result.WeatherText,
+		})
+	})
+
 	router.GET("/api/resources", func(c *gin.Context) {
 		items, err := loadResourceCatalog(resourcesPath)
 		if err != nil {
