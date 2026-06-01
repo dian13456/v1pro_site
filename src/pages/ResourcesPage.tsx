@@ -14,6 +14,9 @@ import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
+import { pickRandomItems } from "../utils/randomPick";
+
+const RANDOM_PAGE_SIZE = 20;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
@@ -26,9 +29,12 @@ export default function ResourcesPage() {
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
   const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [randomMode, setRandomMode] = useState(false);
+  const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const { theme, toggleTheme } = useThemeMode();
   const {
+    resources,
     filtered,
     loading,
     error,
@@ -55,6 +61,8 @@ export default function ResourcesPage() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setRandomMode(false);
+    setRandomItems([]);
   }, [keyword, category, materialType, sortMode, pageSize]);
 
   useEffect(() => {
@@ -64,9 +72,12 @@ export default function ResourcesPage() {
   }, [currentPage, totalPages]);
 
   const visibleItems = useMemo(() => {
+    if (randomMode) {
+      return randomItems;
+    }
     const start = (currentPage - 1) * pageSize;
     return sortedResources.slice(start, start + pageSize);
-  }, [sortedResources, currentPage, pageSize]);
+  }, [randomMode, randomItems, sortedResources, currentPage, pageSize]);
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -109,6 +120,27 @@ export default function ResourcesPage() {
   const handleLogout = () => {
     clearAuthState();
     navigate("/auth", { replace: true });
+  };
+
+  const handleRandomRecommend = () => {
+    const pool = resources.filter(
+      (resource) =>
+        resource.materialType === "image" ||
+        resource.materialType === "video" ||
+        resource.materialType === "gif"
+    );
+    setRandomItems(pickRandomItems(pool, RANDOM_PAGE_SIZE));
+    setRandomMode(true);
+    setCurrentPage(1);
+    setPlayingResourceId(null);
+    setPlayingUrl("");
+    setErrorMessage("");
+  };
+
+  const handleExitRandomMode = () => {
+    setRandomMode(false);
+    setRandomItems([]);
+    setCurrentPage(1);
   };
 
   const handleDownload = async (resource: ResourceItem) => {
@@ -272,23 +304,61 @@ export default function ResourcesPage() {
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={handleRandomRecommend}
+            disabled={loading || resources.length === 0}
+            className={`rounded-full px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              randomMode
+                ? "bg-violet-600 text-white"
+                : "border border-violet-300/60 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200 dark:hover:bg-violet-500/25"
+            }`}
+          >
+            随机推荐
+          </button>
+          {randomMode ? (
+            <>
+              <button
+                type="button"
+                onClick={handleRandomRecommend}
+                className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+              >
+                换一批
+              </button>
+              <button
+                type="button"
+                onClick={handleExitRandomMode}
+                className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+              >
+                退出随机
+              </button>
+            </>
+          ) : null}
         </section>
         <section className="mb-6 flex flex-wrap items-center gap-3">
-          <span className="text-sm text-slate-500 dark:text-slate-300">每页</span>
-          <select
-            value={pageSize}
-            onChange={(event) => setPageSize(Number(event.target.value))}
-            className="rounded-full border border-white/25 bg-white/55 px-3 py-2 text-sm text-slate-700 outline-none dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
-          >
-            {[20, 40, 60, 100].map((size) => (
-              <option key={size} value={size}>
-                {size} 张
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-slate-500 dark:text-slate-300">
-            共 {totalItems} 张，{totalPages} 页
-          </span>
+          {randomMode ? (
+            <span className="text-sm text-violet-700 dark:text-violet-200">
+              随机推荐 {visibleItems.length} 张素材（从素材库随机抽取）
+            </span>
+          ) : (
+            <>
+              <span className="text-sm text-slate-500 dark:text-slate-300">每页</span>
+              <select
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="rounded-full border border-white/25 bg-white/55 px-3 py-2 text-sm text-slate-700 outline-none dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+              >
+                {[20, 40, 60, 100].map((size) => (
+                  <option key={size} value={size}>
+                    {size} 张
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm text-slate-500 dark:text-slate-300">
+                共 {totalItems} 张，{totalPages} 页
+              </span>
+            </>
+          )}
         </section>
 
         {error || errorMessage ? (
@@ -330,11 +400,11 @@ export default function ResourcesPage() {
 
         {!loading && visibleItems.length === 0 ? (
           <div className="mt-6 rounded-xl border border-white/30 bg-white/55 p-6 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-            没有匹配的资源，请尝试修改关键词或分类。
+            {randomMode ? "素材库暂无可推荐的素材。" : "没有匹配的资源，请尝试修改关键词或分类。"}
           </div>
         ) : null}
 
-        {!loading && totalItems > 0 ? (
+        {!loading && !randomMode && totalItems > 0 ? (
           <section className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
