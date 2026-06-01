@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
+import { TERMS_TITLE } from "../content/termsOfUse";
 import {
   DEVICE_MISMATCH_MESSAGE,
   requestUsbAndAuthorize,
   tryAuthorizeGrantedDevice,
 } from "../services/authService";
+import { acceptTerms } from "../services/termsService";
 
 export default function AuthPage() {
   const [loading, setLoading] = useState(false);
@@ -23,7 +25,8 @@ export default function AuthPage() {
       ? (location.state as { from: { pathname: string } }).from.pathname
       : "/";
 
-  const enterSite = () => {
+  const finishAuth = (serial: string) => {
+    acceptTerms(serial);
     navigate(redirectTarget, { replace: true });
   };
 
@@ -31,8 +34,8 @@ export default function AuthPage() {
     try {
       setLoading(true);
       setError("");
-      await requestUsbAndAuthorize();
-      enterSite();
+      const state = await requestUsbAndAuthorize();
+      finishAuth(state.serial);
     } catch (err) {
       setError((err as Error)?.message || DEVICE_MISMATCH_MESSAGE);
     } finally {
@@ -50,7 +53,7 @@ export default function AuthPage() {
         const state = await tryAuthorizeGrantedDevice();
         if (!active) return;
         if (state) {
-          navigate(redirectTarget, { replace: true });
+          finishAuth(state.serial);
           return;
         }
       } catch {
@@ -85,8 +88,16 @@ export default function AuthPage() {
           disabled={busy}
           className="mt-8 w-full rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-200 disabled:opacity-60"
         >
-          {autoConnecting ? "正在查找已授权设备…" : loading ? "连接中..." : "选择设备并连接"}
+          {autoConnecting ? "正在查找已授权设备…" : loading ? "连接中..." : "同意条款并连接"}
         </button>
+
+        <p className="mt-4 text-xs leading-6 text-slate-400">
+          点击连接即表示您已阅读并同意
+          <Link to="/terms" className="mx-1 text-violet-300 underline-offset-2 hover:underline">
+            {TERMS_TITLE}
+          </Link>
+          ，承诺不进行爬取、批量下载或未经授权的内容使用。
+        </p>
 
         {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
       </div>
