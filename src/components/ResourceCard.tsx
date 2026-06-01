@@ -55,6 +55,10 @@ function ResourceCardComponent({
         : resource.materialType === "gif"
           ? "GIF素材"
         : "V1PRO素材包";
+  const previewFitClass =
+    resource.materialType === "video" || resource.materialType === "image"
+      ? "object-cover"
+      : "object-contain";
   const [previewUrl, setPreviewUrl] = useState<string>("");
 
   useEffect(() => {
@@ -105,7 +109,7 @@ function ResourceCardComponent({
               autoPlay
               playsInline
               preload="metadata"
-              className="h-full w-full object-contain"
+              className={`h-full w-full ${previewFitClass}`}
               onEnded={onStopPlay}
             />
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
@@ -122,7 +126,7 @@ function ResourceCardComponent({
               alt={resource.title}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-contain"
+              className={`h-full w-full ${previewFitClass}`}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
