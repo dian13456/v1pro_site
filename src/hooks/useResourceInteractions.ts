@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { hasValidLocalAuth } from "./authService";
-import { createDownloadUrl } from "./downloadService";
+import { hasValidLocalAuth } from "../services/authService";
+import { createDownloadUrl } from "../services/downloadService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
-import { createImageUrl } from "./imageService";
-import { likeResource } from "./likeService";
+import { createImageUrl } from "../services/imageService";
+import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 
 export function useResourceInteractions() {
