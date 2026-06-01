@@ -1,0 +1,131 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { hasValidLocalAuth } from "./authService";
+import { createDownloadUrl } from "./downloadService";
+import type { DownloadStatsSnapshot } from "../types/downloadStats";
+import { createImageUrl } from "./imageService";
+import { likeResource } from "./likeService";
+import type { ResourceItem } from "../types/resource";
+
+export function useResourceInteractions() {
+  const navigate = useNavigate();
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
+  const [playingUrl, setPlayingUrl] = useState("");
+  const [likingId, setLikingId] = useState<number | null>(null);
+  const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
+  const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
+  const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
+  const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const applyDownloadStats = (resourceId: number, stats?: DownloadStatsSnapshot | null) => {
+    if (!stats) return;
+    setTotalDownloadCounts((prev) => ({ ...prev, [resourceId]: stats.totalCount }));
+    setWeeklyDownloadCounts((prev) => ({ ...prev, [resourceId]: stats.weeklyCount }));
+  };
+
+  const handleDownload = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setDownloadingId(resource.id);
+      setErrorMessage("");
+      const downloadResult =
+        resource.materialType === "image"
+          ? await createImageUrl(resource.id, resource.image, { forDownload: true })
+          : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
+      applyDownloadStats(resource.id, downloadResult.stats);
+      window.open(downloadResult.url || resource.download, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      const message = (err as Error)?.message || "下载失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handlePlay = async (resource: ResourceItem) => {
+    if (playingResourceId === resource.id) {
+      setPlayingResourceId(null);
+      setPlayingUrl("");
+      return;
+    }
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setPlayingId(resource.id);
+      setErrorMessage("");
+      const playResult = await createDownloadUrl(resource.id, resource.download, { forDownload: false });
+      setPlayingResourceId(resource.id);
+      setPlayingUrl(playResult.url || resource.download);
+    } catch (err) {
+      const message = (err as Error)?.message || "播放链接生成失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setPlayingId(null);
+    }
+  };
+
+  const handleLike = async (resource: ResourceItem) => {
+    if (likedIds.has(resource.id) || !hasValidLocalAuth()) {
+      if (!hasValidLocalAuth()) navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setLikingId(resource.id);
+      setErrorMessage("");
+      const result = await likeResource(resource.id);
+      setLikeCounts((prev) => ({ ...prev, [resource.id]: result.likeCount }));
+      if (result.liked || result.alreadyLiked) {
+        setLikedIds((prev) => new Set(prev).add(resource.id));
+      }
+    } catch (err) {
+      const message = (err as Error)?.message || "点赞失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setLikingId(null);
+    }
+  };
+
+  const stopPlay = () => {
+    setPlayingResourceId(null);
+    setPlayingUrl("");
+  };
+
+  return {
+    downloadingId,
+    playingId,
+    playingResourceId,
+    playingUrl,
+    likingId,
+    likeCounts,
+    likedIds,
+    totalDownloadCounts,
+    weeklyDownloadCounts,
+    errorMessage,
+    setErrorMessage,
+    setLikeCounts,
+    setLikedIds,
+    setTotalDownloadCounts,
+    setWeeklyDownloadCounts,
+    handleDownload,
+    handlePlay,
+    handleLike,
+    stopPlay,
+  };
+}

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ResourceCard } from "../components/ResourceCard";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { useResourceInteractions } from "../hooks/useResourceInteractions";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { MAX_QUESTION_LENGTH, askAiGuide } from "../services/aiGuideService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { displayDownloadCount, fetchResourceDownloads } from "../services/downloadStatsService";
+import { fetchResourceLikes } from "../services/likeService";
 import { fetchResources } from "../services/resourceService";
 import type { AiGuideMessage } from "../types/aiGuide";
 import type { ResourceItem } from "../types/resource";
@@ -23,7 +27,6 @@ export default function AiGuidePage() {
   const { theme, toggleTheme } = useThemeMode();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<AiGuideMessage[]>([
     {
       role: "assistant",
@@ -32,6 +35,27 @@ export default function AiGuidePage() {
     },
   ]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
+  const {
+    downloadingId,
+    playingId,
+    playingResourceId,
+    playingUrl,
+    likingId,
+    likeCounts,
+    likedIds,
+    totalDownloadCounts,
+    weeklyDownloadCounts,
+    errorMessage,
+    setErrorMessage,
+    setLikeCounts,
+    setLikedIds,
+    setTotalDownloadCounts,
+    setWeeklyDownloadCounts,
+    handleDownload,
+    handlePlay,
+    handleLike,
+    stopPlay,
+  } = useResourceInteractions();
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -39,7 +63,19 @@ export default function AiGuidePage() {
       return;
     }
     void fetchResources().then(setResources).catch(() => setResources([]));
-  }, [navigate]);
+    void fetchResourceLikes()
+      .then((state) => {
+        setLikeCounts(state.counts);
+        setLikedIds(state.likedIds);
+      })
+      .catch(() => undefined);
+    void fetchResourceDownloads()
+      .then((state) => {
+        setTotalDownloadCounts(state.totalCounts);
+        setWeeklyDownloadCounts(state.weeklyCounts);
+      })
+      .catch(() => undefined);
+  }, [navigate, setLikeCounts, setLikedIds, setTotalDownloadCounts, setWeeklyDownloadCounts]);
 
   const resourceMap = useMemo(() => {
     const map = new Map<number, ResourceItem>();
@@ -85,14 +121,9 @@ export default function AiGuidePage() {
     }
   };
 
-  const openInCatalog = (resource: ResourceItem) => {
-    const keyword = resource.title.trim() || resource.description.trim();
-    navigate(`/?search=${encodeURIComponent(keyword)}`);
-  };
-
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="AI 内容导览"
           subtitle="智能素材推荐助手，帮你快速找到适合 1.9 寸横屏的内容。"
@@ -125,53 +156,57 @@ export default function AiGuidePage() {
           ))}
         </section>
 
-        <section className="space-y-4 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <section className="space-y-6 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
           {messages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${
-                  message.role === "user"
-                    ? "bg-cyan-600 text-white"
-                    : "border border-white/20 bg-white/80 text-slate-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200"
-                }`}
-              >
-                <p className="whitespace-pre-wrap">{message.content}</p>
-                {message.resourceIds && message.resourceIds.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {message.resourceIds.map((id) => {
-                      const resource = resourceMap.get(id);
-                      if (!resource) {
-                        return (
-                          <div
-                            key={id}
-                            className="rounded-xl border border-white/20 bg-white/60 px-3 py-2 text-xs dark:bg-slate-900/60"
-                          >
-                            素材 #{id}
-                          </div>
-                        );
-                      }
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => openInCatalog(resource)}
-                          className="block w-full rounded-xl border border-violet-200/70 bg-violet-50/80 px-3 py-2 text-left transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:hover:bg-violet-500/20"
-                        >
-                          <div className="text-sm font-medium text-violet-800 dark:text-violet-200">
-                            {resource.title}
-                          </div>
-                          <div className="mt-1 line-clamp-2 text-xs text-slate-600 dark:text-slate-300">
-                            {resource.description}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
+            <div key={`${message.role}-${index}`} className="space-y-4">
+              <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`max-w-[760px] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                    message.role === "user"
+                      ? "bg-cyan-600 text-white"
+                      : "border border-white/20 bg-white/80 text-slate-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200"
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                </div>
               </div>
+
+              {message.role === "assistant" && message.resourceIds && message.resourceIds.length > 0 ? (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {message.resourceIds.map((id) => {
+                    const resource = resourceMap.get(id);
+                    if (!resource) {
+                      return (
+                        <div
+                          key={id}
+                          className="rounded-3xl border border-white/25 bg-white/55 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400"
+                        >
+                          素材 #{id} 暂不可用
+                        </div>
+                      );
+                    }
+                    return (
+                      <ResourceCard
+                        key={`${index}-${resource.id}`}
+                        resource={resource}
+                        onDownload={handleDownload}
+                        onPlay={handlePlay}
+                        onStopPlay={stopPlay}
+                        onLike={handleLike}
+                        downloading={downloadingId === resource.id}
+                        playing={playingId === resource.id}
+                        isPlaying={playingResourceId === resource.id}
+                        playUrl={playingResourceId === resource.id ? playingUrl : ""}
+                        liking={likingId === resource.id}
+                        liked={likedIds.has(resource.id)}
+                        likeCount={likeCounts[resource.id] || 0}
+                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                        weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           ))}
 
