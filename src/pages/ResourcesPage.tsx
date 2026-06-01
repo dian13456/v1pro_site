@@ -16,7 +16,7 @@ import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 
-const RANDOM_PAGE_SIZE = 20;
+const RANDOM_PAGE_SIZE = 5;
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
