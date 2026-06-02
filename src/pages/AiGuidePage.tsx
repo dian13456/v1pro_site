@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
+import { V1ProInstallHintModal } from "../components/V1ProInstallHintModal";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
 import { SiteNav } from "../components/SiteNav";
@@ -37,6 +38,9 @@ export default function AiGuidePage() {
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const {
     downloadingId,
+    transferringId,
+    showV1ProInstallHint,
+    setShowV1ProInstallHint,
     playingId,
     playingResourceId,
     playingUrl,
@@ -52,6 +56,7 @@ export default function AiGuidePage() {
     setTotalDownloadCounts,
     setWeeklyDownloadCounts,
     handleDownload,
+    handleTransfer,
     handlePlay,
     handleLike,
     stopPlay,
@@ -123,6 +128,7 @@ export default function AiGuidePage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      {showV1ProInstallHint ? <V1ProInstallHintModal onClose={() => setShowV1ProInstallHint(false)} /> : null}
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="佳点电子资源中心"
@@ -189,10 +195,12 @@ export default function AiGuidePage() {
                         key={`${index}-${resource.id}`}
                         resource={resource}
                         onDownload={handleDownload}
+                        onTransfer={handleTransfer}
                         onPlay={handlePlay}
                         onStopPlay={stopPlay}
                         onLike={handleLike}
                         downloading={downloadingId === resource.id}
+                        transferring={transferringId === resource.id}
                         playing={playingId === resource.id}
                         isPlaying={playingResourceId === resource.id}
                         playUrl={playingResourceId === resource.id ? playingUrl : ""}

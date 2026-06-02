@@ -6,10 +6,17 @@ import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
+import {
+  guessTransferFileName,
+  launchV1ProTransfer,
+  resolveTransferSignedUrl,
+} from "../services/v1proTransferService";
 
 export function useResourceInteractions() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [transferringId, setTransferringId] = useState<number | null>(null);
+  const [showV1ProInstallHint, setShowV1ProInstallHint] = useState(false);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
   const [playingUrl, setPlayingUrl] = useState("");
@@ -78,6 +85,32 @@ export function useResourceInteractions() {
     }
   };
 
+  const handleTransfer = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setTransferringId(resource.id);
+      setErrorMessage("");
+      const { url, stats } = await resolveTransferSignedUrl(resource);
+      applyDownloadStats(resource.id, stats);
+      launchV1ProTransfer(url, {
+        name: guessTransferFileName(resource),
+        auto: true,
+        onInstallHint: () => setShowV1ProInstallHint(true),
+      });
+    } catch (err) {
+      const message = (err as Error)?.message || "传输失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setTransferringId(null);
+    }
+  };
+
   const handleLike = async (resource: ResourceItem) => {
     if (likedIds.has(resource.id) || !hasValidLocalAuth()) {
       if (!hasValidLocalAuth()) navigate("/auth", { replace: true });
@@ -109,6 +142,9 @@ export function useResourceInteractions() {
 
   return {
     downloadingId,
+    transferringId,
+    showV1ProInstallHint,
+    setShowV1ProInstallHint,
     playingId,
     playingResourceId,
     playingUrl,
@@ -124,6 +160,7 @@ export function useResourceInteractions() {
     setTotalDownloadCounts,
     setWeeklyDownloadCounts,
     handleDownload,
+    handleTransfer,
     handlePlay,
     handleLike,
     stopPlay,

@@ -1,14 +1,17 @@
 import { memo, useEffect, useState } from "react";
 import type { ResourceItem } from "../types/resource";
 import { createImageUrl } from "../services/imageService";
+import { canTransferViaV1Pro } from "../services/v1proTransferService";
 
 interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
+  onTransfer?: (resource: ResourceItem) => void;
   onPlay: (resource: ResourceItem) => void;
   onStopPlay: () => void;
   onLike: (resource: ResourceItem) => void;
   downloading: boolean;
+  transferring?: boolean;
   playing: boolean;
   isPlaying: boolean;
   playUrl: string;
@@ -23,10 +26,12 @@ interface ResourceCardProps {
 function ResourceCardComponent({
   resource,
   onDownload,
+  onTransfer,
   onPlay,
   onStopPlay,
   onLike,
   downloading,
+  transferring = false,
   playing,
   isPlaying,
   playUrl,
@@ -96,6 +101,9 @@ function ResourceCardComponent({
     };
   }, [resource.id, resource.image, resource.download, resource.materialType]);
 
+  const showTransfer = canTransferViaV1Pro(resource) && Boolean(onTransfer);
+  const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
+
   return (
     <article className="group rounded-3xl border border-white/25 bg-white/55 p-4 shadow-[0_30px_45px_-28px_rgba(0,0,0,0.55)] backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_32px_60px_-26px_rgba(34,211,238,0.45)] dark:border-white/10 dark:bg-slate-900/45">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -148,45 +156,59 @@ function ResourceCardComponent({
         </div>
       </div>
 
-      <div className={`mt-4 grid gap-2 ${resource.materialType === "video" || resource.materialType === "gif" ? "grid-cols-3" : "grid-cols-2"}`}>
-        <button
-          type="button"
-          disabled={downloading}
-          onClick={() => onDownload(resource)}
-          className="w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-        >
-          {downloading
-            ? "生成下载链接..."
-            : resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif"
-              ? "下载"
-              : "下载素材"}
-        </button>
-        {resource.materialType === "video" || resource.materialType === "gif" ? (
+      <div className="mt-4 space-y-2">
+        <div className={`grid gap-2 ${showTransfer ? "grid-cols-2" : "grid-cols-1"}`}>
           <button
             type="button"
-            disabled={playing}
-            onClick={() => onPlay(resource)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            disabled={downloading || transferring}
+            onClick={() => onDownload(resource)}
+            className="w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
           >
-            {playing ? "打开中..." : isPlaying ? "收起" : "播放"}
+            {downloading
+              ? "生成下载链接..."
+              : resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif"
+                ? "下载"
+                : "下载素材"}
           </button>
-        ) : null}
-        <button
-          type="button"
-          aria-label="点赞"
-          disabled={liked || liking}
-          onClick={() => onLike(resource)}
-          className={`inline-flex min-w-[76px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
-            liked
-              ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/15 dark:text-rose-400"
-              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-            <path d="M12 21s-6.7-4.35-9.3-8.12C.84 10.3 1.4 6.72 4.2 5.2a5.2 5.2 0 0 1 6.2 1.08L12 7.9l1.6-1.62a5.2 5.2 0 0 1 6.2-1.08c2.8 1.52 3.36 5.1 1.5 7.68C18.7 16.65 12 21 12 21z" />
-          </svg>
-          <span>{liking ? "..." : likeCount}</span>
-        </button>
+          {showTransfer ? (
+            <button
+              type="button"
+              disabled={downloading || transferring}
+              onClick={() => onTransfer?.(resource)}
+              className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {transferring ? "准备传输..." : "传输到设备"}
+            </button>
+          ) : null}
+        </div>
+        <div className={`grid gap-2 ${hasPlay ? "grid-cols-2" : "grid-cols-1"}`}>
+          {hasPlay ? (
+            <button
+              type="button"
+              disabled={playing || transferring}
+              onClick={() => onPlay(resource)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              {playing ? "打开中..." : isPlaying ? "收起" : "播放"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label="点赞"
+            disabled={liked || liking || transferring}
+            onClick={() => onLike(resource)}
+            className={`inline-flex min-w-[76px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
+              liked
+                ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/15 dark:text-rose-400"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+              <path d="M12 21s-6.7-4.35-9.3-8.12C.84 10.3 1.4 6.72 4.2 5.2a5.2 5.2 0 0 1 6.2 1.08L12 7.9l1.6-1.62a5.2 5.2 0 0 1 6.2-1.08c2.8 1.52 3.36 5.1 1.5 7.68C18.7 16.65 12 21 12 21z" />
+            </svg>
+            <span>{liking ? "..." : likeCount}</span>
+          </button>
+        </div>
       </div>
     </article>
   );
