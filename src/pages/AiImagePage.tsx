@@ -104,9 +104,6 @@ export default function AiImagePage() {
 
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            输入文字描述，由 MiniMax image-01 模型生成图片（16:9 横屏，每次 1 张）。生成后可下载，或通过控制工具传输到设备。
-          </p>
         </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
@@ -124,15 +121,6 @@ export default function AiImagePage() {
         </section>
 
         <section className="space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
-          <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className="rounded-full border border-white/30 bg-white/70 px-3 py-1 dark:border-white/10 dark:bg-slate-950/50">
-              16:9 横屏
-            </span>
-            <span className="rounded-full border border-white/30 bg-white/70 px-3 py-1 dark:border-white/10 dark:bg-slate-950/50">
-              每次 1 张
-            </span>
-          </div>
-
           <div className="space-y-3">
             <textarea
               value={prompt}
