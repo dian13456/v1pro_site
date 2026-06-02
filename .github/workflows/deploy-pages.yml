@@ -33,7 +33,8 @@ jobs:
       - name: Build
         env:
           VITE_BASE_PATH: /
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          # 443 在部分运营商/地区会被重置，8443 稳定可用
+          VITE_API_BASE: https://api.jadot.cn:8443
           VITE_STATIC_MODE: "false"
         run: npm run build
 
