@@ -1,5 +1,6 @@
 import type {
   AiImageResponse,
+  AiImageShareResponse,
   AiImageTransferResponse,
   GeneratedAiImage,
 } from "../types/aiImage";
@@ -180,4 +181,33 @@ export async function transferAiImageToDevice(
     name: fileName,
     auto: true,
   });
+}
+
+export async function shareAiImageToCatalog(
+  image: GeneratedAiImage,
+  prompt: string
+): Promise<AiImageShareResponse> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  if (isStaticMode()) {
+    throw new Error("静态模式下无法分享");
+  }
+
+  const auth = getAuthState();
+  const payload = await apiFetch<AiImageShareResponse>("/api/ai-image/share", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${auth?.token || ""}`,
+    },
+    body: JSON.stringify({
+      imageBase64: image.dataUrl,
+      prompt: prompt.trim(),
+    }),
+  });
+
+  if (!payload.success) {
+    throw new Error(payload.message || "分享失败");
+  }
+  return payload;
 }

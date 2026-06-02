@@ -13,6 +13,14 @@ export interface AiImageTransferResponse {
   message?: string;
 }
 
+export interface AiImageShareResponse {
+  success: boolean;
+  resourceId?: number;
+  downloadUrl?: string;
+  title?: string;
+  message?: string;
+}
+
 export interface GeneratedAiImage {
   id: string;
   dataUrl: string;

@@ -67,6 +67,24 @@ func aiImageTransferObjectKey(serial, fileName string, now time.Time) string {
 	)
 }
 
+func DecodeAIImageBytes(imageBase64 string) ([]byte, error) {
+	encoded, err := normalizeAIImageBase64(imageBase64)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("图片解码失败")
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("图片内容为空")
+	}
+	if len(raw) > maxAIImageTransferBytes {
+		return nil, fmt.Errorf("图片过大，请重新生成较小的图片")
+	}
+	return raw, nil
+}
+
 func StageAIImageForTransfer(
 	ctx context.Context,
 	signer *COSSigner,
@@ -79,20 +97,9 @@ func StageAIImageForTransfer(
 		return "", fmt.Errorf("图片存储未配置")
 	}
 
-	encoded, err := normalizeAIImageBase64(imageBase64)
+	raw, err := DecodeAIImageBytes(imageBase64)
 	if err != nil {
 		return "", err
-	}
-
-	raw, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return "", fmt.Errorf("图片解码失败")
-	}
-	if len(raw) == 0 {
-		return "", fmt.Errorf("图片内容为空")
-	}
-	if len(raw) > maxAIImageTransferBytes {
-		return "", fmt.Errorf("图片过大，请重新生成较小的图片")
 	}
 
 	fileName = sanitizeAIImageFileName(fileName)

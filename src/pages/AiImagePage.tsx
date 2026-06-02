@@ -12,6 +12,7 @@ import {
   downloadGeneratedImage,
   generateAiImages,
   getStarterPrompts,
+  shareAiImageToCatalog,
   transferAiImageToDevice,
 } from "../services/aiImageService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
@@ -24,7 +25,10 @@ export default function AiImagePage() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   const [transferNotice, setTransferNotice] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -45,6 +49,7 @@ export default function AiImagePage() {
     try {
       const result = await generateAiImages(prompt);
       setImages(result);
+      setSharedIds(new Set());
     } catch (err) {
       const message = (err as Error)?.message || "AI 图片生成失败";
       setErrorMessage(message);
@@ -81,9 +86,37 @@ export default function AiImagePage() {
     }
   };
 
+  const handleShare = async (image: GeneratedAiImage) => {
+    if (sharingId || sharedIds.has(image.id)) return;
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    setErrorMessage("");
+    setSharingId(image.id);
+    try {
+      const result = await shareAiImageToCatalog(image, prompt);
+      setSharedIds((prev) => new Set(prev).add(image.id));
+      setShareNotice(`已分享到素材库（#${result.resourceId || ""}），可在素材中心查看`);
+      window.setTimeout(() => setShareNotice(""), 5000);
+    } catch (err) {
+      const message = (err as Error)?.message || "分享失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setSharingId(null);
+    }
+  };
+
+  const isBusy = Boolean(transferringId || sharingId);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      <V1ProTransferNotice message={shareNotice} onDismiss={() => setShareNotice("")} />
       <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="佳点电子资源中心"
@@ -171,22 +204,34 @@ export default function AiImagePage() {
                       className="h-full w-full object-cover"
                     />
                   </DevicePreviewFrame>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="mt-4 grid grid-cols-3 gap-2">
                     <button
                       type="button"
-                      disabled={Boolean(transferringId)}
+                      disabled={isBusy}
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}
-                      className="rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+                      className="rounded-xl border border-slate-200/80 bg-white px-2 py-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 sm:px-4 sm:text-sm"
                     >
                       下载
                     </button>
                     <button
                       type="button"
-                      disabled={Boolean(transferringId)}
+                      disabled={isBusy}
                       onClick={() => void handleTransfer(image, index)}
-                      className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-xl bg-cyan-600 px-2 py-2.5 text-xs font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
                     >
                       {transferringId === image.id ? "准备传输..." : "传输到设备"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBusy || sharedIds.has(image.id)}
+                      onClick={() => void handleShare(image)}
+                      className="rounded-xl bg-violet-600 px-2 py-2.5 text-xs font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
+                    >
+                      {sharingId === image.id
+                        ? "分享中..."
+                        : sharedIds.has(image.id)
+                          ? "已分享"
+                          : "一键分享"}
                     </button>
                   </div>
                 </article>

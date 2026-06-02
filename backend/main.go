@@ -103,6 +103,12 @@ type aiImageTransferRequest struct {
 	FileName    string `json:"fileName"`
 }
 
+type aiImageShareRequest struct {
+	ImageBase64 string `json:"imageBase64"`
+	Prompt      string `json:"prompt"`
+	Title       string `json:"title"`
+}
+
 type runtimeResourceMap struct {
 	path        string
 	mu          sync.RWMutex
@@ -854,6 +860,10 @@ func main() {
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
+	imagePublicBase := strings.TrimSpace(os.Getenv("IMAGE_COS_PUBLIC_BASE"))
+	if imagePublicBase == "" && imageCOSBucket != "" && imageCOSRegion != "" {
+		imagePublicBase = fmt.Sprintf("https://%s.cos.%s.myqcloud.com", imageCOSBucket, imageCOSRegion)
+	}
 
 	router := gin.Default()
 	router.Use(corsMiddleware(corsAllowOrigin))
@@ -1101,6 +1111,51 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"url":     signedURL,
+		})
+	})
+
+	router.POST("/api/ai-image/share", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req aiImageShareRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		profilesMu.RLock()
+		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		result, err := service.ShareAIImageToCatalog(
+			c.Request.Context(),
+			imageSigner,
+			imagePublicBase,
+			resourcesPath,
+			imageMapPath,
+			service.ShareAIImageInput{
+				ImageBase64: req.ImageBase64,
+				Prompt:      req.Prompt,
+				Title:       req.Title,
+				Author:      author,
+			},
+		)
+		if err != nil {
+			log.Printf("warn: ai image share failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"resourceId":  result.ResourceID,
+			"downloadUrl": result.DownloadURL,
+			"title":       result.Title,
 		})
 	})
 

@@ -441,6 +441,18 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path === "/api/ai-image/share") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    return {
+      success: true,
+      resourceId: Date.now(),
+      downloadUrl: "https://www.jadot.cn/favicon.ico",
+      title: String(body.prompt || "AI 生成图片").slice(0, 40),
+    };
+  }
+
   if (path === "/api/ai-image/transfer") {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
