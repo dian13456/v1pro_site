@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
+import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
 import { SiteHeader } from "../components/SiteHeader";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -201,18 +202,23 @@ export default function AiImagePage() {
           ) : null}
 
           {images.length > 0 ? (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
               {images.map((image, index) => (
                 <article
                   key={image.id}
-                  className="overflow-hidden rounded-3xl border border-white/25 bg-white/70 dark:border-white/10 dark:bg-slate-950/40"
+                  className="group rounded-3xl border border-white/25 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-950/40"
                 >
-                  <img
-                    src={image.dataUrl}
-                    alt={`AI 生成图片 ${index + 1}`}
-                    className="aspect-[9/16] w-full bg-slate-900 object-contain"
-                  />
-                  <div className="flex flex-wrap gap-2 p-4">
+                  <div className="mb-3 inline-flex rounded-full bg-violet-600 px-3 py-1 text-xs text-white">
+                    AI 生成 · 1.9 寸预览
+                  </div>
+                  <DevicePreviewFrame hoverGlow>
+                    <img
+                      src={image.dataUrl}
+                      alt={`AI 生成图片 ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </DevicePreviewFrame>
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}

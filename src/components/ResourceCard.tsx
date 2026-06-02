@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import type { ResourceItem } from "../types/resource";
+import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 
@@ -120,8 +121,7 @@ function ResourceCardComponent({
           {resource.author ? <div>上传人：{resource.author}</div> : null}
         </div>
       </div>
-      <div className="rounded-[1.4rem] bg-black p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition duration-300 group-hover:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.45),0_0_26px_-10px_rgba(56,189,248,0.8)]">
-        <div className="overflow-hidden rounded-[1rem] bg-slate-900" style={{ aspectRatio: "320 / 170" }}>
+      <DevicePreviewFrame hoverGlow>
           {resource.materialType === "video" && isPlaying && playUrl ? (
             <video
               src={playUrl}
@@ -153,8 +153,7 @@ function ResourceCardComponent({
               {resource.materialType === "video" ? "视频预览加载中..." : "图片加载中..."}
             </div>
           )}
-        </div>
-      </div>
+      </DevicePreviewFrame>
 
       <div className="mt-4 space-y-2">
         <div className={`grid gap-2 ${showTransfer ? "grid-cols-2" : "grid-cols-1"}`}>
