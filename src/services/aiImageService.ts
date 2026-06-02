@@ -3,10 +3,12 @@ import type {
   AiImageShareResponse,
   AiImageTransferResponse,
   GeneratedAiImage,
+  GenerateAiImagesResult,
 } from "../types/aiImage";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
+import { spendDevCredits } from "./profileService";
 import { launchV1ProTransfer } from "./v1proTransferService";
 
 export const MAX_PROMPT_LENGTH = 1500;
@@ -87,7 +89,7 @@ export function getStarterPrompts(): string[] {
   return STARTER_PROMPTS;
 }
 
-export async function generateAiImages(prompt: string): Promise<GeneratedAiImage[]> {
+export async function generateAiImages(prompt: string): Promise<GenerateAiImagesResult> {
   const trimmed = prompt.trim();
   if (!trimmed) {
     throw new Error("请输入图片描述");
@@ -99,11 +101,17 @@ export async function generateAiImages(prompt: string): Promise<GeneratedAiImage
     throw new Error("认证状态无效，请重新验证设备");
   }
 
+  const auth = getAuthState();
+  const serial = auth?.serial || "";
+
   if (isStaticMode()) {
-    return [createMockImage(trimmed)];
+    const creditsRemaining = spendDevCredits(serial);
+    return {
+      images: [createMockImage(trimmed)],
+      creditsRemaining,
+    };
   }
 
-  const auth = getAuthState();
   const payload = await apiFetch<AiImageResponse>("/api/ai-image", {
     method: "POST",
     headers: {
@@ -134,7 +142,10 @@ export async function generateAiImages(prompt: string): Promise<GeneratedAiImage
   if (images.length === 0) {
     throw new Error("未收到有效图片");
   }
-  return images;
+  return {
+    images,
+    creditsRemaining: payload.creditsRemaining,
+  };
 }
 
 export function downloadGeneratedImage(image: GeneratedAiImage, fileName = "ai-image.jpg"): void {

@@ -12,6 +12,9 @@ const DEV_MESSAGES_KEY = "jiadian_dev_messages";
 const DEV_PROFILES_KEY = "jiadian_dev_profiles";
 const DEV_AI_SHARE_COUNTS_KEY = "jiadian_dev_ai_share_counts";
 const DEV_AI_SHARE_LIMIT = 50;
+const DEV_AI_CREDITS_KEY = "jiadian_dev_ai_credits";
+const DEV_AI_CREDITS_DEFAULT = 100;
+const DEV_AI_CREDIT_COST = 1;
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
 const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
@@ -40,6 +43,46 @@ function devHourKey(date = new Date()): string {
 function devDayKey(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function devAiCreditsBalance(serial: string): number {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_AI_CREDITS_KEY) || "{}") as Record<string, number>;
+    const balance = map[serial];
+    if (typeof balance === "number" && Number.isFinite(balance)) {
+      return Math.max(0, Math.floor(balance));
+    }
+  } catch {
+    // ignore
+  }
+  return DEV_AI_CREDITS_DEFAULT;
+}
+
+function devAiCreditsProfileFields(serial: string) {
+  return {
+    credits: devAiCreditsBalance(serial),
+    creditsDefault: DEV_AI_CREDITS_DEFAULT,
+    creditCost: DEV_AI_CREDIT_COST,
+  };
+}
+
+function devSpendAiCredits(serial: string): number | { error: string; credits: number } {
+  const balance = devAiCreditsBalance(serial);
+  if (balance < DEV_AI_CREDIT_COST) {
+    return {
+      error: `积分不足，剩余 ${balance}，每次生图消耗 ${DEV_AI_CREDIT_COST} 积分`,
+      credits: balance,
+    };
+  }
+  const next = balance - DEV_AI_CREDIT_COST;
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_AI_CREDITS_KEY) || "{}") as Record<string, number>;
+    map[serial] = next;
+    localStorage.setItem(DEV_AI_CREDITS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+  return next;
 }
 
 function readDevDeviceWindows(): Record<string, DevDeviceWindow> {
@@ -382,12 +425,14 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
         success: true,
         serial,
         displayName: displayName || displayUsernameFromSerial(serial),
+        ...devAiCreditsProfileFields(serial),
       };
     }
     return {
       success: true,
       serial,
       displayName: profiles[serial] || displayUsernameFromSerial(serial),
+      ...devAiCreditsProfileFields(serial),
     };
   }
 
@@ -517,12 +562,22 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     if (!prompt) {
       return { success: false, message: "prompt 不能为空" };
     }
+    const spent = devSpendAiCredits(serial);
+    if (typeof spent === "object") {
+      return {
+        success: false,
+        message: spent.error,
+        credits: spent.credits,
+        creditCost: DEV_AI_CREDIT_COST,
+      };
+    }
     return {
       success: true,
       images: [
         "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=",
       ],
       mode: "mock",
+      creditsRemaining: spent,
     };
   }
 

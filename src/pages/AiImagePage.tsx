@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
@@ -16,6 +16,11 @@ import {
   transferAiImageToDevice,
 } from "../services/aiImageService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import {
+  AI_CREDIT_COST,
+  DEFAULT_AI_CREDITS,
+  fetchProfile,
+} from "../services/profileService";
 import { V1PRO_TRANSFER_LAUNCHED_MESSAGE } from "../services/v1proTransferService";
 import type { GeneratedAiImage } from "../types/aiImage";
 
@@ -31,6 +36,23 @@ export default function AiImagePage() {
   const [shareNotice, setShareNotice] = useState("");
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [credits, setCredits] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!hasValidLocalAuth()) return;
+    void fetchProfile()
+      .then((profile) => {
+        if (typeof profile.credits === "number") {
+          setCredits(profile.credits);
+        } else {
+          setCredits(DEFAULT_AI_CREDITS);
+        }
+      })
+      .catch(() => setCredits(DEFAULT_AI_CREDITS));
+  }, []);
+
+  const creditsKnown = typeof credits === "number";
+  const canGenerate = creditsKnown ? credits > 0 : true;
 
   const handleLogout = () => {
     clearAuthState();
@@ -48,8 +70,11 @@ export default function AiImagePage() {
     setErrorMessage("");
     try {
       const result = await generateAiImages(prompt);
-      setImages(result);
+      setImages(result.images);
       setSharedIds(new Set());
+      if (typeof result.creditsRemaining === "number") {
+        setCredits(result.creditsRemaining);
+      }
     } catch (err) {
       const message = (err as Error)?.message || "AI 图片生成失败";
       setErrorMessage(message);
@@ -144,7 +169,12 @@ export default function AiImagePage() {
         />
 
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
+            <span className="rounded-full border border-violet-200/70 bg-white/70 px-4 py-1.5 text-sm text-violet-800 dark:border-violet-500/30 dark:bg-slate-900/50 dark:text-violet-200">
+              剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
+            </span>
+          </div>
         </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
@@ -176,11 +206,11 @@ export default function AiImagePage() {
               </span>
               <button
                 type="button"
-                disabled={loading || !prompt.trim()}
+                disabled={loading || !prompt.trim() || !canGenerate}
                 onClick={() => void handleGenerate()}
                 className="rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 px-6 py-2.5 text-sm font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "生成中…" : "生成图片"}
+                {loading ? "生成中…" : canGenerate ? "生成图片" : "积分不足"}
               </button>
             </div>
           </div>

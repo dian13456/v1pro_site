@@ -750,6 +750,10 @@ func main() {
 	if aiImageSharesPath == "" {
 		aiImageSharesPath = filepath.Join("config", "ai_image_share_counts.json")
 	}
+	aiImageCreditsPath := os.Getenv("AI_IMAGE_CREDITS_PATH")
+	if aiImageCreditsPath == "" {
+		aiImageCreditsPath = filepath.Join("config", "ai_image_credits.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -805,6 +809,10 @@ func main() {
 	aiShareQuota, err := service.LoadAIShareQuotaStore(aiImageSharesPath)
 	if err != nil {
 		log.Fatalf("load ai image share counts failed: %v", err)
+	}
+	aiCredits, err := service.LoadAICreditsStore(aiImageCreditsPath)
+	if err != nil {
+		log.Fatalf("load ai image credits failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -867,6 +875,7 @@ func main() {
 	var messagesMu sync.RWMutex
 	var profilesMu sync.RWMutex
 	var aiShareMu sync.Mutex
+	var aiCreditsMu sync.Mutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -947,10 +956,17 @@ func main() {
 		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
 
+		aiCreditsMu.Lock()
+		credits := aiCredits.Balance(serial)
+		aiCreditsMu.Unlock()
+
 		c.JSON(http.StatusOK, gin.H{
-			"success":     true,
-			"serial":      serial,
-			"displayName": displayName,
+			"success":        true,
+			"serial":         serial,
+			"displayName":    displayName,
+			"credits":        credits,
+			"creditsDefault": service.DefaultAICredits,
+			"creditCost":     service.AICreditCostPerGeneration,
 		})
 	})
 
@@ -977,10 +993,17 @@ func main() {
 			return
 		}
 
+		aiCreditsMu.Lock()
+		credits := aiCredits.Balance(serial)
+		aiCreditsMu.Unlock()
+
 		c.JSON(http.StatusOK, gin.H{
-			"success":     true,
-			"serial":      serial,
-			"displayName": displayName,
+			"success":        true,
+			"serial":         serial,
+			"displayName":    displayName,
+			"credits":        credits,
+			"creditsDefault": service.DefaultAICredits,
+			"creditCost":     service.AICreditCostPerGeneration,
 		})
 	})
 
@@ -1058,7 +1081,8 @@ func main() {
 
 	router.POST("/api/ai-image", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
@@ -1073,6 +1097,28 @@ func main() {
 			return
 		}
 
+		aiCreditsMu.Lock()
+		creditsRemaining, spendErr := aiCredits.Spend(serial, service.AICreditCostPerGeneration)
+		if spendErr != nil {
+			balance := aiCredits.Balance(serial)
+			aiCreditsMu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":    false,
+				"message":    spendErr.Error(),
+				"credits":    balance,
+				"creditCost": service.AICreditCostPerGeneration,
+			})
+			return
+		}
+		if saveErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); saveErr != nil {
+			aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+			aiCreditsMu.Unlock()
+			log.Printf("warn: save ai image credits failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分扣减失败，请稍后重试"})
+			return
+		}
+		aiCreditsMu.Unlock()
+
 		result, err := minimaxClient.GenerateImages(
 			c.Request.Context(),
 			req.Prompt,
@@ -1080,15 +1126,26 @@ func main() {
 			req.Count,
 		)
 		if err != nil {
+			aiCreditsMu.Lock()
+			creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+			if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
+				log.Printf("warn: refund ai image credits failed: %v", refundErr)
+			}
+			aiCreditsMu.Unlock()
 			log.Printf("warn: minimax image generation failed: %v", err)
-			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{
+				"success":          false,
+				"message":          err.Error(),
+				"creditsRemaining": creditsRemaining,
+			})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"images":  result.Images,
-			"mode":    "minimax",
+			"success":          true,
+			"images":           result.Images,
+			"mode":             "minimax",
+			"creditsRemaining": creditsRemaining,
 		})
 	})
 

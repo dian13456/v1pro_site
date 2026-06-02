@@ -5,6 +5,14 @@ export interface AiImageResponse {
   images?: string[];
   mode?: "minimax" | "mock";
   message?: string;
+  credits?: number;
+  creditsRemaining?: number;
+  creditCost?: number;
+}
+
+export interface GenerateAiImagesResult {
+  images: GeneratedAiImage[];
+  creditsRemaining?: number;
 }
 
 export interface AiImageTransferResponse {

@@ -7,6 +7,11 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { clearAuthState, getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
+  AI_CREDIT_COST,
+  DEFAULT_AI_CREDITS,
+  fetchProfile,
+} from "../services/profileService";
+import {
   MAX_DISPLAY_NAME_LENGTH,
   getDefaultDisplayName,
   getDisplayName,
@@ -25,6 +30,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -33,10 +39,18 @@ export default function ProfilePage() {
     }
     if (!serial) return;
     setLoading(true);
-    void syncDisplayNameFromServer(serial)
-      .then((name) => {
+    void Promise.all([syncDisplayNameFromServer(serial), fetchProfile()])
+      .then(([name, profile]) => {
         setDisplayName(name);
         setNameInput(name);
+        if (typeof profile.credits === "number") {
+          setCredits(profile.credits);
+        } else {
+          setCredits(DEFAULT_AI_CREDITS);
+        }
+      })
+      .catch(() => {
+        setCredits(DEFAULT_AI_CREDITS);
       })
       .finally(() => setLoading(false));
   }, [navigate, serial]);
@@ -112,6 +126,20 @@ export default function ProfilePage() {
             <label className="text-sm text-slate-600 dark:text-slate-300">设备 SN 码</label>
             <div className="break-all rounded-2xl border border-white/30 bg-white/70 px-4 py-3 font-mono text-sm text-slate-800 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100">
               {serial || "—"}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm text-slate-600 dark:text-slate-300">AI 生图积分</label>
+            <div className="rounded-2xl border border-violet-200/70 bg-violet-50/80 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-2xl font-semibold text-violet-700 dark:text-violet-200">
+                  {loading ? "—" : credits ?? DEFAULT_AI_CREDITS}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST}
+                </span>
+              </div>
             </div>
           </div>
 
