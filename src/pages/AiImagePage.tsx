@@ -253,9 +253,6 @@ export default function AiImagePage() {
               </span>
             </div>
           </div>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            上传与分享前将通过腾讯云内容安全审核，违规图片无法传输或分享。
-          </p>
         </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
