@@ -103,7 +103,7 @@ func StageAIImageForTransfer(
 	}
 
 	if err := signer.UploadObject(ctx, objectKey, contentType, raw); err != nil {
-		return "", fmt.Errorf("上传临时图片失败")
+		return "", fmt.Errorf("上传临时图片失败: %w", err)
 	}
 
 	signedURL, err := signer.GenerateReadURL(ctx, objectKey, signTTL)

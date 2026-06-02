@@ -30,7 +30,13 @@ func NewCOSSigner(bucket, region, secretID, secretKey string) (*COSSigner, error
 
 	client := cos.NewClient(
 		&cos.BaseURL{BucketURL: parsed},
-		&http.Client{Timeout: 10 * time.Second},
+		&http.Client{
+			Timeout: 60 * time.Second,
+			Transport: &cos.AuthorizationTransport{
+				SecretID:  secretID,
+				SecretKey: secretKey,
+			},
+		},
 	)
 
 	return &COSSigner{
