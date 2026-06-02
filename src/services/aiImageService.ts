@@ -1,5 +1,4 @@
 import type {
-  AiImageAspectRatio,
   AiImageResponse,
   AiImageTransferResponse,
   GeneratedAiImage,
@@ -10,17 +9,8 @@ import { isStaticMode } from "./runtimeMode";
 import { launchV1ProTransfer } from "./v1proTransferService";
 
 export const MAX_PROMPT_LENGTH = 1500;
-
-export const ASPECT_RATIO_OPTIONS: Array<{ value: AiImageAspectRatio; label: string }> = [
-  { value: "9:16", label: "9:16 竖屏（推荐设备）" },
-  { value: "1:1", label: "1:1 方形" },
-  { value: "16:9", label: "16:9 横屏" },
-  { value: "4:3", label: "4:3" },
-  { value: "3:4", label: "3:4" },
-  { value: "2:3", label: "2:3" },
-  { value: "3:2", label: "3:2" },
-  { value: "21:9", label: "21:9 超宽" },
-];
+export const AI_IMAGE_ASPECT_RATIO = "16:9" as const;
+export const AI_IMAGE_COUNT = 1;
 
 const STARTER_PROMPTS = [
   "赛博朋克风格的霓虹城市夜景，雨夜反光",
@@ -96,11 +86,7 @@ export function getStarterPrompts(): string[] {
   return STARTER_PROMPTS;
 }
 
-export async function generateAiImages(
-  prompt: string,
-  aspectRatio: AiImageAspectRatio,
-  count = 1
-): Promise<GeneratedAiImage[]> {
+export async function generateAiImages(prompt: string): Promise<GeneratedAiImage[]> {
   const trimmed = prompt.trim();
   if (!trimmed) {
     throw new Error("请输入图片描述");
@@ -124,8 +110,8 @@ export async function generateAiImages(
     },
     body: JSON.stringify({
       prompt: trimmed,
-      aspectRatio,
-      count,
+      aspectRatio: AI_IMAGE_ASPECT_RATIO,
+      count: AI_IMAGE_COUNT,
     }),
   });
 

@@ -8,7 +8,6 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
-  ASPECT_RATIO_OPTIONS,
   MAX_PROMPT_LENGTH,
   downloadGeneratedImage,
   generateAiImages,
@@ -17,16 +16,12 @@ import {
 } from "../services/aiImageService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { V1PRO_TRANSFER_LAUNCHED_MESSAGE } from "../services/v1proTransferService";
-import type { AiImageAspectRatio, GeneratedAiImage } from "../types/aiImage";
-
-const IMAGE_COUNT_OPTIONS = [1, 2, 4] as const;
+import type { GeneratedAiImage } from "../types/aiImage";
 
 export default function AiImagePage() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeMode();
   const [prompt, setPrompt] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<AiImageAspectRatio>("9:16");
-  const [count, setCount] = useState<(typeof IMAGE_COUNT_OPTIONS)[number]>(1);
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
@@ -48,7 +43,7 @@ export default function AiImagePage() {
     setLoading(true);
     setErrorMessage("");
     try {
-      const result = await generateAiImages(prompt, aspectRatio, count);
+      const result = await generateAiImages(prompt);
       setImages(result);
     } catch (err) {
       const message = (err as Error)?.message || "AI 图片生成失败";
@@ -110,7 +105,7 @@ export default function AiImagePage() {
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            输入文字描述，由 MiniMax image-01 模型生成图片。生成后可下载，或通过控制工具传输到设备（与素材中心相同方式）。
+            输入文字描述，由 MiniMax image-01 模型生成图片（16:9 横屏，每次 1 张）。生成后可下载，或通过控制工具传输到设备。
           </p>
         </section>
 
@@ -129,36 +124,13 @@ export default function AiImagePage() {
         </section>
 
         <section className="space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block space-y-2 text-sm">
-              <span className="text-slate-600 dark:text-slate-300">画面比例</span>
-              <select
-                value={aspectRatio}
-                onChange={(event) => setAspectRatio(event.target.value as AiImageAspectRatio)}
-                className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50"
-              >
-                {ASPECT_RATIO_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block space-y-2 text-sm">
-              <span className="text-slate-600 dark:text-slate-300">生成数量</span>
-              <select
-                value={count}
-                onChange={(event) => setCount(Number(event.target.value) as (typeof IMAGE_COUNT_OPTIONS)[number])}
-                className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50"
-              >
-                {IMAGE_COUNT_OPTIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {value} 张
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="rounded-full border border-white/30 bg-white/70 px-3 py-1 dark:border-white/10 dark:bg-slate-950/50">
+              16:9 横屏
+            </span>
+            <span className="rounded-full border border-white/30 bg-white/70 px-3 py-1 dark:border-white/10 dark:bg-slate-950/50">
+              每次 1 张
+            </span>
           </div>
 
           <div className="space-y-3">

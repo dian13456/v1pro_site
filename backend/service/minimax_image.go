@@ -17,19 +17,7 @@ const (
 	defaultMiniMaxBaseURL = "https://api.minimaxi.com"
 	defaultMiniMaxModel   = "image-01"
 	maxAIImagePromptRunes = 1500
-	maxAIImageCount       = 4
 )
-
-var allowedAspectRatios = map[string]struct{}{
-	"1:1":  {},
-	"16:9": {},
-	"4:3":  {},
-	"3:2":  {},
-	"2:3":  {},
-	"3:4":  {},
-	"9:16": {},
-	"21:9": {},
-}
 
 type MiniMaxClient struct {
 	APIKey  string
@@ -93,22 +81,12 @@ func NormalizeAIImagePrompt(prompt string) (string, error) {
 	return prompt, nil
 }
 
-func NormalizeAspectRatio(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if _, ok := allowedAspectRatios[raw]; ok {
-		return raw
-	}
-	return "9:16"
+func NormalizeAspectRatio(_ string) string {
+	return "16:9"
 }
 
 func NormalizeImageCount(raw int) int {
-	if raw <= 0 {
-		return 1
-	}
-	if raw > maxAIImageCount {
-		return maxAIImageCount
-	}
-	return raw
+	return 1
 }
 
 func (client *MiniMaxClient) GenerateImages(ctx context.Context, prompt, aspectRatio string, count int) (*AIImageResult, error) {
