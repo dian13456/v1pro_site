@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -178,6 +179,23 @@ def parse_media_paths(raw: str) -> list[Path]:
     return [Path(p) for p in parts]
 
 
+def format_file_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes}B"
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f}KB"
+    if num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f}MB"
+    return f"{num_bytes / (1024 * 1024 * 1024):.2f}GB"
+
+
+def build_cos_public_url(base: str, object_key: str) -> str:
+    normalized_base = base.strip().rstrip("/")
+    if not normalized_base:
+        return object_key
+    return f"{normalized_base}/{quote(object_key, safe='/')}"
+
+
 class ImageUploaderGUI:
     def __init__(self):
         self.root = tk.Tk()
@@ -219,6 +237,14 @@ class ImageUploaderGUI:
         self.gif_cover_region_var = tk.StringVar(value=os.getenv("GIF_COVER_COS_REGION", "ap-guangzhou"))
         self.gif_cover_public_base_var = tk.StringVar(
             value=os.getenv("GIF_COVER_COS_PUBLIC_BASE", "https://gif-cover-1311844229.cos.ap-guangzhou.myqcloud.com")
+        )
+        self.software_bucket_var = tk.StringVar(value=os.getenv("SOFTWARE_COS_BUCKET", "v1pro-1311844229"))
+        self.software_region_var = tk.StringVar(value=os.getenv("SOFTWARE_COS_REGION", "ap-guangzhou"))
+        self.software_public_base_var = tk.StringVar(
+            value=os.getenv(
+                "SOFTWARE_COS_PUBLIC_BASE",
+                "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com",
+            )
         )
 
         self.material_type_var = tk.StringVar(value="image")
@@ -322,6 +348,16 @@ class ImageUploaderGUI:
             row=10, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
         )
 
+        ttk.Label(top, text="软件 Bucket").grid(row=11, column=0, sticky="w", pady=2)
+        ttk.Entry(top, textvariable=self.software_bucket_var).grid(row=11, column=1, sticky="ew", padx=(8, 12), pady=2)
+        ttk.Label(top, text="软件 Region").grid(row=11, column=2, sticky="w", pady=2)
+        ttk.Entry(top, textvariable=self.software_region_var).grid(row=11, column=3, sticky="ew", pady=2)
+
+        ttk.Label(top, text="软件公网前缀").grid(row=12, column=0, sticky="w", pady=2)
+        ttk.Entry(top, textvariable=self.software_public_base_var).grid(
+            row=12, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2
+        )
+
         resource = ttk.LabelFrame(upload_tab, text="素材信息", padding=10)
         resource.pack(fill=tk.X, padx=0, pady=(0, 8))
         resource.columnconfigure(1, weight=1)
@@ -331,7 +367,7 @@ class ImageUploaderGUI:
         ttk.Combobox(
             resource,
             textvariable=self.material_type_var,
-            values=("image", "video", "gif"),
+            values=("image", "video", "gif", "software"),
             state="readonly",
         ).grid(row=0, column=1, sticky="ew", padx=(8, 12), pady=2)
         ttk.Label(resource, text="分类").grid(row=0, column=2, sticky="w", pady=2)
@@ -343,7 +379,7 @@ class ImageUploaderGUI:
         ttk.Entry(resource, textvariable=self.media_path_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=2)
         ttk.Button(resource, text="选择文件", command=self.choose_media).grid(row=1, column=3, sticky="ew", pady=2)
 
-        ttk.Label(resource, text="视频/GIF封面文件(可选)").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Label(resource, text="视频/GIF/软件封面(可选)").grid(row=2, column=0, sticky="w", pady=2)
         ttk.Entry(resource, textvariable=self.cover_path_var).grid(row=2, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=2)
         ttk.Button(resource, text="选择封面", command=self.choose_cover).grid(row=2, column=3, sticky="ew", pady=2)
 
@@ -387,7 +423,7 @@ class ImageUploaderGUI:
         ttk.Button(actions, text="上传并同步显示", command=self.upload_and_sync).pack(side=tk.LEFT)
         ttk.Label(
             actions,
-            text="说明：图片仅更新 image_map；视频/GIF更新 resource_map；封面按配置写入 image_map。",
+            text="说明：图片仅更新 image_map；视频/GIF/软件更新 resource_map；软件封面写入 image_map。",
         ).pack(side=tk.LEFT, padx=12)
 
         sync_frame = ttk.LabelFrame(upload_tab, text="云服务器自动同步（可选）", padding=10)
@@ -584,24 +620,32 @@ class ImageUploaderGUI:
             title = "选择视频文件（可多选）"
         elif material_type == "gif":
             filetypes = [("GIF Files", "*.gif")]
-            paths = filedialog.askopenfilenames(title="选择 GIF 文件（可多选）", filetypes=filetypes)
+            title = "选择 GIF 文件（可多选）"
+        elif material_type == "software":
+            filetypes = [("Setup / EXE", "*.exe"), ("All Files", "*.*")]
+            title = "选择软件安装包（可多选）"
+        else:
+            filetypes = [("Image Files", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")]
+            title = "选择图片文件（可多选）"
+
+        if material_type == "gif":
+            paths = filedialog.askopenfilenames(title=title, filetypes=filetypes)
             if paths:
                 self.media_path_var.set(" | ".join(paths))
                 first_name = Path(paths[0]).stem
                 self.title_var.set(first_name)
                 self.desc_var.set(first_name)
             return
-        else:
-            filetypes = [("Image Files", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")]
-            title = "选择图片文件（可多选）"
 
         paths = filedialog.askopenfilenames(title=title, filetypes=filetypes)
         if paths:
             self.media_path_var.set(" | ".join(paths))
-            first_name = Path(paths[0]).stem
-            if material_type in ("gif",):
+            first_path = Path(paths[0])
+            first_name = first_path.name if material_type == "software" else first_path.stem
+            if material_type == "software":
                 self.title_var.set(first_name)
-                self.desc_var.set(first_name)
+                self.desc_var.set(f"{first_path.stem} 安装包")
+                self.size_var.set(format_file_size(first_path.stat().st_size))
             else:
                 if not self.title_var.get().strip():
                     self.title_var.set(first_name)
@@ -609,8 +653,10 @@ class ImageUploaderGUI:
                     self.desc_var.set(first_name)
 
     def choose_cover(self):
+        material_type = self.material_type_var.get().strip()
+        title = "选择软件封面" if material_type == "software" else "选择视频或GIF封面"
         path = filedialog.askopenfilename(
-            title="选择视频或GIF封面",
+            title=title,
             filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif")],
         )
         if path:
@@ -629,6 +675,10 @@ class ImageUploaderGUI:
             self.category_var.set("gif")
             if not self.size_var.get().strip() or self.size_var.get().strip() == "未知":
                 self.size_var.set("30MB")
+        elif material_type == "software":
+            self.category_var.set("software")
+            if not self.size_var.get().strip():
+                self.size_var.set("未知")
         elif not self.size_var.get().strip():
             self.size_var.set("30MB")
 
@@ -964,6 +1014,50 @@ class ImageUploaderGUI:
                         gif_base = self.gif_public_base_var.get().strip().rstrip("/")
                         download_url = f"{gif_base}/{gif_key}" if gif_base else gif_key
 
+                elif material_type == "software":
+                    if media_path.suffix.lower() != ".exe":
+                        raise RuntimeError(f"软件安装包必须是 .exe 文件: {media_path.name}")
+
+                    software_bucket = self.software_bucket_var.get().strip()
+                    software_region = self.software_region_var.get().strip()
+                    if not software_bucket:
+                        raise RuntimeError("软件 Bucket 不能为空")
+
+                    software_key = media_path.name
+                    self.log(f"开始上传软件 -> COS: {software_bucket}/{software_key}")
+                    software_client = self._build_cos_client(software_region)
+                    with media_path.open("rb") as f:
+                        software_client.put_object(Bucket=software_bucket, Body=f, Key=software_key)
+                    self.log("软件上传成功")
+                    resource_map[str(rid)] = software_key
+
+                    if cover_path_raw:
+                        cover_path = Path(cover_path_raw)
+                        if not cover_path.exists():
+                            raise RuntimeError("选择的软件封面文件不存在")
+                        cover_code = random_code(8)
+                        cover_ext = cover_path.suffix.lower() or ".png"
+                        image_key = make_object_key(cover_code, cover_ext, "sw_cover")
+                        image_bucket = self.bucket_var.get().strip()
+                        image_region = self.region_var.get().strip()
+                        if not image_bucket:
+                            raise RuntimeError("图片 Bucket 不能为空（用于软件封面）")
+                        self.log(f"开始上传软件封面 -> COS: {image_bucket}/{image_key}")
+                        cover_client = self._build_cos_client(image_region)
+                        with cover_path.open("rb") as f:
+                            cover_client.put_object(Bucket=image_bucket, Body=f, Key=image_key)
+                        self.log("软件封面上传成功")
+                        image_map[str(rid)] = image_key
+                    elif cover_url_fallback:
+                        image_key = cover_url_fallback
+                        image_map.pop(str(rid), None)
+                    else:
+                        image_key = "1.png"
+
+                    if not download_url:
+                        software_base = self.software_public_base_var.get().strip()
+                        download_url = build_cos_public_url(software_base, software_key)
+
                 else:
                     image_bucket = self.bucket_var.get().strip()
                     image_region = self.region_var.get().strip()
@@ -983,11 +1077,20 @@ class ImageUploaderGUI:
                         download_url = f"{image_base}/{image_key}" if image_base else image_key
 
                 uploaded_at = datetime.now().astimezone().isoformat(timespec="seconds")
-                size = self.size_var.get().strip() or ("30MB" if material_type in ("image", "gif") else "未知")
-                category = self.category_var.get().strip() or "gif"
-                filename = media_path.stem
-                title = filename if is_batch or material_type == "gif" else title_input
-                desc = filename if is_batch or material_type == "gif" else desc_input
+                if material_type == "software":
+                    size = format_file_size(media_path.stat().st_size)
+                    category = "software"
+                    stored_material_type = "v1pro-pack"
+                    filename = media_path.stem
+                    title = media_path.name if is_batch else (title_input or media_path.name)
+                    desc = f"{media_path.stem} 安装包" if is_batch else (desc_input or f"{media_path.stem} 安装包")
+                else:
+                    size = self.size_var.get().strip() or ("30MB" if material_type in ("image", "gif") else "未知")
+                    category = self.category_var.get().strip() or "gif"
+                    stored_material_type = material_type
+                    filename = media_path.stem
+                    title = filename if is_batch or material_type == "gif" else title_input
+                    desc = filename if is_batch or material_type == "gif" else desc_input
 
                 target = {"id": rid}
                 target["title"] = title
@@ -1000,7 +1103,7 @@ class ImageUploaderGUI:
                 target["image"] = image_key
                 target["download"] = download_url
                 target["category"] = category
-                target["materialType"] = material_type
+                target["materialType"] = stored_material_type
                 target["updatedAt"] = uploaded_at
                 resources.append(target)
                 uploaded_ids.append(rid)

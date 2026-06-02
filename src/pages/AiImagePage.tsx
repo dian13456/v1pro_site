@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
@@ -8,10 +8,12 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
+  ImageReviewPendingError,
   MAX_PROMPT_LENGTH,
   downloadGeneratedImage,
   generateAiImages,
   getStarterPrompts,
+  readLocalImageFile,
   shareAiImageToCatalog,
   transferAiImageToDevice,
 } from "../services/aiImageService";
@@ -23,6 +25,17 @@ import {
 } from "../services/profileService";
 import { V1PRO_TRANSFER_LAUNCHED_MESSAGE } from "../services/v1proTransferService";
 import type { GeneratedAiImage } from "../types/aiImage";
+
+function formatReviewPendingMessage(err: ImageReviewPendingError): string {
+  const parts = [err.message];
+  if (err.reviewId) {
+    parts.push(`复核编号 ${err.reviewId}`);
+  }
+  if (err.label) {
+    parts.push(`标签 ${err.label}`);
+  }
+  return parts.join(" · ");
+}
 
 export default function AiImagePage() {
   const navigate = useNavigate();
@@ -37,6 +50,7 @@ export default function AiImagePage() {
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) return;
@@ -76,6 +90,18 @@ export default function AiImagePage() {
         setCredits(result.creditsRemaining);
       }
     } catch (err) {
+      if (err instanceof ImageReviewPendingError) {
+        setShareNotice(formatReviewPendingMessage(err));
+        window.setTimeout(() => setShareNotice(""), 8000);
+        void fetchProfile()
+          .then((profile) => {
+            if (typeof profile.credits === "number") {
+              setCredits(profile.credits);
+            }
+          })
+          .catch(() => undefined);
+        return;
+      }
       const message = (err as Error)?.message || "AI 图片生成失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
@@ -83,6 +109,28 @@ export default function AiImagePage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUploadPick = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    setErrorMessage("");
+    try {
+      const uploaded = await readLocalImageFile(file);
+      setImages((prev) => [uploaded, ...prev]);
+      setSharedIds(new Set());
+      if (!prompt.trim()) {
+        setPrompt(uploaded.fileName || "用户上传图片");
+      }
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "图片上传失败");
     }
   };
 
@@ -101,6 +149,11 @@ export default function AiImagePage() {
       setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
       window.setTimeout(() => setTransferNotice(""), 5000);
     } catch (err) {
+      if (err instanceof ImageReviewPendingError) {
+        setTransferNotice(formatReviewPendingMessage(err));
+        window.setTimeout(() => setTransferNotice(""), 8000);
+        return;
+      }
       const message = (err as Error)?.message || "传输失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
@@ -121,7 +174,10 @@ export default function AiImagePage() {
     setErrorMessage("");
     setSharingId(image.id);
     try {
-      const result = await shareAiImageToCatalog(image, prompt);
+      const sharePrompt =
+        prompt.trim() ||
+        (image.source === "upload" ? image.fileName || "用户上传图片" : "");
+      const result = await shareAiImageToCatalog(image, sharePrompt);
       setSharedIds((prev) => new Set(prev).add(image.id));
       const remaining =
         typeof result.shareRemaining === "number"
@@ -134,6 +190,11 @@ export default function AiImagePage() {
       );
       window.setTimeout(() => setShareNotice(""), 5000);
     } catch (err) {
+      if (err instanceof ImageReviewPendingError) {
+        setShareNotice(formatReviewPendingMessage(err));
+        window.setTimeout(() => setShareNotice(""), 8000);
+        return;
+      }
       const message = (err as Error)?.message || "分享失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
@@ -170,11 +231,31 @@ export default function AiImagePage() {
 
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
-            <span className="rounded-full border border-violet-200/70 bg-white/70 px-4 py-1.5 text-sm text-violet-800 dark:border-violet-500/30 dark:bg-slate-900/50 dark:text-violet-200">
-              剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
-            </span>
+            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生图 / 上传图片</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif"
+                className="hidden"
+                onChange={(event) => void handleUploadPick(event)}
+              />
+              <button
+                type="button"
+                disabled={loading || isBusy}
+                onClick={() => uploadInputRef.current?.click()}
+                className="rounded-full border border-cyan-200/70 bg-white/70 px-4 py-1.5 text-sm text-cyan-800 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-500/30 dark:bg-slate-900/50 dark:text-cyan-200"
+              >
+                上传本地图片
+              </button>
+              <span className="rounded-full border border-violet-200/70 bg-white/70 px-4 py-1.5 text-sm text-violet-800 dark:border-violet-500/30 dark:bg-slate-900/50 dark:text-violet-200">
+                剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
+              </span>
+            </div>
           </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            上传与分享前将通过腾讯云内容安全审核，违规图片无法传输或分享。
+          </p>
         </section>
 
         <section className="mb-4 flex flex-wrap gap-2">
@@ -233,7 +314,7 @@ export default function AiImagePage() {
                   className="group rounded-3xl border border-white/25 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-950/40"
                 >
                   <div className="mb-3 inline-flex rounded-full bg-violet-600 px-3 py-1 text-xs text-white">
-                    AI 生成 · 1.9 寸预览
+                    {image.source === "upload" ? "本地上传 · 1.9 寸预览" : "AI 生成 · 1.9 寸预览"}
                   </div>
                   <DevicePreviewFrame hoverGlow>
                     <img

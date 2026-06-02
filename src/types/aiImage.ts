@@ -30,9 +30,26 @@ export interface AiImageShareResponse {
   shareLimit?: number;
   shareRemaining?: number;
   message?: string;
+  pendingReview?: boolean;
+  reviewId?: string;
+  label?: string;
+  subLabel?: string;
+  score?: number;
+}
+
+export interface AiImagePendingReviewResponse {
+  success?: boolean;
+  pendingReview?: boolean;
+  reviewId?: string;
+  message?: string;
+  label?: string;
+  subLabel?: string;
+  score?: number;
 }
 
 export interface GeneratedAiImage {
   id: string;
   dataUrl: string;
+  source?: "ai" | "upload";
+  fileName?: string;
 }

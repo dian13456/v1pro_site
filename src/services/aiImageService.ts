@@ -11,7 +11,48 @@ import { isStaticMode } from "./runtimeMode";
 import { spendDevCredits } from "./profileService";
 import { launchV1ProTransfer } from "./v1proTransferService";
 
+export class ImageReviewPendingError extends Error {
+  readonly reviewId: string;
+  readonly label?: string;
+  readonly subLabel?: string;
+  readonly score?: number;
+
+  constructor(
+    message: string,
+    reviewId: string,
+    label?: string,
+    subLabel?: string,
+    score?: number
+  ) {
+    super(message);
+    this.name = "ImageReviewPendingError";
+    this.reviewId = reviewId;
+    this.label = label;
+    this.subLabel = subLabel;
+    this.score = score;
+  }
+}
+
+function throwIfPendingReview(payload: {
+  pendingReview?: boolean;
+  reviewId?: string;
+  message?: string;
+  label?: string;
+  subLabel?: string;
+  score?: number;
+}): void {
+  if (!payload.pendingReview) return;
+  throw new ImageReviewPendingError(
+    payload.message || "图片已提交人工复核，请等待管理员审核",
+    payload.reviewId || "",
+    payload.label,
+    payload.subLabel,
+    payload.score
+  );
+}
+
 export const MAX_PROMPT_LENGTH = 1500;
+export const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
 export const AI_IMAGE_ASPECT_RATIO = "16:9" as const;
 export const AI_IMAGE_COUNT = 1;
 
@@ -56,6 +97,7 @@ function createMockImage(prompt: string): GeneratedAiImage {
   return {
     id: `mock-${Date.now()}`,
     dataUrl: canvas.toDataURL("image/jpeg", 0.92),
+    source: "ai",
   };
 }
 
@@ -124,6 +166,8 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
     }),
   });
 
+  throwIfPendingReview(payload);
+
   if (!payload.success) {
     throw new Error(payload.message || "AI 图片生成失败");
   }
@@ -135,6 +179,7 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
       return {
         id: `ai-${Date.now()}-${index}`,
         dataUrl,
+        source: "ai" as const,
       };
     })
     .filter((item): item is GeneratedAiImage => item !== null);
@@ -146,6 +191,37 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
     images,
     creditsRemaining: payload.creditsRemaining,
   };
+}
+
+export function readLocalImageFile(file: File): Promise<GeneratedAiImage> {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("请选择 JPG / PNG / WEBP 等图片文件"));
+  }
+  if (file.size > MAX_UPLOAD_IMAGE_BYTES) {
+    return Promise.reject(new Error("图片不能超过 8MB"));
+  }
+  if (file.size < 16) {
+    return Promise.reject(new Error("图片文件过小"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl.startsWith("data:image/")) {
+        reject(new Error("无法读取图片内容"));
+        return;
+      }
+      resolve({
+        id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        dataUrl,
+        source: "upload",
+        fileName: file.name,
+      });
+    };
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function downloadGeneratedImage(image: GeneratedAiImage, fileName = "ai-image.jpg"): void {
@@ -170,16 +246,22 @@ export async function transferAiImageToDevice(
   }
 
   const auth = getAuthState();
-  const payload = await apiFetch<AiImageTransferResponse>("/api/ai-image/transfer", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
-    },
-    body: JSON.stringify({
-      imageBase64: image.dataUrl,
-      fileName,
-    }),
-  });
+  const payload = await apiFetch<AiImageTransferResponse & { pendingReview?: boolean; reviewId?: string; label?: string; subLabel?: string; score?: number }>(
+    "/api/ai-image/transfer",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify({
+        imageBase64: image.dataUrl,
+        fileName,
+        source: image.source || "ai",
+      }),
+    }
+  );
+
+  throwIfPendingReview(payload);
 
   if (!payload.success || !payload.url) {
     throw new Error(payload.message || "无法获取传输链接");
@@ -206,16 +288,29 @@ export async function shareAiImageToCatalog(
   }
 
   const auth = getAuthState();
-  const payload = await apiFetch<AiImageShareResponse>("/api/ai-image/share", {
+  const isUpload = image.source === "upload";
+  const path = isUpload ? "/api/user-image/share" : "/api/ai-image/share";
+  const body = isUpload
+    ? {
+        imageBase64: image.dataUrl,
+        title: image.fileName || "用户上传图片",
+        description: prompt.trim() || image.fileName || "用户上传图片",
+      }
+    : {
+        imageBase64: image.dataUrl,
+        prompt: prompt.trim(),
+        source: "ai",
+      };
+
+  const payload = await apiFetch<AiImageShareResponse>(path, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${auth?.token || ""}`,
     },
-    body: JSON.stringify({
-      imageBase64: image.dataUrl,
-      prompt: prompt.trim(),
-    }),
+    body: JSON.stringify(body),
   });
+
+  throwIfPendingReview(payload);
 
   if (!payload.success) {
     throw new Error(payload.message || "分享失败");

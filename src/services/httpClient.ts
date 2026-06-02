@@ -511,7 +511,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
-  if (path === "/api/ai-image/share") {
+  if (path === "/api/ai-image/share" || path === "/api/user-image/share") {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
     }
@@ -533,11 +533,15 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     const shareCount = current + 1;
     counts[serial] = shareCount;
     localStorage.setItem(DEV_AI_SHARE_COUNTS_KEY, JSON.stringify(counts));
+    const titleSource =
+      path === "/api/user-image/share"
+        ? String(body.title || body.description || "用户上传图片")
+        : String(body.prompt || "AI 生成图片");
     return {
       success: true,
       resourceId: Date.now(),
       downloadUrl: "https://www.jadot.cn/favicon.ico",
-      title: String(body.prompt || "AI 生成图片").slice(0, 40),
+      title: titleSource.slice(0, 40),
       shareCount,
       shareLimit: DEV_AI_SHARE_LIMIT,
       shareRemaining: DEV_AI_SHARE_LIMIT - shareCount,

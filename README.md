@@ -146,24 +146,33 @@ Authorization: Bearer <token>
 }
 ```
 
-## Python 图片上传 GUI
+## Python 素材上传 GUI
 
-新增工具：`tools/image_uploader_gui.py`
+工具：`tools/image_uploader_gui.py`
 
-可实现：
+支持：
 
-- 选择本地图片并上传到 COS 图片桶
-- 自动同步 `src/data/resources.json`
-- 自动同步 `backend/config/image_map.json`
-
-使用方式：
+- 图片 / 视频 / GIF / **软件（.exe）** 上传到对应 COS 桶
+- 自动更新 `resources.json`、`image_map.json`、`resource_map.json`
+- 可选同步到云服务器
 
 ```bash
 python -m pip install -r tools/requirements.txt
 python tools/image_uploader_gui.py
 ```
 
-上传成功后：
+### 上传软件（Setup.exe）
+
+1. **COS 配置** 页填写 SecretId / SecretKey，以及 **软件 Bucket**（默认 `v1pro-1311844229`）
+2. **上传与同步** 页：素材类型选 **software**，分类会自动设为 `software`
+3. 选择 `.exe` 安装包，填写标题与描述（可选封面图）
+4. 点击 **上传并同步显示**，勾选云同步后自动推送到服务器
+
+软件会写入 `resource_map.json`（对象名为原始文件名），`materialType` 为 `v1pro-pack`。
+
+上传成功后本地前端会显示新资源；若后端在运行，同步并重启 API 后线上生效。
+
+### 上传图片
 
 - 本地前端会按更新后的资源清单显示图片素材
 - 后端若在运行中，请重启后端使 `image_map.json` 生效

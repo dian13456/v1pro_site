@@ -102,12 +102,24 @@ type aiImageRequest struct {
 type aiImageTransferRequest struct {
 	ImageBase64 string `json:"imageBase64"`
 	FileName    string `json:"fileName"`
+	Source      string `json:"source"`
 }
 
 type aiImageShareRequest struct {
 	ImageBase64 string `json:"imageBase64"`
 	Prompt      string `json:"prompt"`
 	Title       string `json:"title"`
+	Source      string `json:"source"`
+}
+
+type userImageShareRequest struct {
+	ImageBase64 string `json:"imageBase64"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+type imageReviewActionRequest struct {
+	Note string `json:"note"`
 }
 
 type runtimeResourceMap struct {
@@ -569,6 +581,53 @@ func parseBearerToken(c *gin.Context) string {
 	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 }
 
+func imsModerationType(source string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "ai", "aigc":
+		return "IMAGE_AIGC"
+	case "upload", "user":
+		return "IMAGE"
+	default:
+		if fallback == "" {
+			return "IMAGE"
+		}
+		return fallback
+	}
+}
+
+func writeImageModerationError(c *gin.Context, err error) {
+	status := http.StatusUnprocessableEntity
+	if !service.IsImageModerationRejected(err) && !service.IsImageModerationReview(err) {
+		status = http.StatusBadGateway
+	}
+	c.JSON(status, gin.H{"success": false, "message": err.Error()})
+}
+
+func writeImageReviewPending(c *gin.Context, item service.PendingImageReview) {
+	c.JSON(http.StatusAccepted, gin.H{
+		"success":       false,
+		"pendingReview": true,
+		"reviewId":      item.ID,
+		"message":       "图片已提交人工复核，请等待管理员审核",
+		"label":         item.Label,
+		"subLabel":      item.SubLabel,
+		"score":         item.Score,
+	})
+}
+
+func ensureReviewAdmin(c *gin.Context, reviewAdminToken string) bool {
+	if strings.TrimSpace(reviewAdminToken) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "人工复核接口未配置"})
+		return false
+	}
+	token := strings.TrimSpace(c.GetHeader("X-Review-Admin-Token"))
+	if token == "" || token != reviewAdminToken {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "复核管理员 token 无效"})
+		return false
+	}
+	return true
+}
+
 func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := strings.TrimSpace(c.GetHeader("Origin"))
@@ -583,7 +642,7 @@ func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", allowOrigin)
 		}
 		c.Header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token")
 		c.Header("Access-Control-Allow-Credentials", "false")
 		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 
@@ -781,6 +840,29 @@ func main() {
 	if minimaxAPIKey == "" {
 		log.Printf("warn: MINIMAX_API_KEY not set, /api/ai-image will be unavailable")
 	}
+	imsSecretID := strings.TrimSpace(os.Getenv("IMS_SECRET_ID"))
+	if imsSecretID == "" {
+		imsSecretID = cosSecretID
+	}
+	imsSecretKey := strings.TrimSpace(os.Getenv("IMS_SECRET_KEY"))
+	if imsSecretKey == "" {
+		imsSecretKey = cosSecretKey
+	}
+	imsRegion := strings.TrimSpace(os.Getenv("IMS_REGION"))
+	imsBizType := strings.TrimSpace(os.Getenv("IMS_BIZ_TYPE"))
+	imsEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv("IMS_ENABLED")), "false")
+	if imsSecretID == "" || imsSecretKey == "" {
+		imsEnabled = false
+	}
+	imsClient, err := service.NewImageModerationClient(imsSecretID, imsSecretKey, imsRegion, imsBizType, imsEnabled)
+	if err != nil {
+		log.Fatalf("init image moderation failed: %v", err)
+	}
+	if imsClient.Available() {
+		log.Printf("info: Tencent IMS image moderation enabled")
+	} else {
+		log.Printf("warn: IMS image moderation disabled or not configured")
+	}
 
 	resourceMapStore, err := newRuntimeResourceMap(resourceMapPath)
 	if err != nil {
@@ -814,6 +896,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("load ai image credits failed: %v", err)
 	}
+	imageReviewPath := os.Getenv("IMAGE_REVIEW_QUEUE_PATH")
+	if imageReviewPath == "" {
+		imageReviewPath = filepath.Join("config", "image_review_queue.json")
+	}
+	imageReviewStore, err := service.LoadImageReviewStore(imageReviewPath)
+	if err != nil {
+		log.Fatalf("load image review queue failed: %v", err)
+	}
+	reviewAdminToken := strings.TrimSpace(os.Getenv("REVIEW_ADMIN_TOKEN"))
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
 	if err != nil {
@@ -876,6 +967,7 @@ func main() {
 	var profilesMu sync.RWMutex
 	var aiShareMu sync.Mutex
 	var aiCreditsMu sync.Mutex
+	var imageReviewMu sync.RWMutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -1141,6 +1233,50 @@ func main() {
 			return
 		}
 
+		for idx, imageBase64 := range result.Images {
+			imageReviewMu.Lock()
+			reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
+				c.Request.Context(),
+				imsClient,
+				imageSigner,
+				&imageReviewStore,
+				service.EnqueueImageReviewInput{
+					Serial:      serial,
+					Action:      service.ReviewActionGenerate,
+					ImageBase64: imageBase64,
+					Source:      "ai",
+				},
+				fmt.Sprintf("%s-ai-%d", serial, idx),
+				"IMAGE_AIGC",
+			)
+			if pending {
+				saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+				imageReviewMu.Unlock()
+				if saveErr != nil {
+					log.Printf("warn: save image review queue failed: %v", saveErr)
+				}
+				aiCreditsMu.Lock()
+				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
+					log.Printf("warn: refund ai image credits failed: %v", refundErr)
+				}
+				aiCreditsMu.Unlock()
+				writeImageReviewPending(c, reviewItem)
+				return
+			}
+			imageReviewMu.Unlock()
+			if modErr != nil {
+				aiCreditsMu.Lock()
+				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
+					log.Printf("warn: refund ai image credits failed: %v", refundErr)
+				}
+				aiCreditsMu.Unlock()
+				writeImageModerationError(c, modErr)
+				return
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success":          true,
 			"images":           result.Images,
@@ -1160,6 +1296,41 @@ func main() {
 		var req aiImageTransferRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		profilesMu.RLock()
+		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		imageReviewMu.Lock()
+		reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
+			c.Request.Context(),
+			imsClient,
+			imageSigner,
+			&imageReviewStore,
+			service.EnqueueImageReviewInput{
+				Serial:      serial,
+				Author:      author,
+				Action:      service.ReviewActionTransfer,
+				ImageBase64: req.ImageBase64,
+				Source:      req.Source,
+			},
+			serial+"-transfer",
+			imsModerationType(req.Source, "IMAGE"),
+		)
+		if pending {
+			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			imageReviewMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save image review queue failed: %v", saveErr)
+			}
+			writeImageReviewPending(c, reviewItem)
+			return
+		}
+		imageReviewMu.Unlock()
+		if modErr != nil {
+			writeImageModerationError(c, modErr)
 			return
 		}
 
@@ -1215,6 +1386,39 @@ func main() {
 		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
 
+		imageReviewMu.Lock()
+		reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
+			c.Request.Context(),
+			imsClient,
+			imageSigner,
+			&imageReviewStore,
+			service.EnqueueImageReviewInput{
+				Serial:      serial,
+				Author:      author,
+				Action:      service.ReviewActionShareAI,
+				Title:       req.Title,
+				Prompt:      req.Prompt,
+				Source:      req.Source,
+				ImageBase64: req.ImageBase64,
+			},
+			serial+"-share",
+			imsModerationType(req.Source, "IMAGE_AIGC"),
+		)
+		if pending {
+			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			imageReviewMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save image review queue failed: %v", saveErr)
+			}
+			writeImageReviewPending(c, reviewItem)
+			return
+		}
+		imageReviewMu.Unlock()
+		if modErr != nil {
+			writeImageModerationError(c, modErr)
+			return
+		}
+
 		result, err := service.ShareAIImageToCatalog(
 			c.Request.Context(),
 			imageSigner,
@@ -1252,6 +1456,297 @@ func main() {
 			"shareCount":       shareCount,
 			"shareLimit":       service.MaxAISharesPerDevice,
 			"shareRemaining":   service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice),
+		})
+	})
+
+	router.POST("/api/user-image/share", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req userImageShareRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		aiShareMu.Lock()
+		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
+			shareCount := aiShareQuota.ShareCount(serial)
+			aiShareMu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":    false,
+				"message":    limitMsg,
+				"shareCount": shareCount,
+				"shareLimit": service.MaxAISharesPerDevice,
+			})
+			return
+		}
+		aiShareMu.Unlock()
+
+		imageReviewMu.Lock()
+		reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
+			c.Request.Context(),
+			imsClient,
+			imageSigner,
+			&imageReviewStore,
+			service.EnqueueImageReviewInput{
+				Serial:      serial,
+				Action:      service.ReviewActionShareUser,
+				Title:       req.Title,
+				Description: req.Description,
+				Source:      "upload",
+				ImageBase64: req.ImageBase64,
+			},
+			serial+"-upload-share",
+			"IMAGE",
+		)
+		if pending {
+			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			imageReviewMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save image review queue failed: %v", saveErr)
+			}
+			writeImageReviewPending(c, reviewItem)
+			return
+		}
+		imageReviewMu.Unlock()
+		if modErr != nil {
+			writeImageModerationError(c, modErr)
+			return
+		}
+
+		profilesMu.RLock()
+		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		result, err := service.ShareAIImageToCatalog(
+			c.Request.Context(),
+			imageSigner,
+			imagePublicBase,
+			resourcesPath,
+			imageMapPath,
+			service.ShareAIImageInput{
+				ImageBase64: req.ImageBase64,
+				Prompt:      req.Description,
+				Title:       req.Title,
+				Author:      author,
+			},
+		)
+		if err != nil {
+			log.Printf("warn: user image share failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		aiShareMu.Lock()
+		shareCount := aiShareQuota.RecordShare(serial)
+		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+		aiShareMu.Unlock()
+		if saveErr != nil {
+			log.Printf("warn: save user image share counts failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享计数保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"resourceId":     result.ResourceID,
+			"downloadUrl":    result.DownloadURL,
+			"title":          result.Title,
+			"shareCount":     shareCount,
+			"shareLimit":     service.MaxAISharesPerDevice,
+			"shareRemaining": service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice),
+		})
+	})
+
+	router.GET("/api/admin/image-reviews", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		status := strings.TrimSpace(c.Query("status"))
+		if status == "" {
+			status = service.ImageReviewStatusPending
+		}
+
+		imageReviewMu.RLock()
+		items := imageReviewStore.List(status)
+		imageReviewMu.RUnlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"items":   items,
+			"total":   len(items),
+		})
+	})
+
+	router.GET("/api/admin/image-reviews/:id", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		reviewID := strings.TrimSpace(c.Param("id"))
+
+		imageReviewMu.RLock()
+		item, _, ok := imageReviewStore.Find(reviewID)
+		imageReviewMu.RUnlock()
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "复核记录不存在"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "item": item})
+	})
+
+	router.GET("/api/admin/image-reviews/:id/image", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		reviewID := strings.TrimSpace(c.Param("id"))
+
+		imageReviewMu.RLock()
+		item, _, ok := imageReviewStore.Find(reviewID)
+		imageReviewMu.RUnlock()
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "复核记录不存在"})
+			return
+		}
+		if imageSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "图片存储未配置"})
+			return
+		}
+
+		signedURL, err := imageSigner.GenerateReadURL(c.Request.Context(), item.ImageObjectKey, 30*time.Minute)
+		if err != nil {
+			log.Printf("warn: image review read url failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "读取待审图片失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":  true,
+			"imageUrl": signedURL,
+		})
+	})
+
+	router.POST("/api/admin/image-reviews/:id/approve", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		reviewID := strings.TrimSpace(c.Param("id"))
+
+		var req imageReviewActionRequest
+		_ = c.ShouldBindJSON(&req)
+
+		imageReviewMu.Lock()
+		item, _, ok := imageReviewStore.Find(reviewID)
+		if !ok {
+			imageReviewMu.Unlock()
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "复核记录不存在"})
+			return
+		}
+		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
+			aiShareMu.Lock()
+			if limitMsg := aiShareQuota.ShareLimitMessage(item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
+				shareCount := aiShareQuota.ShareCount(item.Serial)
+				aiShareMu.Unlock()
+				imageReviewMu.Unlock()
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"success":    false,
+					"message":    limitMsg,
+					"shareCount": shareCount,
+					"shareLimit": service.MaxAISharesPerDevice,
+				})
+				return
+			}
+			aiShareMu.Unlock()
+		}
+
+		result, err := service.ApprovePendingImageReview(
+			c.Request.Context(),
+			imageSigner,
+			imagePublicBase,
+			resourcesPath,
+			imageMapPath,
+			&imageReviewStore,
+			reviewID,
+			req.Note,
+		)
+		if err != nil {
+			imageReviewMu.Unlock()
+			status := http.StatusBadGateway
+			if strings.Contains(err.Error(), "不支持") || strings.Contains(err.Error(), "已处理") {
+				status = http.StatusBadRequest
+			}
+			c.JSON(status, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+			imageReviewMu.Unlock()
+			log.Printf("warn: save image review queue failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "复核状态保存失败"})
+			return
+		}
+		imageReviewMu.Unlock()
+
+		response := gin.H{
+			"success":     true,
+			"resourceId":  result.ResourceID,
+			"downloadUrl": result.DownloadURL,
+			"title":       result.Title,
+			"message":     "已通过复核并发布到素材库",
+		}
+		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
+			aiShareMu.Lock()
+			shareCount := aiShareQuota.RecordShare(item.Serial)
+			saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+			aiShareMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save ai image share counts after review approve failed: %v", saveErr)
+			} else {
+				response["shareCount"] = shareCount
+				response["shareLimit"] = service.MaxAISharesPerDevice
+				response["shareRemaining"] = service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice)
+			}
+		}
+
+		c.JSON(http.StatusOK, response)
+	})
+
+	router.POST("/api/admin/image-reviews/:id/reject", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		reviewID := strings.TrimSpace(c.Param("id"))
+
+		var req imageReviewActionRequest
+		_ = c.ShouldBindJSON(&req)
+
+		imageReviewMu.Lock()
+		item, err := service.RejectPendingImageReview(&imageReviewStore, reviewID, req.Note)
+		if err != nil {
+			imageReviewMu.Unlock()
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "不存在") {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+			imageReviewMu.Unlock()
+			log.Printf("warn: save image review queue failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "复核状态保存失败"})
+			return
+		}
+		imageReviewMu.Unlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"item":    item,
+			"message": "已拒绝该图片",
 		})
 	})
 
