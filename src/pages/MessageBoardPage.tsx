@@ -12,7 +12,7 @@ import {
   postMessage,
 } from "../services/messageBoardService";
 import type { BoardMessage } from "../types/messageBoard";
-import { displayUsernameFromSerial } from "../utils/displayUsername";
+import { getDisplayName } from "../services/welcomeService";
 
 function formatMessageTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString("zh-CN", {
@@ -35,7 +35,7 @@ export default function MessageBoardPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const auth = getAuthState();
-  const myUsername = auth?.serial ? displayUsernameFromSerial(auth.serial) : "";
+  const myUsername = auth?.serial ? getDisplayName(auth.serial) : "";
 
   const loadMessages = async () => {
     setLoading(true);
@@ -92,7 +92,7 @@ export default function MessageBoardPage() {
       <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="用户留言板"
-          subtitle="分享使用体验、素材建议或问题反馈。用户名显示为设备 SN 码后十位。"
+          subtitle="分享使用体验、素材建议或问题反馈。留言将显示你的网站昵称。"
           rightSlot={
             <div className="flex flex-wrap items-center gap-2">
               <SiteNav />
@@ -111,7 +111,7 @@ export default function MessageBoardPage() {
         <section className="mb-6 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              当前身份：<span className="font-medium text-violet-600 dark:text-violet-300">{myUsername || "—"}</span>
+              当前昵称：<span className="font-medium text-violet-600 dark:text-violet-300">{myUsername || "—"}</span>
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">最多 {MAX_MESSAGE_LENGTH} 字</p>
           </div>

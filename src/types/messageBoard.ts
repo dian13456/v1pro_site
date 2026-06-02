@@ -3,6 +3,7 @@ export interface BoardMessage {
   username: string;
   content: string;
   createdAt: number;
+  serial?: string;
 }
 
 export interface MessageBoardState {

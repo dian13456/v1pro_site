@@ -134,6 +134,26 @@ interface DevBoardMessage {
   username: string;
   content: string;
   createdAt: number;
+  serial?: string;
+}
+
+function resolveDevDisplayName(messageSerial: string): string {
+  let profiles: Record<string, string> = {};
+  try {
+    profiles = JSON.parse(localStorage.getItem(DEV_PROFILES_KEY) || "{}") as Record<string, string>;
+  } catch {
+    profiles = {};
+  }
+  const custom = profiles[messageSerial]?.trim();
+  if (custom) return custom.slice(0, 20);
+  return displayUsernameFromSerial(messageSerial);
+}
+
+function withResolvedDevUsernames(messages: DevBoardMessage[]): DevBoardMessage[] {
+  return messages.map((item) => {
+    if (!item.serial) return item;
+    return { ...item, username: resolveDevDisplayName(item.serial) };
+  });
 }
 
 function readDevMessages(): DevBoardMessage[] {
@@ -360,11 +380,13 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       localStorage.setItem(DEV_PROFILES_KEY, JSON.stringify(profiles));
       return {
         success: true,
+        serial,
         displayName: displayName || displayUsernameFromSerial(serial),
       };
     }
     return {
       success: true,
+      serial,
       displayName: profiles[serial] || displayUsernameFromSerial(serial),
     };
   }
@@ -411,6 +433,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       }
       const entry: DevBoardMessage = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        serial,
         username: String(body.displayName || "").trim() || displayUsernameFromSerial(serial),
         content,
         createdAt: Date.now(),
@@ -422,7 +445,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     }
 
     const limit = parseDevMessageLimit(path);
-    const all = readDevMessages();
+    const all = withResolvedDevUsernames(readDevMessages());
     const messages = [...all].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
     return { success: true, messages, total: all.length };
   }

@@ -73,6 +73,7 @@ type messageEntry struct {
 	Username  string `json:"username"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"createdAt"`
+	Serial    string `json:"serial,omitempty"`
 }
 
 type messagesStore struct {
@@ -948,6 +949,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
+			"serial":      serial,
 			"displayName": displayName,
 		})
 	})
@@ -977,6 +979,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
+			"serial":      serial,
 			"displayName": displayName,
 		})
 	})
@@ -1576,6 +1579,14 @@ func main() {
 			slice[i], slice[j] = slice[j], slice[i]
 		}
 
+		profilesMu.RLock()
+		for i := range slice {
+			if strings.TrimSpace(slice[i].Serial) != "" {
+				slice[i].Username = service.ResolveStoredDisplayName(userProfiles, slice[i].Serial, "")
+			}
+		}
+		profilesMu.RUnlock()
+
 		c.JSON(http.StatusOK, gin.H{
 			"success":  true,
 			"messages": slice,
@@ -1607,8 +1618,9 @@ func main() {
 		}
 
 		entry := messageEntry{
-			ID:        newMessageID(),
-			Username:  func() string {
+			ID:     newMessageID(),
+			Serial: serial,
+			Username: func() string {
 				profilesMu.RLock()
 				defer profilesMu.RUnlock()
 				return service.ResolveStoredDisplayName(userProfiles, serial, req.DisplayName)

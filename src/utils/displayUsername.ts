@@ -1,4 +1,4 @@
-/** 留言板显示名：SN 码后十位（不足十位则取全部） */
+/** 网站昵称默认值：设备 SN 后十位（不足十位则取全部） */
 export function displayUsernameFromSerial(serial: string): string {
   const trimmed = serial.trim();
   if (!trimmed) return "anonymous";

@@ -41,8 +41,14 @@ function normalizeMessage(raw: unknown): BoardMessage | null {
   const username = typeof item.username === "string" ? item.username : "";
   const content = typeof item.content === "string" ? item.content : "";
   const createdAt = Number(item.createdAt);
+  const serial = typeof item.serial === "string" ? item.serial : undefined;
   if (!id || !content || !Number.isFinite(createdAt)) return null;
-  return { id, username, content, createdAt };
+  return { id, username, content, createdAt, serial };
+}
+
+function resolveMessageDisplayName(message: BoardMessage): BoardMessage {
+  if (!message.serial) return message;
+  return { ...message, username: getDisplayName(message.serial) };
 }
 
 export async function fetchMessages(limit = 100): Promise<MessageBoardState> {
@@ -52,6 +58,7 @@ export async function fetchMessages(limit = 100): Promise<MessageBoardState> {
 
   if (isStaticMode()) {
     const messages = readLocalMessages()
+      .map(resolveMessageDisplayName)
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
     return { messages, total: readLocalMessages().length };
@@ -67,7 +74,8 @@ export async function fetchMessages(limit = 100): Promise<MessageBoardState> {
 
   const messages = (payload.messages || [])
     .map(normalizeMessage)
-    .filter((item): item is BoardMessage => item !== null);
+    .filter((item): item is BoardMessage => item !== null)
+    .map(resolveMessageDisplayName);
 
   return {
     messages,
@@ -96,6 +104,7 @@ export async function postMessage(content: string): Promise<BoardMessage> {
   if (isStaticMode()) {
     const entry: BoardMessage = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      serial: auth.serial,
       username: getDisplayName(auth.serial),
       content: trimmed,
       createdAt: Date.now(),
