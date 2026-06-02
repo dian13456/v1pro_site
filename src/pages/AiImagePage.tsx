@@ -216,7 +216,7 @@ export default function AiImagePage() {
           </div>
 
           {loading ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">MiniMax 正在绘制，请稍候…</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400">正在绘制，请稍候…</div>
           ) : null}
 
           {errorMessage ? (
