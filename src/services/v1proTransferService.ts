@@ -1,4 +1,3 @@
-import { V1PRO_PROTOCOL_LAUNCH_TIMEOUT_MS } from "../config/v1proProtocol";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import type { ResourceItem } from "../types/resource";
 import { createDownloadUrl } from "./downloadService";
@@ -8,6 +7,9 @@ export interface V1ProOpenOptions {
   auto?: boolean;
   name?: string;
 }
+
+export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
+  "已发送传输请求，请在佳点 V1PRO 控制工具中查看进度。";
 
 export function buildV1ProUrl(fileUrl: string, options: V1ProOpenOptions = {}): string {
   if (!/^https:\/\//i.test(fileUrl)) {
@@ -62,25 +64,8 @@ export function canTransferViaV1Pro(resource: ResourceItem): boolean {
   );
 }
 
-export function launchV1ProTransfer(
-  fileUrl: string,
-  options: V1ProOpenOptions & { onInstallHint?: () => void } = {}
-): void {
-  const deepLink = buildV1ProUrl(fileUrl, options);
-  let opened = false;
-
-  const onBlur = () => {
-    opened = true;
-  };
-  window.addEventListener("blur", onBlur, { once: true });
-  window.location.href = deepLink;
-
-  window.setTimeout(() => {
-    window.removeEventListener("blur", onBlur);
-    if (!opened) {
-      options.onInstallHint?.();
-    }
-  }, V1PRO_PROTOCOL_LAUNCH_TIMEOUT_MS);
+export function launchV1ProTransfer(fileUrl: string, options: V1ProOpenOptions = {}): void {
+  window.location.href = buildV1ProUrl(fileUrl, options);
 }
 
 export async function resolveTransferSignedUrl(

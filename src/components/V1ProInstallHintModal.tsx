@@ -15,10 +15,10 @@ export function V1ProInstallHintModal({ onClose }: V1ProInstallHintModalProps) {
       >
         <p className="text-xs uppercase tracking-[0.24em] text-cyan-500">V1PRO Control Tool</p>
         <h2 id="v1pro-install-title" className="mt-2 text-xl font-semibold text-slate-900 dark:text-slate-50">
-          未检测到控制工具
+          安装控制工具
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          「传输到设备」需要安装佳点 V1PRO 控制工具。安装后请重新点击传输，浏览器会通过{" "}
+          「传输到设备」需要安装佳点 V1PRO 控制工具。安装完成后重新点击传输，浏览器会通过{" "}
           <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">v1pro://</code>{" "}
           唤起客户端，自动下载并推送到已连接的 USB 设备。
         </p>

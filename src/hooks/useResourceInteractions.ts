@@ -7,6 +7,7 @@ import { createImageUrl } from "../services/imageService";
 import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 import {
+  V1PRO_TRANSFER_LAUNCHED_MESSAGE,
   guessTransferFileName,
   launchV1ProTransfer,
   resolveTransferSignedUrl,
@@ -17,6 +18,7 @@ export function useResourceInteractions() {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [showV1ProInstallHint, setShowV1ProInstallHint] = useState(false);
+  const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
   const [playingUrl, setPlayingUrl] = useState("");
@@ -98,8 +100,9 @@ export function useResourceInteractions() {
       launchV1ProTransfer(url, {
         name: guessTransferFileName(resource),
         auto: true,
-        onInstallHint: () => setShowV1ProInstallHint(true),
       });
+      setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+      window.setTimeout(() => setTransferNotice(""), 5000);
     } catch (err) {
       const message = (err as Error)?.message || "传输失败";
       setErrorMessage(message);
@@ -145,6 +148,8 @@ export function useResourceInteractions() {
     transferringId,
     showV1ProInstallHint,
     setShowV1ProInstallHint,
+    transferNotice,
+    setTransferNotice,
     playingId,
     playingResourceId,
     playingUrl,
