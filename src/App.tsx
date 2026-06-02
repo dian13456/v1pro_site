@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
+import AiImagePage from "./pages/AiImagePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
@@ -59,6 +60,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AiGuidePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ai-image"
+          element={
+            <ProtectedRoute>
+              <AiImagePage />
             </ProtectedRoute>
           }
         />

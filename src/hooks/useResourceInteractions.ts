@@ -17,7 +17,6 @@ export function useResourceInteractions() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
-  const [showV1ProInstallHint, setShowV1ProInstallHint] = useState(false);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -146,8 +145,6 @@ export function useResourceInteractions() {
   return {
     downloadingId,
     transferringId,
-    showV1ProInstallHint,
-    setShowV1ProInstallHint,
     transferNotice,
     setTransferNotice,
     playingId,

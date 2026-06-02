@@ -92,6 +92,12 @@ type aiGuideRequest struct {
 	Question string `json:"question"`
 }
 
+type aiImageRequest struct {
+	Prompt      string `json:"prompt"`
+	AspectRatio string `json:"aspectRatio"`
+	Count       int    `json:"count"`
+}
+
 type runtimeResourceMap struct {
 	path        string
 	mu          sync.RWMutex
@@ -747,6 +753,14 @@ func main() {
 	if deepseekAPIKey == "" {
 		log.Printf("warn: DEEPSEEK_API_KEY not set, /api/ai-guide will use keyword fallback")
 	}
+	minimaxAPIKey := strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
+	minimaxModel := strings.TrimSpace(os.Getenv("MINIMAX_MODEL"))
+	minimaxBaseURL := strings.TrimSpace(os.Getenv("MINIMAX_BASE_URL"))
+	minimaxGroupID := strings.TrimSpace(os.Getenv("MINIMAX_GROUP_ID"))
+	minimaxClient := service.NewMiniMaxClient(minimaxAPIKey, minimaxModel, minimaxBaseURL, minimaxGroupID)
+	if minimaxAPIKey == "" {
+		log.Printf("warn: MINIMAX_API_KEY not set, /api/ai-image will be unavailable")
+	}
 
 	resourceMapStore, err := newRuntimeResourceMap(resourceMapPath)
 	if err != nil {
@@ -1012,6 +1026,42 @@ func main() {
 			"answer":      result.Answer,
 			"resourceIds": result.ResourceIDs,
 			"mode":        mode,
+		})
+	})
+
+	router.POST("/api/ai-image", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if minimaxClient.APIKey == "" {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "AI 图片生成服务未配置"})
+			return
+		}
+
+		var req aiImageRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		result, err := minimaxClient.GenerateImages(
+			c.Request.Context(),
+			req.Prompt,
+			req.AspectRatio,
+			req.Count,
+		)
+		if err != nil {
+			log.Printf("warn: minimax image generation failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"images":  result.Images,
+			"mode":    "minimax",
 		})
 	})
 

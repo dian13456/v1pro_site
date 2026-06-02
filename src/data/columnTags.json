@@ -2,16 +2,30 @@
   {
     "id": "yuexin-miao",
     "label": "月薪喵",
-    "keywords": ["月薪喵", "月薪"]
+    "keywords": [
+      "月薪喵",
+      "月薪"
+    ]
   },
   {
     "id": "doro",
     "label": "doro",
-    "keywords": ["doro"]
+    "keywords": [
+      "doro"
+    ]
   },
   {
     "id": "feibi",
     "label": "菲比",
-    "keywords": ["菲比"]
+    "keywords": [
+      "菲比"
+    ]
+  },
+  {
+    "id": "col-9d8e57c274",
+    "label": "孤独摇滚",
+    "keywords": [
+      "孤独摇滚"
+    ]
   }
 ]

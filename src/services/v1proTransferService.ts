@@ -64,8 +64,15 @@ export function canTransferViaV1Pro(resource: ResourceItem): boolean {
   );
 }
 
+/** 通过隐藏 iframe 唤起 v1pro://，避免 location.href 导致页面跳转或误判未安装。 */
 export function launchV1ProTransfer(fileUrl: string, options: V1ProOpenOptions = {}): void {
-  window.location.href = buildV1ProUrl(fileUrl, options);
+  const url = buildV1ProUrl(fileUrl, options);
+  const iframe = document.createElement("iframe");
+  iframe.style.display = "none";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  window.setTimeout(() => iframe.remove(), 2000);
 }
 
 export async function resolveTransferSignedUrl(

@@ -65,17 +65,20 @@ function transferToDevice(fileUrl, options) {
 
 若程序已在运行，新链接会转发给已有窗口，不会重复启动。
 
-## 5. 未安装时的页面提示
+## 5. 页面提示（勿检测是否已安装）
 
-浏览器无法静默检测控制工具是否已安装。**不建议**用 `window blur` 判断——Windows 下协议唤起成功时页面也可能保持焦点，会误报「未安装」。
+浏览器**无法**可靠判断控制工具是否已安装。以下做法均会误报，**禁止**使用：
+
+- `window blur` / `visibilitychange` 推断未安装（Windows 下协议唤起成功时页面也可能保持焦点）
+- 传输成功后自动弹出「未检测到 / 未安装控制工具」类模态框
 
 推荐做法：
 
-- 点击传输后显示轻提示：「已发送传输请求，请在控制工具中查看」
-- 仅在用户主动点击「未安装？下载 Setup」时再弹出安装引导
+- 点击传输后仅显示轻提示：「已发送传输请求，请在控制工具中查看」
+- Setup 下载链接放在页脚，由用户自行点击，**不要**在传输流程里弹出安装引导
 
 ```javascript
-window.location.href = buildV1ProUrl(signedUrl, { auto: true, name });
+launchV1ProTransfer(signedUrl, { auto: true, name }); // 内部用隐藏 iframe 打开 v1pro://
 showToast("已发送传输请求，请在佳点 V1PRO 控制工具中查看进度");
 ```
 

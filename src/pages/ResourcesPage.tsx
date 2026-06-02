@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
-import { V1ProInstallHintModal } from "../components/V1ProInstallHintModal";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { SearchBar } from "../components/SearchBar";
 import { SiteHeader } from "../components/SiteHeader";
@@ -37,7 +36,6 @@ export default function ResourcesPage() {
   const [searchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
-  const [showV1ProInstallHint, setShowV1ProInstallHint] = useState(false);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -347,15 +345,7 @@ export default function ResourcesPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      {showV1ProInstallHint ? <V1ProInstallHintModal onClose={() => setShowV1ProInstallHint(false)} /> : null}
-      <V1ProTransferNotice
-        message={transferNotice}
-        onDismiss={() => setTransferNotice("")}
-        onInstallClick={() => {
-          setTransferNotice("");
-          setShowV1ProInstallHint(true);
-        }}
-      />
+      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="佳点电子资源中心"

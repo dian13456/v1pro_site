@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { V1PRO_SETUP_DOWNLOAD_URL } from "../config/v1proProtocol";
 import { TERMS_TITLE } from "../content/termsOfUse";
 
 export function SiteFooter() {
@@ -9,6 +10,17 @@ export function SiteFooter() {
         <Link to="/terms" className="ml-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
           查看{TERMS_TITLE}
         </Link>
+      </p>
+      <p className="mt-2">
+        传输到设备需
+        <a
+          href={V1PRO_SETUP_DOWNLOAD_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-1 text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-300"
+        >
+          安装佳点 V1PRO 控制工具
+        </a>
       </p>
     </footer>
   );

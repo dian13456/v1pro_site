@@ -1,10 +1,9 @@
 interface V1ProTransferNoticeProps {
   message: string;
-  onInstallClick: () => void;
   onDismiss: () => void;
 }
 
-export function V1ProTransferNotice({ message, onInstallClick, onDismiss }: V1ProTransferNoticeProps) {
+export function V1ProTransferNotice({ message, onDismiss }: V1ProTransferNoticeProps) {
   if (!message) {
     return null;
   }
@@ -22,13 +21,6 @@ export function V1ProTransferNotice({ message, onInstallClick, onDismiss }: V1Pr
           ×
         </button>
       </div>
-      <button
-        type="button"
-        onClick={onInstallClick}
-        className="mt-2 text-xs text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-300"
-      >
-        未安装控制工具？点击下载 Setup
-      </button>
     </div>
   );
 }

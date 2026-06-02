@@ -1,7 +1,13 @@
 @echo off
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
-if not exist .env (
+if exist .env (
+  echo [信息] 正在加载 backend\.env
+  for /f "usebackq eol=# tokens=1,* delims==" %%a in (".env") do (
+    if not "%%a"=="" set "%%a=%%b"
+  )
+) else (
   echo [提示] 未找到 backend\.env，请先复制 .env.example 并填入 COS 密钥。
   echo.
 )
