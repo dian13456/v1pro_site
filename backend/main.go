@@ -745,6 +745,10 @@ func main() {
 	if userProfilesPath == "" {
 		userProfilesPath = filepath.Join("config", "user_profiles.json")
 	}
+	aiImageSharesPath := os.Getenv("AI_IMAGE_SHARES_PATH")
+	if aiImageSharesPath == "" {
+		aiImageSharesPath = filepath.Join("config", "ai_image_share_counts.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -796,6 +800,10 @@ func main() {
 	userProfiles, err := service.LoadUserProfiles(userProfilesPath)
 	if err != nil {
 		log.Fatalf("load user profiles failed: %v", err)
+	}
+	aiShareQuota, err := service.LoadAIShareQuotaStore(aiImageSharesPath)
+	if err != nil {
+		log.Fatalf("load ai image share counts failed: %v", err)
 	}
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -857,6 +865,7 @@ func main() {
 	var downloadsMu sync.Mutex
 	var messagesMu sync.RWMutex
 	var profilesMu sync.RWMutex
+	var aiShareMu sync.Mutex
 	imageSignTTL := 10 * time.Minute
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
@@ -1128,6 +1137,20 @@ func main() {
 			return
 		}
 
+		aiShareMu.Lock()
+		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
+			shareCount := aiShareQuota.ShareCount(serial)
+			aiShareMu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":    false,
+				"message":    limitMsg,
+				"shareCount": shareCount,
+				"shareLimit": service.MaxAISharesPerDevice,
+			})
+			return
+		}
+		aiShareMu.Unlock()
+
 		profilesMu.RLock()
 		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
@@ -1151,11 +1174,24 @@ func main() {
 			return
 		}
 
+		aiShareMu.Lock()
+		shareCount := aiShareQuota.RecordShare(serial)
+		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+		aiShareMu.Unlock()
+		if saveErr != nil {
+			log.Printf("warn: save ai image share counts failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享计数保存失败"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"success":     true,
-			"resourceId":  result.ResourceID,
-			"downloadUrl": result.DownloadURL,
-			"title":       result.Title,
+			"success":          true,
+			"resourceId":       result.ResourceID,
+			"downloadUrl":      result.DownloadURL,
+			"title":            result.Title,
+			"shareCount":       shareCount,
+			"shareLimit":       service.MaxAISharesPerDevice,
+			"shareRemaining":   service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice),
 		})
 	})
 

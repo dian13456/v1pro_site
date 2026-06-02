@@ -98,7 +98,15 @@ export default function AiImagePage() {
     try {
       const result = await shareAiImageToCatalog(image, prompt);
       setSharedIds((prev) => new Set(prev).add(image.id));
-      setShareNotice(`已分享到素材库（#${result.resourceId || ""}），可在素材中心查看`);
+      const remaining =
+        typeof result.shareRemaining === "number"
+          ? result.shareRemaining
+          : undefined;
+      setShareNotice(
+        remaining !== undefined
+          ? `已分享到素材库（#${result.resourceId || ""}），剩余分享次数 ${remaining}`
+          : `已分享到素材库（#${result.resourceId || ""}），可在素材中心查看`
+      );
       window.setTimeout(() => setShareNotice(""), 5000);
     } catch (err) {
       const message = (err as Error)?.message || "分享失败";

@@ -18,6 +18,9 @@ export interface AiImageShareResponse {
   resourceId?: number;
   downloadUrl?: string;
   title?: string;
+  shareCount?: number;
+  shareLimit?: number;
+  shareRemaining?: number;
   message?: string;
 }
 

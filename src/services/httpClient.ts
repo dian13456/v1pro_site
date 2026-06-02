@@ -10,6 +10,8 @@ const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
 const DEV_DEVICE_WINDOWS_KEY = "jiadian_dev_device_download_windows";
 const DEV_MESSAGES_KEY = "jiadian_dev_messages";
 const DEV_PROFILES_KEY = "jiadian_dev_profiles";
+const DEV_AI_SHARE_COUNTS_KEY = "jiadian_dev_ai_share_counts";
+const DEV_AI_SHARE_LIMIT = 50;
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
 const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
@@ -445,11 +447,32 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
     }
+    let counts: Record<string, number> = {};
+    try {
+      counts = JSON.parse(localStorage.getItem(DEV_AI_SHARE_COUNTS_KEY) || "{}") as Record<string, number>;
+    } catch {
+      counts = {};
+    }
+    const current = Math.max(0, Number(counts[serial] || 0));
+    if (current >= DEV_AI_SHARE_LIMIT) {
+      return {
+        success: false,
+        message: `每台设备最多分享 ${DEV_AI_SHARE_LIMIT} 次，您的额度已用完（已用 ${current} 次）`,
+        shareCount: current,
+        shareLimit: DEV_AI_SHARE_LIMIT,
+      };
+    }
+    const shareCount = current + 1;
+    counts[serial] = shareCount;
+    localStorage.setItem(DEV_AI_SHARE_COUNTS_KEY, JSON.stringify(counts));
     return {
       success: true,
       resourceId: Date.now(),
       downloadUrl: "https://www.jadot.cn/favicon.ico",
       title: String(body.prompt || "AI 生成图片").slice(0, 40),
+      shareCount,
+      shareLimit: DEV_AI_SHARE_LIMIT,
+      shareRemaining: DEV_AI_SHARE_LIMIT - shareCount,
     };
   }
 
