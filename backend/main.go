@@ -98,6 +98,11 @@ type aiImageRequest struct {
 	Count       int    `json:"count"`
 }
 
+type aiImageTransferRequest struct {
+	ImageBase64 string `json:"imageBase64"`
+	FileName    string `json:"fileName"`
+}
+
 type runtimeResourceMap struct {
 	path        string
 	mu          sync.RWMutex
@@ -1062,6 +1067,40 @@ func main() {
 			"success": true,
 			"images":  result.Images,
 			"mode":    "minimax",
+		})
+	})
+
+	router.POST("/api/ai-image/transfer", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req aiImageTransferRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		signedURL, err := service.StageAIImageForTransfer(
+			c.Request.Context(),
+			imageSigner,
+			serial,
+			req.ImageBase64,
+			req.FileName,
+			imageSignTTL,
+		)
+		if err != nil {
+			log.Printf("warn: ai image transfer staging failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"url":     signedURL,
 		})
 	})
 

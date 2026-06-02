@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -37,6 +38,19 @@ func NewCOSSigner(bucket, region, secretID, secretKey string) (*COSSigner, error
 		secretID:  secretID,
 		secretKey: secretKey,
 	}, nil
+}
+
+func (s *COSSigner) UploadObject(ctx context.Context, objectKey, contentType string, data []byte) error {
+	if len(data) == 0 {
+		return fmt.Errorf("empty upload payload")
+	}
+	_, err := s.client.Object.Put(ctx, objectKey, bytes.NewReader(data), &cos.ObjectPutOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{
+			ContentType: contentType,
+			ContentLength: int64(len(data)),
+		},
+	})
+	return err
 }
 
 func (s *COSSigner) GenerateReadURL(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {

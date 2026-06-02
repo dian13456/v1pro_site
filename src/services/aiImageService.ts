@@ -1,7 +1,13 @@
-import type { AiImageAspectRatio, AiImageResponse, GeneratedAiImage } from "../types/aiImage";
+import type {
+  AiImageAspectRatio,
+  AiImageResponse,
+  AiImageTransferResponse,
+  GeneratedAiImage,
+} from "../types/aiImage";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
+import { launchV1ProTransfer } from "./v1proTransferService";
 
 export const MAX_PROMPT_LENGTH = 1500;
 
@@ -152,4 +158,40 @@ export function downloadGeneratedImage(image: GeneratedAiImage, fileName = "ai-i
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+export async function transferAiImageToDevice(
+  image: GeneratedAiImage,
+  fileName = "ai-image.jpg"
+): Promise<void> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  if (isStaticMode()) {
+    throw new Error("静态模式下无法传输到设备");
+  }
+
+  const auth = getAuthState();
+  const payload = await apiFetch<AiImageTransferResponse>("/api/ai-image/transfer", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${auth?.token || ""}`,
+    },
+    body: JSON.stringify({
+      imageBase64: image.dataUrl,
+      fileName,
+    }),
+  });
+
+  if (!payload.success || !payload.url) {
+    throw new Error(payload.message || "无法获取传输链接");
+  }
+  if (!/^https:\/\//i.test(payload.url)) {
+    throw new Error("传输链接必须是 HTTPS");
+  }
+
+  launchV1ProTransfer(payload.url, {
+    name: fileName,
+    auto: true,
+  });
 }

@@ -5,6 +5,7 @@ import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
 import { SiteHeader } from "../components/SiteHeader";
 import { SiteNav } from "../components/SiteNav";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
   ASPECT_RATIO_OPTIONS,
@@ -12,26 +13,13 @@ import {
   downloadGeneratedImage,
   generateAiImages,
   getStarterPrompts,
+  transferAiImageToDevice,
 } from "../services/aiImageService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { V1PRO_TRANSFER_LAUNCHED_MESSAGE } from "../services/v1proTransferService";
 import type { AiImageAspectRatio, GeneratedAiImage } from "../types/aiImage";
-import { pushDataUrlImageToDevice, type PushImageProgress } from "../services/usbImagePushService";
 
 const IMAGE_COUNT_OPTIONS = [1, 2, 4] as const;
-
-function progressLabel(progress: PushImageProgress | null): string {
-  if (!progress) return "";
-  if (progress.phase === "convert") return "正在转换图片格式…";
-  if (progress.phase === "transfer") {
-    if (progress.total > 0) {
-      const pct = Math.min(100, Math.round((progress.sent / progress.total) * 100));
-      return `正在传输到设备 ${pct}%`;
-    }
-    return "正在传输到设备…";
-  }
-  if (progress.phase === "done") return "传输完成";
-  return "准备中…";
-}
 
 export default function AiImagePage() {
   const navigate = useNavigate();
@@ -40,8 +28,8 @@ export default function AiImagePage() {
   const [aspectRatio, setAspectRatio] = useState<AiImageAspectRatio>("9:16");
   const [count, setCount] = useState<(typeof IMAGE_COUNT_OPTIONS)[number]>(1);
   const [loading, setLoading] = useState(false);
-  const [pushingId, setPushingId] = useState<string | null>(null);
-  const [pushProgress, setPushProgress] = useState<PushImageProgress | null>(null);
+  const [transferringId, setTransferringId] = useState<string | null>(null);
+  const [transferNotice, setTransferNotice] = useState("");
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -73,23 +61,34 @@ export default function AiImagePage() {
     }
   };
 
-  const handlePush = async (image: GeneratedAiImage) => {
-    if (pushingId) return;
+  const handleTransfer = async (image: GeneratedAiImage, index: number) => {
+    if (transferringId) return;
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    const fileName = `ai-image-${index + 1}.jpg`;
     setErrorMessage("");
-    setPushingId(image.id);
-    setPushProgress(null);
+    setTransferringId(image.id);
     try {
-      await pushDataUrlImageToDevice(image.dataUrl, setPushProgress);
+      await transferAiImageToDevice(image, fileName);
+      setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+      window.setTimeout(() => setTransferNotice(""), 5000);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "传输到设备失败");
+      const message = (err as Error)?.message || "传输失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
     } finally {
-      setPushingId(null);
-      setPushProgress(null);
+      setTransferringId(null);
     }
   };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
         <SiteHeader
           title="佳点电子资源中心"
@@ -111,7 +110,7 @@ export default function AiImagePage() {
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生成图片</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            输入文字描述，由 MiniMax image-01 模型生成图片。生成后可下载，或通过 WebUSB 直接发送到已连接的设备。
+            输入文字描述，由 MiniMax image-01 模型生成图片。生成后可下载，或通过控制工具传输到设备（与素材中心相同方式）。
           </p>
         </section>
 
@@ -195,12 +194,6 @@ export default function AiImagePage() {
             </div>
           ) : null}
 
-          {pushingId && pushProgress ? (
-            <div className="rounded-2xl border border-cyan-200/70 bg-cyan-50/90 px-4 py-3 text-sm text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200">
-              {progressLabel(pushProgress)}
-            </div>
-          ) : null}
-
           {images.length > 0 ? (
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
               {images.map((image, index) => (
@@ -218,21 +211,22 @@ export default function AiImagePage() {
                       className="h-full w-full object-cover"
                     />
                   </DevicePreviewFrame>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
                       type="button"
+                      disabled={Boolean(transferringId)}
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}
-                      className="rounded-full border border-slate-200/80 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+                      className="rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
                     >
                       下载
                     </button>
                     <button
                       type="button"
-                      disabled={Boolean(pushingId)}
-                      onClick={() => void handlePush(image)}
-                      className="rounded-full bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={Boolean(transferringId)}
+                      onClick={() => void handleTransfer(image, index)}
+                      className="rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {pushingId === image.id ? "传输中…" : "发送到设备"}
+                      {transferringId === image.id ? "准备传输..." : "传输到设备"}
                     </button>
                   </div>
                 </article>

@@ -7,6 +7,12 @@ export interface AiImageResponse {
   message?: string;
 }
 
+export interface AiImageTransferResponse {
+  success: boolean;
+  url?: string;
+  message?: string;
+}
+
 export interface GeneratedAiImage {
   id: string;
   dataUrl: string;
