@@ -53,3 +53,16 @@ func (limiter *IPRateLimiter) Allow(key string) bool {
 	limiter.hits[key] = filtered
 	return true
 }
+
+// AllowTokenAndIP returns false when either limiter rejects its key.
+// Empty tokenKey skips the token limiter (IP-only).
+func AllowTokenAndIP(tokenLimiter, ipLimiter *IPRateLimiter, tokenKey, ipKey string) bool {
+	if ipLimiter != nil && !ipLimiter.Allow(ipKey) {
+		return false
+	}
+	tokenKey = strings.TrimSpace(tokenKey)
+	if tokenKey != "" && tokenLimiter != nil && !tokenLimiter.Allow(tokenKey) {
+		return false
+	}
+	return true
+}

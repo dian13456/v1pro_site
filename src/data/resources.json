@@ -11224,5 +11224,65 @@
     "category": "gif",
     "materialType": "gif",
     "updatedAt": "2026-06-02T20:15:07+08:00"
+  },
+  {
+    "id": 2606031756219117,
+    "title": "AI 生成图片",
+    "description": "AI 生成图片（已恢复入库）",
+    "author": "微笑",
+    "size": "222KB",
+    "image": "img_20260603175621_4aad4446.jpg",
+    "download": "img_20260603175621_4aad4446.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-06-03T17:56:21+08:00"
+  },
+  {
+    "id": 2606031757102124,
+    "title": "AI 生成图片",
+    "description": "AI 生成图片（已恢复入库）",
+    "author": "微笑",
+    "size": "223KB",
+    "image": "img_20260603175710_084c8474.jpg",
+    "download": "img_20260603175710_084c8474.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-06-03T17:57:10+08:00"
+  },
+  {
+    "id": 2606031757176698,
+    "title": "AI 生成图片",
+    "description": "AI 生成图片（已恢复入库）",
+    "author": "微笑",
+    "size": "189KB",
+    "image": "img_20260603175717_dd7a1e80.jpg",
+    "download": "img_20260603175717_dd7a1e80.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-06-03T17:57:17+08:00"
+  },
+  {
+    "id": 2606031757246675,
+    "title": "AI 生成图片",
+    "description": "AI 生成图片（已恢复入库）",
+    "author": "微笑",
+    "size": "151KB",
+    "image": "img_20260603175724_1a130485.jpg",
+    "download": "img_20260603175724_1a130485.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-06-03T17:57:24+08:00"
+  },
+  {
+    "id": 2606031806326739,
+    "title": "AI 生成图片",
+    "description": "AI 生成图片（已恢复入库）",
+    "author": "微笑",
+    "size": "201KB",
+    "image": "img_20260603180632_1a534fef.jpg",
+    "download": "img_20260603180632_1a534fef.jpg",
+    "category": "gif",
+    "materialType": "image",
+    "updatedAt": "2026-06-03T18:06:32+08:00"
   }
 ]

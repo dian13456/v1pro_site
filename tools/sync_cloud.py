@@ -7,6 +7,7 @@ Usage:
   python tools/sync_cloud.py --restart      # config + restart API
   python tools/sync_cloud.py --binary     # config + jiadian-api binary
   python tools/sync_cloud.py --binary --restart
+  python tools/sync_cloud.py --binary --with-config --restart   # 显式同步 JSON（慎用，会覆盖服务器上新分享）
 
 See tools/云服务器同步指南.md for full documentation.
 """
@@ -82,12 +83,21 @@ def run_remote(client: paramiko.SSHClient, cmd: str) -> tuple[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SFTP 同步云服务器（配置文件 / 后端二进制）")
     parser.add_argument("--binary", action="store_true", help="同时上传 backend/jiadian-api 二进制")
+    parser.add_argument(
+        "--with-config",
+        action="store_true",
+        help="上传 resources.json / 映射表（默认仅 --binary 时不覆盖，避免冲掉线上用户分享）",
+    )
     parser.add_argument("--restart", action="store_true", help="同步后重启 jiadian-api.service")
     parser.add_argument("--verify", action="store_true", help="同步后检查服务与 HTTP 状态")
     args = parser.parse_args()
 
-    upload_pairs = list(CONFIG_PAIRS)
-    remote_dirs = {f"{BASE}/src/data", f"{BASE}/backend/config"}
+    upload_pairs: list[tuple[Path, str]] = []
+    if args.with_config or not args.binary:
+        upload_pairs = list(CONFIG_PAIRS)
+    remote_dirs = set()
+    if upload_pairs:
+        remote_dirs.update({f"{BASE}/src/data", f"{BASE}/backend/config"})
 
     if args.binary:
         if not BINARY_LOCAL.is_file():

@@ -502,16 +502,36 @@ func serialFromToken(token string, jwtSecret string, tokenTTL time.Duration) (st
 	return service.SerialFromToken(token, jwtSecret, tokenTTL)
 }
 
-func parseAuthRateLimitPerMin(raw string) int {
+func parseRateLimitPerMin(raw string, fallback int) int {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 10
+		return fallback
 	}
 	limit, err := strconv.Atoi(raw)
 	if err != nil || limit <= 0 {
-		return 10
+		return fallback
 	}
 	return limit
+}
+
+func parseAuthRateLimitPerMin(raw string) int {
+	return parseRateLimitPerMin(raw, 10)
+}
+
+func ginClientIP(c *gin.Context) string {
+	return service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+}
+
+func rateLimitRejected(
+	c *gin.Context,
+	tokenLimiter, ipLimiter *service.IPRateLimiter,
+	serial, tooManyMsg string,
+) bool {
+	if !service.AllowTokenAndIP(tokenLimiter, ipLimiter, serial, ginClientIP(c)) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "message": tooManyMsg})
+		return true
+	}
+	return false
 }
 
 func isSoftwareObjectKey(objectKey string) bool {
@@ -743,6 +763,12 @@ func main() {
 	}
 	tokenTTL := service.ParseTokenTTLDays(os.Getenv("TOKEN_TTL_DAYS"))
 	authRateLimiter := service.NewIPRateLimiter(parseAuthRateLimitPerMin(os.Getenv("AUTH_RATE_LIMIT_PER_MIN")), time.Minute)
+	aiTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_TOKEN_PER_MIN"), 10), time.Minute)
+	aiIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_IP_PER_MIN"), 30), time.Minute)
+	messageTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_TOKEN_PER_MIN"), 5), time.Minute)
+	messageIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_IP_PER_MIN"), 15), time.Minute)
+	likeTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_TOKEN_PER_MIN"), 30), time.Minute)
+	likeIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {
 		// 兼容旧配置：未设置 ALLOWED_DEVICES 时使用 ALLOWED_VID/ALLOWED_PID
@@ -1113,8 +1139,12 @@ func main() {
 
 	router.POST("/api/ai-guide", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret, tokenTTL) {
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 助手请求过于频繁，请稍后再试") {
 			return
 		}
 
@@ -1170,6 +1200,9 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 图片请求过于频繁，请稍后再试") {
 			return
 		}
 		if minimaxClient.APIKey == "" {
@@ -1286,6 +1319,9 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 图片请求过于频繁，请稍后再试") {
+			return
+		}
 
 		var req aiImageTransferRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -1353,6 +1389,9 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 图片请求过于频繁，请稍后再试") {
 			return
 		}
 
@@ -1783,6 +1822,9 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		if rateLimitRejected(c, likeTokenRateLimiter, likeIPRateLimiter, serial, "点赞过于频繁，请稍后再试") {
+			return
+		}
 
 		var req likeRequest
 		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
@@ -2145,6 +2187,9 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, messageTokenRateLimiter, messageIPRateLimiter, serial, "留言过于频繁，请稍后再试") {
 			return
 		}
 
