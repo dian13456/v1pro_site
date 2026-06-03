@@ -12,7 +12,6 @@ interface ImageSignResponse {
 }
 
 const imageUrlCache = new Map<number, string>();
-const ABSOLUTE_HTTP_URL = /^https?:\/\//i;
 
 export async function createImageUrl(
   resourceId: number,
@@ -46,33 +45,23 @@ export async function createImageUrl(
   }
 
   const query = forDownload ? `?id=${resourceId}&download=1` : `?id=${resourceId}`;
-  try {
-    const signed = await apiFetch<ImageSignResponse>(`/api/image/${query}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
-      },
-    });
+  const signed = await apiFetch<ImageSignResponse>(`/api/image/${query}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+    },
+  });
 
-    if (!signed.url) {
-      throw new Error(signed.error || "图片链接生成失败");
-    }
-
-    if (!forDownload) {
-      imageUrlCache.set(resourceId, signed.url);
-    }
-
-    return {
-      url: signed.url,
-      stats: forDownload ? parseDownloadStats(signed) : null,
-    };
-  } catch {
-    if (fallbackImageUrl && ABSOLUTE_HTTP_URL.test(fallbackImageUrl)) {
-      if (!forDownload) {
-        imageUrlCache.set(resourceId, fallbackImageUrl);
-      }
-      return { url: fallbackImageUrl };
-    }
-    throw new Error("图片链接生成失败");
+  if (!signed.url) {
+    throw new Error(signed.error || "图片链接生成失败");
   }
+
+  if (!forDownload) {
+    imageUrlCache.set(resourceId, signed.url);
+  }
+
+  return {
+    url: signed.url,
+    stats: forDownload ? parseDownloadStats(signed) : null,
+  };
 }

@@ -83,7 +83,7 @@ export async function resolveTransferSignedUrl(
       ? await createImageUrl(resource.id, resource.image, { forDownload: true })
       : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
 
-  const url = result.url || resource.download;
+  const url = result.url;
   if (!url || !/^https:\/\//i.test(url)) {
     throw new Error("无法获取 HTTPS 传输链接，请稍后重试");
   }

@@ -99,7 +99,7 @@ func ShareAIImageToCatalog(
 		"description":  description,
 		"size":         formatByteSize(len(raw)),
 		"image":        objectKey,
-		"download":     downloadURL,
+		"download":     objectKey,
 		"category":     "gif",
 		"materialType": "image",
 		"updatedAt":    updatedAt,

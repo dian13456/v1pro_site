@@ -47,7 +47,10 @@ export function useResourceInteractions() {
           ? await createImageUrl(resource.id, resource.image, { forDownload: true })
           : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
       applyDownloadStats(resource.id, downloadResult.stats);
-      window.open(downloadResult.url || resource.download, "_blank", "noopener,noreferrer");
+      if (!downloadResult.url) {
+        throw new Error("下载链接生成失败");
+      }
+      window.open(downloadResult.url, "_blank", "noopener,noreferrer");
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
       setErrorMessage(message);
@@ -73,8 +76,11 @@ export function useResourceInteractions() {
       setPlayingId(resource.id);
       setErrorMessage("");
       const playResult = await createDownloadUrl(resource.id, resource.download, { forDownload: false });
+      if (!playResult.url) {
+        throw new Error("播放链接生成失败");
+      }
       setPlayingResourceId(resource.id);
-      setPlayingUrl(playResult.url || resource.download);
+      setPlayingUrl(playResult.url);
     } catch (err) {
       const message = (err as Error)?.message || "播放链接生成失败";
       setErrorMessage(message);

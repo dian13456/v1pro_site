@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -32,6 +32,12 @@ RESOURCES_PATH = PROJECT_ROOT / "src" / "data" / "resources.json"
 COLUMN_TAGS_PATH = PROJECT_ROOT / "src" / "data" / "columnTags.json"
 IMAGE_MAP_PATH = PROJECT_ROOT / "backend" / "config" / "image_map.json"
 RESOURCE_MAP_PATH = PROJECT_ROOT / "backend" / "config" / "resource_map.json"
+AI_IMAGE_CREDITS_PATH = PROJECT_ROOT / "backend" / "config" / "ai_image_credits.json"
+AI_IMAGE_SHARES_PATH = PROJECT_ROOT / "backend" / "config" / "ai_image_share_counts.json"
+
+DEFAULT_AI_CREDITS = 100
+AI_CREDIT_COST_PER_GENERATION = 1
+MAX_AI_SHARES_PER_DEVICE = 50
 
 
 def load_json(path: Path, default_value):
@@ -46,6 +52,66 @@ def save_json(path: Path, value):
     with path.open("w", encoding="utf-8") as f:
         json.dump(value, f, ensure_ascii=False, indent=2)
         f.write("\n")
+
+
+def load_credits_store() -> dict:
+    store = load_json(AI_IMAGE_CREDITS_PATH, {"balances": {}})
+    if not isinstance(store, dict):
+        return {"balances": {}}
+    balances = store.get("balances")
+    if not isinstance(balances, dict):
+        store["balances"] = {}
+    return store
+
+
+def save_credits_store(store: dict) -> None:
+    if not isinstance(store.get("balances"), dict):
+        store["balances"] = {}
+    save_json(AI_IMAGE_CREDITS_PATH, store)
+
+
+def load_share_store() -> dict:
+    store = load_json(AI_IMAGE_SHARES_PATH, {"counts": {}})
+    if not isinstance(store, dict):
+        return {"counts": {}}
+    counts = store.get("counts")
+    if not isinstance(counts, dict):
+        store["counts"] = {}
+    return store
+
+
+def save_share_store(store: dict) -> None:
+    if not isinstance(store.get("counts"), dict):
+        store["counts"] = {}
+    save_json(AI_IMAGE_SHARES_PATH, store)
+
+
+def normalize_serial(raw: str) -> str:
+    return (raw or "").strip().upper()
+
+
+def credit_balance(store: dict, serial: str) -> int:
+    serial = normalize_serial(serial)
+    if not serial:
+        return DEFAULT_AI_CREDITS
+    balances = store.get("balances") or {}
+    if serial not in balances:
+        return DEFAULT_AI_CREDITS
+    value = int(balances.get(serial, DEFAULT_AI_CREDITS))
+    return max(0, value)
+
+
+def share_count(store: dict, serial: str) -> int:
+    serial = normalize_serial(serial)
+    if not serial:
+        return 0
+    counts = store.get("counts") or {}
+    value = int(counts.get(serial, 0))
+    return max(0, value)
+
+
+def remaining_shares(used: int, limit: int = MAX_AI_SHARES_PER_DEVICE) -> int:
+    return max(0, limit - max(0, used))
 
 
 def load_column_tags() -> list[dict]:
@@ -196,6 +262,15 @@ def build_cos_public_url(base: str, object_key: str) -> str:
     return f"{normalized_base}/{quote(object_key, safe='/')}"
 
 
+def strip_public_object_url(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if not text.lower().startswith(("http://", "https://")):
+        return text.lstrip("/")
+    return unquote(urlparse(text).path.lstrip("/"))
+
+
 class ImageUploaderGUI:
     def __init__(self):
         self.root = tk.Tk()
@@ -274,11 +349,18 @@ class ImageUploaderGUI:
         )
         self.delete_resource_ids: list[int] = []
         self.delete_filter_var = tk.StringVar(value="image")
+        self.quota_serial_var = tk.StringVar()
+        self.quota_credits_var = tk.StringVar(value=str(DEFAULT_AI_CREDITS))
+        self.quota_share_used_var = tk.StringVar(value="0")
+        self.quota_share_limit_var = tk.StringVar(value=str(MAX_AI_SHARES_PER_DEVICE))
+        self.quota_share_remaining_var = tk.StringVar(value=str(MAX_AI_SHARES_PER_DEVICE))
+        self.quota_filter_var = tk.StringVar()
 
         self._build_ui()
         self.regenerate_random_code()
         self.refresh_column_tag_manager()
         self.refresh_delete_resource_list()
+        self.refresh_quota_list()
         self.material_type_var.trace_add("write", lambda *_: self._on_material_type_change())
 
     def _build_ui(self):
@@ -289,10 +371,12 @@ class ImageUploaderGUI:
         cos_tab = ttk.Frame(notebook, padding=2)
         column_tab = ttk.Frame(notebook, padding=2)
         delete_tab = ttk.Frame(notebook, padding=2)
+        quota_tab = ttk.Frame(notebook, padding=2)
         notebook.add(upload_tab, text="上传与同步")
         notebook.add(cos_tab, text="COS配置")
         notebook.add(column_tab, text="专栏管理")
         notebook.add(delete_tab, text="删除资源")
+        notebook.add(quota_tab, text="设备配额")
 
         top = ttk.LabelFrame(cos_tab, text="COS 配置（单独处理图片/视频/GIF）", padding=10)
         top.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
@@ -531,6 +615,75 @@ class ImageUploaderGUI:
         delete_actions.pack(fill=tk.X, pady=(8, 0))
         ttk.Button(delete_actions, text="刷新列表", command=self.refresh_delete_resource_list).pack(side=tk.LEFT)
         ttk.Button(delete_actions, text="删除选中资源", command=self.delete_selected_resources).pack(side=tk.LEFT, padx=(8, 0))
+
+        quota_frame = ttk.LabelFrame(quota_tab, text="按 SN 管理 AI 积分与分享次数", padding=10)
+        quota_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        quota_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            quota_frame,
+            text=(
+                f"积分默认 {DEFAULT_AI_CREDITS}，每次 AI 生图消耗 {AI_CREDIT_COST_PER_GENERATION}；"
+                f"分享上限 {MAX_AI_SHARES_PER_DEVICE} 次/设备（上限在代码中固定）。"
+                "修改后需同步到云服务器并重启 API 才在线上生效。"
+            ),
+            wraplength=820,
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        ttk.Label(quota_frame, text="设备 SN").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(quota_frame, textvariable=self.quota_serial_var).grid(
+            row=1, column=1, sticky="ew", padx=(8, 12), pady=2
+        )
+        ttk.Button(quota_frame, text="查询", command=self.lookup_quota_sn).grid(row=1, column=2, sticky="ew", pady=2)
+        ttk.Button(quota_frame, text="从服务器拉取", command=self.pull_quota_from_server).grid(row=1, column=3, sticky="ew", padx=(8, 0), pady=2)
+
+        ttk.Label(quota_frame, text="AI 积分").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(quota_frame, textvariable=self.quota_credits_var).grid(row=2, column=1, sticky="ew", padx=(8, 12), pady=2)
+        ttk.Label(quota_frame, text="已分享次数").grid(row=2, column=2, sticky="w", pady=2)
+        ttk.Entry(quota_frame, textvariable=self.quota_share_used_var).grid(row=2, column=3, sticky="ew", pady=2)
+
+        ttk.Label(quota_frame, text="分享上限").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Entry(quota_frame, textvariable=self.quota_share_limit_var, state="readonly").grid(
+            row=3, column=1, sticky="ew", padx=(8, 12), pady=2
+        )
+        ttk.Label(quota_frame, text="剩余分享").grid(row=3, column=2, sticky="w", pady=2)
+        ttk.Entry(quota_frame, textvariable=self.quota_share_remaining_var, state="readonly").grid(row=3, column=3, sticky="ew", pady=2)
+
+        quota_actions = ttk.Frame(quota_frame)
+        quota_actions.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 8))
+        ttk.Button(quota_actions, text="保存到本地", command=self.save_quota_local).pack(side=tk.LEFT)
+        ttk.Button(quota_actions, text="保存并同步云服务器", command=self.save_quota_and_sync).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(quota_actions, text="重置分享次数为 0", command=self.reset_share_for_sn).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(quota_actions, text="刷新列表", command=self.refresh_quota_list).pack(side=tk.LEFT, padx=(8, 0))
+
+        filter_row = ttk.Frame(quota_frame)
+        filter_row.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        ttk.Label(filter_row, text="列表筛选 SN").pack(side=tk.LEFT)
+        ttk.Entry(filter_row, textvariable=self.quota_filter_var, width=24).pack(side=tk.LEFT, padx=(8, 8))
+        ttk.Button(filter_row, text="应用筛选", command=self.refresh_quota_list).pack(side=tk.LEFT)
+
+        list_wrapper = ttk.Frame(quota_frame)
+        list_wrapper.grid(row=6, column=0, columnspan=4, sticky="nsew")
+        list_wrapper.columnconfigure(0, weight=1)
+        list_wrapper.rowconfigure(0, weight=1)
+        quota_frame.rowconfigure(6, weight=1)
+
+        columns = ("serial", "credits", "share_used", "share_remaining")
+        self.quota_tree = ttk.Treeview(list_wrapper, columns=columns, show="headings", height=14)
+        self.quota_tree.heading("serial", text="设备 SN")
+        self.quota_tree.heading("credits", text="AI 积分")
+        self.quota_tree.heading("share_used", text="已分享")
+        self.quota_tree.heading("share_remaining", text="剩余分享")
+        self.quota_tree.column("serial", width=180, anchor="w")
+        self.quota_tree.column("credits", width=90, anchor="center")
+        self.quota_tree.column("share_used", width=90, anchor="center")
+        self.quota_tree.column("share_remaining", width=90, anchor="center")
+        self.quota_tree.grid(row=0, column=0, sticky="nsew")
+        self.quota_tree.bind("<<TreeviewSelect>>", self._on_quota_select)
+
+        quota_scroll = ttk.Scrollbar(list_wrapper, orient=tk.VERTICAL, command=self.quota_tree.yview)
+        quota_scroll.grid(row=0, column=1, sticky="ns")
+        self.quota_tree.configure(yscrollcommand=quota_scroll.set)
 
         log_frame = ttk.LabelFrame(upload_tab, text="日志", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=(0, 0))
@@ -858,6 +1011,258 @@ class ImageUploaderGUI:
         self.refresh_delete_resource_list()
         messagebox.showinfo("完成", f"删除完成，共 {removed_count} 条。")
 
+    def _parse_quota_int(self, raw: str, field_name: str, minimum: int = 0) -> int:
+        text = (raw or "").strip()
+        if not text:
+            raise RuntimeError(f"{field_name} 不能为空")
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise RuntimeError(f"{field_name} 必须是整数") from exc
+        if value < minimum:
+            raise RuntimeError(f"{field_name} 不能小于 {minimum}")
+        return value
+
+    def _update_quota_remaining_display(self, used: int) -> None:
+        remaining = remaining_shares(used, MAX_AI_SHARES_PER_DEVICE)
+        self.quota_share_remaining_var.set(str(remaining))
+
+    def _load_quota_fields_for_serial(self, serial: str) -> None:
+        serial = normalize_serial(serial)
+        if not serial:
+            raise RuntimeError("请先填写设备 SN")
+        credits_store = load_credits_store()
+        share_store = load_share_store()
+        credits = credit_balance(credits_store, serial)
+        used = share_count(share_store, serial)
+        self.quota_serial_var.set(serial)
+        self.quota_credits_var.set(str(credits))
+        self.quota_share_used_var.set(str(used))
+        self.quota_share_limit_var.set(str(MAX_AI_SHARES_PER_DEVICE))
+        self._update_quota_remaining_display(used)
+
+    def lookup_quota_sn(self) -> None:
+        try:
+            self._load_quota_fields_for_serial(self.quota_serial_var.get())
+            self.log(f"已查询 SN={normalize_serial(self.quota_serial_var.get())} 的配额")
+        except Exception as exc:
+            messagebox.showerror("查询失败", str(exc))
+
+    def refresh_quota_list(self) -> None:
+        credits_store = load_credits_store()
+        share_store = load_share_store()
+        serials = set()
+        for key in (credits_store.get("balances") or {}).keys():
+            serials.add(normalize_serial(str(key)))
+        for key in (share_store.get("counts") or {}).keys():
+            serials.add(normalize_serial(str(key)))
+        serials.discard("")
+
+        keyword = self.quota_filter_var.get().strip().upper()
+        if keyword:
+            serials = {serial for serial in serials if keyword in serial}
+
+        self.quota_tree.delete(*self.quota_tree.get_children())
+        for serial in sorted(serials):
+            credits = credit_balance(credits_store, serial)
+            used = share_count(share_store, serial)
+            remaining = remaining_shares(used, MAX_AI_SHARES_PER_DEVICE)
+            self.quota_tree.insert(
+                "",
+                "end",
+                iid=serial,
+                values=(serial, credits, used, remaining),
+            )
+        self.log(f"设备配额列表已刷新，共 {len(serials)} 条")
+
+    def _on_quota_select(self, _event=None) -> None:
+        selected = self.quota_tree.selection()
+        if not selected:
+            return
+        try:
+            self._load_quota_fields_for_serial(selected[0])
+        except Exception as exc:
+            messagebox.showerror("加载失败", str(exc))
+
+    def _persist_quota_local(self) -> tuple[str, int, int]:
+        serial = normalize_serial(self.quota_serial_var.get())
+        if not serial:
+            raise RuntimeError("请先填写设备 SN")
+        credits = self._parse_quota_int(self.quota_credits_var.get(), "AI 积分", minimum=0)
+        share_used = self._parse_quota_int(self.quota_share_used_var.get(), "已分享次数", minimum=0)
+        if share_used > MAX_AI_SHARES_PER_DEVICE:
+            raise RuntimeError(f"已分享次数不能超过上限 {MAX_AI_SHARES_PER_DEVICE}")
+
+        credits_store = load_credits_store()
+        share_store = load_share_store()
+        credits_store.setdefault("balances", {})[serial] = credits
+        share_store.setdefault("counts", {})[serial] = share_used
+        save_credits_store(credits_store)
+        save_share_store(share_store)
+        self._update_quota_remaining_display(share_used)
+        self.refresh_quota_list()
+        self.log(f"已保存 SN={serial}：积分 {credits}，已分享 {share_used}")
+        return serial, credits, share_used
+
+    def save_quota_local(self) -> None:
+        try:
+            serial, credits, share_used = self._persist_quota_local()
+            messagebox.showinfo(
+                "完成",
+                f"已保存到本地配置文件。\nSN: {serial}\n积分: {credits}\n已分享: {share_used}",
+            )
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc))
+
+    def save_quota_and_sync(self) -> None:
+        try:
+            serial, credits, share_used = self._persist_quota_local()
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc))
+            return
+        try:
+            restart = self.remote_restart_var.get()
+            if not messagebox.askyesno(
+                "确认同步",
+                f"已保存 SN={serial}（积分 {credits}，已分享 {share_used}）。\n"
+                "将上传到云服务器"
+                + ("并执行重启命令。" if restart else "（未勾选重启，需手动重启 API 后线上才生效）"),
+            ):
+                return
+            self._sync_quota_files(restart=restart)
+            messagebox.showinfo("完成", "配额已同步到云服务器。")
+        except Exception as exc:
+            self.log(f"[错误] 同步配额失败: {exc}")
+            messagebox.showerror("同步失败", str(exc))
+
+    def _remote_quota_paths(self) -> tuple[str, str]:
+        base_path = self.remote_base_path_var.get().strip().rstrip("/")
+        if not base_path:
+            raise RuntimeError("远程项目根目录不能为空")
+        return (
+            f"{base_path}/backend/config/ai_image_credits.json",
+            f"{base_path}/backend/config/ai_image_share_counts.json",
+        )
+
+    def pull_quota_from_server(self) -> None:
+        if paramiko is None:
+            messagebox.showerror("失败", "缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
+            return
+        host = self.remote_host_var.get().strip()
+        user = self.remote_user_var.get().strip()
+        password = self.remote_password_var.get().strip()
+        if not host or not user or not password:
+            messagebox.showerror("失败", "请先在「上传与同步」页填写云服务器连接信息")
+            return
+        remote_credits, remote_shares = self._remote_quota_paths()
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(hostname=host, username=user, password=password, timeout=10)
+            try:
+                sftp = client.open_sftp()
+                try:
+                    for remote_path, local_path, default in (
+                        (remote_credits, AI_IMAGE_CREDITS_PATH, {"balances": {}}),
+                        (remote_shares, AI_IMAGE_SHARES_PATH, {"counts": {}}),
+                    ):
+                        try:
+                            sftp.get(remote_path, str(local_path))
+                            self.log(f"已从服务器下载: {remote_path}")
+                        except FileNotFoundError:
+                            save_json(local_path, default)
+                            self.log(f"服务器不存在 {remote_path}，已创建本地空配置")
+                        except OSError as exc:
+                            if getattr(exc, "errno", None) == 2:
+                                save_json(local_path, default)
+                                self.log(f"服务器不存在 {remote_path}，已创建本地空配置")
+                            else:
+                                raise
+                finally:
+                    sftp.close()
+            finally:
+                client.close()
+            self.refresh_quota_list()
+            if self.quota_serial_var.get().strip():
+                self.lookup_quota_sn()
+            messagebox.showinfo("完成", "已从云服务器拉取配额配置到本地。")
+        except Exception as exc:
+            self.log(f"[错误] 拉取配额失败: {exc}")
+            messagebox.showerror("拉取失败", str(exc))
+
+    def _sync_quota_files(self, restart: bool = False) -> None:
+        if paramiko is None:
+            raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
+        host = self.remote_host_var.get().strip()
+        user = self.remote_user_var.get().strip()
+        password = self.remote_password_var.get().strip()
+        base_path = self.remote_base_path_var.get().strip().rstrip("/")
+        if not host or not user or not password or not base_path:
+            raise RuntimeError("云同步配置不完整（主机/用户/密码/远程路径）")
+
+        remote_credits, remote_shares = self._remote_quota_paths()
+        upload_pairs = [
+            (AI_IMAGE_CREDITS_PATH, remote_credits),
+            (AI_IMAGE_SHARES_PATH, remote_shares),
+        ]
+        for local_path, _remote_path in upload_pairs:
+            if not local_path.is_file():
+                save_json(local_path, {"balances": {}} if "credits" in local_path.name else {"counts": {}})
+
+        self.log(f"开始同步设备配额：{user}@{host}")
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=host, username=user, password=password, timeout=10)
+        try:
+            _, stdout, stderr = client.exec_command(f"mkdir -p '{base_path}/backend/config'")
+            _ = stdout.read()
+            err = stderr.read().decode("utf-8", "ignore").strip()
+            if err:
+                raise RuntimeError(f"创建远程目录失败: {err}")
+
+            sftp = client.open_sftp()
+            try:
+                for local_path, remote_path in upload_pairs:
+                    sftp.put(str(local_path), remote_path)
+                    self.log(f"已上传配额文件: {remote_path}")
+            finally:
+                sftp.close()
+
+            if restart:
+                cmd = self.remote_restart_cmd_var.get().strip()
+                if not cmd:
+                    raise RuntimeError("已请求重启，但重启命令为空")
+                self.log(f"执行重启命令: {cmd}")
+                _, stdout, stderr = client.exec_command(cmd)
+                out = stdout.read().decode("utf-8", "ignore").strip()
+                err = stderr.read().decode("utf-8", "ignore").strip()
+                if out:
+                    self.log(f"重启输出: {out}")
+                if err:
+                    self.log(f"重启输出(错误): {err}")
+        finally:
+            client.close()
+        self.log("设备配额同步完成")
+
+    def reset_share_for_sn(self) -> None:
+        serial = normalize_serial(self.quota_serial_var.get())
+        if not serial:
+            messagebox.showerror("失败", "请先填写设备 SN")
+            return
+        if not messagebox.askyesno("确认重置", f"确定将 SN={serial} 的已分享次数重置为 0 吗？"):
+            return
+        self.quota_share_used_var.set("0")
+        self._update_quota_remaining_display(0)
+        try:
+            share_store = load_share_store()
+            share_store.setdefault("counts", {})[serial] = 0
+            save_share_store(share_store)
+            self.refresh_quota_list()
+            self.log(f"已重置 SN={serial} 的分享次数")
+            messagebox.showinfo("完成", "分享次数已重置为 0（仅本地）。如需线上生效请点「保存并同步云服务器」。")
+        except Exception as exc:
+            messagebox.showerror("失败", str(exc))
+
     def upload_and_sync(self):
         try:
             material_type = self.material_type_var.get().strip() or "image"
@@ -885,7 +1290,7 @@ class ImageUploaderGUI:
             uploaded_ids: list[int] = []
             cover_path_raw = self.cover_path_var.get().strip()
             cover_url_fallback = self.cover_url_var.get().strip()
-            shared_download_url = self.download_var.get().strip()
+            shared_download_url = strip_public_object_url(self.download_var.get().strip())
 
             if material_type == "video":
                 if cover_path_raw and not Path(cover_path_raw).exists():
@@ -960,8 +1365,7 @@ class ImageUploaderGUI:
                         image_map[str(rid)] = image_key
 
                     if not download_url:
-                        video_base = self.video_public_base_var.get().strip().rstrip("/")
-                        download_url = f"{video_base}/{video_key}" if video_base else video_key
+                        download_url = video_key
 
                 elif material_type == "gif":
                     gif_bucket = self.gif_bucket_var.get().strip()
@@ -1011,8 +1415,7 @@ class ImageUploaderGUI:
                         image_map[str(rid)] = image_key
 
                     if not download_url:
-                        gif_base = self.gif_public_base_var.get().strip().rstrip("/")
-                        download_url = f"{gif_base}/{gif_key}" if gif_base else gif_key
+                        download_url = gif_key
 
                 elif material_type == "software":
                     if media_path.suffix.lower() != ".exe":
@@ -1055,8 +1458,7 @@ class ImageUploaderGUI:
                         image_key = "1.png"
 
                     if not download_url:
-                        software_base = self.software_public_base_var.get().strip()
-                        download_url = build_cos_public_url(software_base, software_key)
+                        download_url = software_key
 
                 else:
                     image_bucket = self.bucket_var.get().strip()
@@ -1073,8 +1475,7 @@ class ImageUploaderGUI:
                     image_map[str(rid)] = image_key
                     resource_map.pop(str(rid), None)
                     if not download_url:
-                        image_base = self.image_public_base_var.get().strip().rstrip("/")
-                        download_url = f"{image_base}/{image_key}" if image_base else image_key
+                        download_url = image_key
 
                 uploaded_at = datetime.now().astimezone().isoformat(timespec="seconds")
                 if material_type == "software":

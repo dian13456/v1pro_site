@@ -71,9 +71,9 @@ VITE_STATIC_MODE=false
 
 COS 资源接入说明：
 
-- `VITE_COS_RESOURCE_MANIFEST_URL`：资源清单地址（JSON）
+- `VITE_COS_RESOURCE_MANIFEST_URL`：可选，COS 上的资源清单地址（JSON）；API 不可用时作为备用
 - `VITE_COS_PUBLIC_BASE_URL`：图片/下载链接是相对路径时，自动拼接此域名前缀
-- 当 COS 清单不可达时，前端自动回退到本地 `src/data/resources.json`
+- 生产构建不再打包 `src/data/resources.json`；素材清单仅运行时从 `/api/resources`（或上述 COS manifest）拉取
 
 GitHub Pages 运行建议：
 

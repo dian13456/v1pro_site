@@ -1,9 +1,9 @@
-import resourceData from "../data/resources.json";
 import type { ResourceItem } from "../types/resource";
 import type { AiGuideResponse } from "../types/aiGuide";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
+import { fetchResources } from "./resourceService";
 
 const MAX_QUESTION_LENGTH = 300;
 
@@ -73,10 +73,6 @@ function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGu
   };
 }
 
-function readLocalResources(): ResourceItem[] {
-  return (resourceData as ResourceItem[]).filter((item) => item?.id && item?.title);
-}
-
 export async function askAiGuide(question: string): Promise<AiGuideResponse> {
   const trimmed = question.trim();
   if (!trimmed) {
@@ -90,7 +86,8 @@ export async function askAiGuide(question: string): Promise<AiGuideResponse> {
   }
 
   if (isStaticMode()) {
-    return localAiGuideFallback(trimmed, readLocalResources());
+    const resources = await fetchResources();
+    return localAiGuideFallback(trimmed, resources);
   }
 
   const auth = getAuthState();
@@ -112,7 +109,8 @@ export async function askAiGuide(question: string): Promise<AiGuideResponse> {
       mode: payload.mode === "deepseek" ? "deepseek" : "fallback",
     };
   } catch {
-    return localAiGuideFallback(trimmed, readLocalResources());
+    const resources = await fetchResources();
+    return localAiGuideFallback(trimmed, resources);
   }
 }
 

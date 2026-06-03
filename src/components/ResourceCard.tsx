@@ -78,17 +78,15 @@ function ResourceCardComponent({
     const loadPreview = async () => {
       try {
         if (resource.materialType === "video") {
-          const fallbackCover = /^https?:\/\//i.test(resource.image) ? resource.image : "";
-          const videoUrl = await createImageUrl(resource.id, fallbackCover);
+          const videoUrl = await createImageUrl(resource.id, resource.image);
           if (!cancelled) {
-            setPreviewUrl(videoUrl.url || fallbackCover);
+            setPreviewUrl(videoUrl.url || "");
           }
           return;
         }
-        const fallbackUrl = /^https?:\/\//i.test(resource.download) ? resource.download : resource.image;
-        const imageUrl = await createImageUrl(resource.id, fallbackUrl);
+        const imageUrl = await createImageUrl(resource.id, resource.image || resource.download);
         if (!cancelled) {
-          setPreviewUrl(imageUrl.url);
+          setPreviewUrl(imageUrl.url || "");
         }
       } catch {
         if (!cancelled) {

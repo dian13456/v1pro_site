@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -488,23 +487,31 @@ func isAllowedDevice(vid, pid string, allowed []usbDevicePair) bool {
 }
 
 func signTokenPayload(payload string, jwtSecret string) string {
-	sum := sha256.Sum256([]byte(payload + "." + jwtSecret))
-	return fmt.Sprintf("%x", sum[:])
+	return service.SignTokenPayload(payload, jwtSecret)
 }
 
 func createToken(serial string, jwtSecret string) string {
-	payload := fmt.Sprintf("%s.%d", serial, time.Now().UnixMilli())
-	signature := signTokenPayload(payload, jwtSecret)
-	return payload + "." + signature
+	return service.CreateToken(serial, jwtSecret)
 }
 
-func splitToken(token string) (payload string, signature string, ok bool) {
-	token = strings.TrimSpace(token)
-	lastDot := strings.LastIndex(token, ".")
-	if lastDot <= 0 || lastDot >= len(token)-1 {
-		return "", "", false
+func verifyToken(token string, jwtSecret string, tokenTTL time.Duration) bool {
+	return service.VerifyToken(token, jwtSecret, tokenTTL)
+}
+
+func serialFromToken(token string, jwtSecret string, tokenTTL time.Duration) (string, bool) {
+	return service.SerialFromToken(token, jwtSecret, tokenTTL)
+}
+
+func parseAuthRateLimitPerMin(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 10
 	}
-	return token[:lastDot], token[lastDot+1:], true
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit <= 0 {
+		return 10
+	}
+	return limit
 }
 
 func isSoftwareObjectKey(objectKey string) bool {
@@ -546,31 +553,6 @@ func normalizeObjectKey(raw string) string {
 	}
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
 	return key
-}
-
-func verifyToken(token string, jwtSecret string) bool {
-	payload, signature, ok := splitToken(token)
-	if !ok {
-		return false
-	}
-	return signTokenPayload(payload, jwtSecret) == signature
-}
-
-func serialFromToken(token string, jwtSecret string) (string, bool) {
-	if !verifyToken(token, jwtSecret) {
-		return "", false
-	}
-	payload, _, ok := splitToken(token)
-	if !ok {
-		return "", false
-	}
-	// payload 格式：<serial>.<timestamp>，serial 允许包含 '.'，因此从最后一个 '.' 反向切分。
-	lastDot := strings.LastIndex(payload, ".")
-	if lastDot <= 0 {
-		return "", false
-	}
-	serial := strings.TrimSpace(payload[:lastDot])
-	return serial, serial != ""
 }
 
 func parseBearerToken(c *gin.Context) string {
@@ -759,6 +741,8 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
 	}
+	tokenTTL := service.ParseTokenTTLDays(os.Getenv("TOKEN_TTL_DAYS"))
+	authRateLimiter := service.NewIPRateLimiter(parseAuthRateLimitPerMin(os.Getenv("AUTH_RATE_LIMIT_PER_MIN")), time.Minute)
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {
 		// 兼容旧配置：未设置 ALLOWED_DEVICES 时使用 ALLOWED_VID/ALLOWED_PID
@@ -980,6 +964,12 @@ func main() {
 	router.Use(corsMiddleware(corsAllowOrigin))
 
 	router.POST("/api/auth", func(c *gin.Context) {
+		clientIP := service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+		if !authRateLimiter.Allow(clientIP) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "message": "认证请求过于频繁，请稍后再试"})
+			return
+		}
+
 		var req authRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数不完整"})
@@ -1001,13 +991,17 @@ func main() {
 
 	router.GET("/api/verify-token", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		valid := verifyToken(token, jwtSecret)
-		c.JSON(http.StatusOK, gin.H{"success": valid})
+		valid := verifyToken(token, jwtSecret, tokenTTL)
+		if valid {
+			c.JSON(http.StatusOK, gin.H{"success": true})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "token 无效或已过期，请重新验证设备"})
 	})
 
 	router.GET("/api/welcome", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1038,7 +1032,7 @@ func main() {
 
 	router.GET("/api/profile", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1064,7 +1058,7 @@ func main() {
 
 	router.POST("/api/profile", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1105,7 +1099,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
 			return
 		}
-		c.JSON(http.StatusOK, items)
+		c.JSON(http.StatusOK, service.SanitizePublicResourceCatalog(items))
 	})
 
 	router.GET("/api/column-tags", func(c *gin.Context) {
@@ -1119,7 +1113,7 @@ func main() {
 
 	router.POST("/api/ai-guide", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		if !verifyToken(token, jwtSecret, tokenTTL) {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
@@ -1173,7 +1167,7 @@ func main() {
 
 	router.POST("/api/ai-image", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1287,7 +1281,7 @@ func main() {
 
 	router.POST("/api/ai-image/transfer", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1356,7 +1350,7 @@ func main() {
 
 	router.POST("/api/ai-image/share", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1461,7 +1455,7 @@ func main() {
 
 	router.POST("/api/user-image/share", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1752,7 +1746,7 @@ func main() {
 
 	router.GET("/api/resource-likes", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1784,7 +1778,7 @@ func main() {
 
 	router.POST("/api/resource-like", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1827,7 +1821,7 @@ func main() {
 
 	router.GET("/api/resource-downloads", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		if !verifyToken(token, jwtSecret, tokenTTL) {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
@@ -1861,7 +1855,7 @@ func main() {
 
 	router.POST("/api/resource-download", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
@@ -1911,7 +1905,7 @@ func main() {
 
 	handleResource := func(c *gin.Context, id string, previewOnly bool) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
 			return
@@ -1984,7 +1978,7 @@ func main() {
 
 	handleImage := func(c *gin.Context, id string, forDownload bool) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
 			return
@@ -2102,7 +2096,7 @@ func main() {
 
 	router.GET("/api/messages", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		if !verifyToken(token, jwtSecret) {
+		if !verifyToken(token, jwtSecret, tokenTTL) {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
@@ -2148,7 +2142,7 @@ func main() {
 
 	router.POST("/api/messages", func(c *gin.Context) {
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
