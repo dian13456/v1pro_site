@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import posixpath
 import secrets
 import shutil
 import subprocess
@@ -845,6 +846,50 @@ class ImageUploaderGUI:
         config = CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key, Token=None, Scheme="https")
         return CosS3Client(config)
 
+    def _remote_exec(self, client, command: str) -> tuple[str, str]:
+        _, stdout, stderr = client.exec_command(command)
+        return stdout.read().decode("utf-8", "ignore").strip(), stderr.read().decode("utf-8", "ignore").strip()
+
+    def _resolve_restart_cmd(self) -> str:
+        cmd = self.remote_restart_cmd_var.get().strip()
+        if not cmd:
+            return ""
+        return cmd.replace("PASSWORD", self.remote_password_var.get())
+
+    def _sftp_put_via_sudo(
+        self,
+        client,
+        local_path: Path,
+        remote_path: str,
+        password: str,
+        *,
+        mode: str = "644",
+    ) -> None:
+        """Upload to /home/ubuntu staging, then sudo install (production paths are root-owned)."""
+        remote_name = posixpath.basename(remote_path)
+        staging_path = f"/home/ubuntu/{remote_name}.upload"
+        remote_dir = posixpath.dirname(remote_path)
+
+        sftp = client.open_sftp()
+        try:
+            sftp.put(str(local_path), staging_path)
+        finally:
+            sftp.close()
+
+        _, mkdir_err = self._remote_exec(
+            client,
+            f"echo '{password}' | sudo -S -p '' mkdir -p '{remote_dir}'",
+        )
+        if mkdir_err and "password" not in mkdir_err.lower():
+            raise RuntimeError(f"创建远程目录失败: {mkdir_err}")
+
+        _, install_err = self._remote_exec(
+            client,
+            f"echo '{password}' | sudo -S -p '' install -m {mode} '{staging_path}' '{remote_path}'",
+        )
+        if install_err and "password" not in install_err.lower():
+            raise RuntimeError(f"远程写入失败 ({remote_path}): {install_err}")
+
     def _sync_remote_files(self):
         if paramiko is None:
             raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
@@ -867,33 +912,16 @@ class ImageUploaderGUI:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(hostname=host, username=user, password=password, timeout=10)
         try:
-            remote_dirs = {
-                f"{base_path}/src/data",
-                f"{base_path}/backend/config",
-            }
-            for remote_dir in sorted(remote_dirs):
-                _, stdout, stderr = client.exec_command(f"mkdir -p '{remote_dir}'")
-                _ = stdout.read()
-                err = stderr.read().decode("utf-8", "ignore").strip()
-                if err:
-                    raise RuntimeError(f"创建远程目录失败: {err}")
-
-            sftp = client.open_sftp()
-            try:
-                for local_path, remote_path in upload_pairs:
-                    sftp.put(str(local_path), remote_path)
-                    self.log(f"已上传到云服务器: {remote_path}")
-            finally:
-                sftp.close()
+            for local_path, remote_path in upload_pairs:
+                self._sftp_put_via_sudo(client, local_path, remote_path, password)
+                self.log(f"已上传到云服务器: {remote_path}")
 
             if self.remote_restart_var.get():
-                cmd = self.remote_restart_cmd_var.get().strip()
+                cmd = self._resolve_restart_cmd()
                 if not cmd:
                     raise RuntimeError("已勾选重启，但重启命令为空")
                 self.log(f"执行重启命令: {cmd}")
-                _, stdout, stderr = client.exec_command(cmd)
-                out = stdout.read().decode("utf-8", "ignore").strip()
-                err = stderr.read().decode("utf-8", "ignore").strip()
+                out, err = self._remote_exec(client, cmd)
                 if out:
                     self.log(f"重启输出: {out}")
                 if err:
@@ -1214,28 +1242,16 @@ class ImageUploaderGUI:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(hostname=host, username=user, password=password, timeout=10)
         try:
-            _, stdout, stderr = client.exec_command(f"mkdir -p '{base_path}/backend/config'")
-            _ = stdout.read()
-            err = stderr.read().decode("utf-8", "ignore").strip()
-            if err:
-                raise RuntimeError(f"创建远程目录失败: {err}")
-
-            sftp = client.open_sftp()
-            try:
-                for local_path, remote_path in upload_pairs:
-                    sftp.put(str(local_path), remote_path)
-                    self.log(f"已上传配额文件: {remote_path}")
-            finally:
-                sftp.close()
+            for local_path, remote_path in upload_pairs:
+                self._sftp_put_via_sudo(client, local_path, remote_path, password)
+                self.log(f"已上传配额文件: {remote_path}")
 
             if restart:
-                cmd = self.remote_restart_cmd_var.get().strip()
+                cmd = self._resolve_restart_cmd()
                 if not cmd:
                     raise RuntimeError("已请求重启，但重启命令为空")
                 self.log(f"执行重启命令: {cmd}")
-                _, stdout, stderr = client.exec_command(cmd)
-                out = stdout.read().decode("utf-8", "ignore").strip()
-                err = stderr.read().decode("utf-8", "ignore").strip()
+                out, err = self._remote_exec(client, cmd)
                 if out:
                     self.log(f"重启输出: {out}")
                 if err:

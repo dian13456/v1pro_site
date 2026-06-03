@@ -630,18 +630,47 @@ func ensureReviewAdmin(c *gin.Context, reviewAdminToken string) bool {
 	return true
 }
 
+func parseCorsAllowOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "*" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func corsOriginAllowed(origin string, allowed []string) bool {
+	for _, item := range allowed {
+		if strings.EqualFold(origin, item) {
+			return true
+		}
+	}
+	return false
+}
+
 func corsMiddleware(allowOrigin string) gin.HandlerFunc {
+	allowed := parseCorsAllowOrigins(allowOrigin)
+	wildcard := strings.TrimSpace(allowOrigin) == "" || strings.TrimSpace(allowOrigin) == "*"
 	return func(c *gin.Context) {
 		origin := strings.TrimSpace(c.GetHeader("Origin"))
-		if allowOrigin == "*" {
-			if origin != "" {
-				c.Header("Access-Control-Allow-Origin", origin)
-				c.Header("Vary", "Origin")
-			} else {
-				c.Header("Access-Control-Allow-Origin", "*")
-			}
-		} else {
-			c.Header("Access-Control-Allow-Origin", allowOrigin)
+		switch {
+		case origin != "" && wildcard:
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		case origin != "" && len(allowed) > 1 && corsOriginAllowed(origin, allowed):
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		case len(allowed) == 1:
+			c.Header("Access-Control-Allow-Origin", allowed[0])
+		case origin == "" && wildcard:
+			c.Header("Access-Control-Allow-Origin", "*")
 		}
 		c.Header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token")
