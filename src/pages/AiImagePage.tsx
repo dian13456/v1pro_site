@@ -44,6 +44,7 @@ export default function AiImagePage() {
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [uploadingPick, setUploadingPick] = useState(false);
   const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   const [transferNotice, setTransferNotice] = useState("");
   const [shareNotice, setShareNotice] = useState("");
@@ -122,6 +123,7 @@ export default function AiImagePage() {
     }
 
     setErrorMessage("");
+    setUploadingPick(true);
     try {
       const uploaded = await readLocalImageFile(file);
       setImages((prev) => [uploaded, ...prev]);
@@ -131,6 +133,8 @@ export default function AiImagePage() {
       }
     } catch (err) {
       setErrorMessage((err as Error)?.message || "图片上传失败");
+    } finally {
+      setUploadingPick(false);
     }
   };
 
@@ -242,11 +246,11 @@ export default function AiImagePage() {
               />
               <button
                 type="button"
-                disabled={loading || isBusy}
+                disabled={loading || isBusy || uploadingPick}
                 onClick={() => uploadInputRef.current?.click()}
                 className="rounded-full border border-cyan-200/70 bg-white/70 px-4 py-1.5 text-sm text-cyan-800 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-500/30 dark:bg-slate-900/50 dark:text-cyan-200"
               >
-                上传本地图片
+                {uploadingPick ? "处理图片中..." : "上传本地图片"}
               </button>
               <span className="rounded-full border border-violet-200/70 bg-white/70 px-4 py-1.5 text-sm text-violet-800 dark:border-violet-500/30 dark:bg-slate-900/50 dark:text-violet-200">
                 剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）

@@ -53,6 +53,8 @@ function throwIfPendingReview(payload: {
 
 export const MAX_PROMPT_LENGTH = 1500;
 export const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
+/** 分享/传输前压缩，长边上限（减轻 Base64 POST 超时） */
+export const MAX_UPLOAD_SHARE_EDGE = 2048;
 export const AI_IMAGE_ASPECT_RATIO = "16:9" as const;
 export const AI_IMAGE_COUNT = 1;
 
@@ -62,6 +64,36 @@ const STARTER_PROMPTS = [
   "极简几何抽象壁纸，渐变蓝紫色",
   "像素风游戏角色，8-bit 风格",
 ];
+
+function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("无法解析图片"));
+    img.src = dataUrl;
+  });
+}
+
+/** 选图分享/传输前压缩为 JPEG，避免大图 Base64 导致跨域 POST 超时。 */
+export async function compressUploadDataUrl(
+  dataUrl: string,
+  maxEdge = MAX_UPLOAD_SHARE_EDGE,
+  quality = 0.88
+): Promise<string> {
+  const img = await loadImageElement(dataUrl);
+  const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas 不可用");
+  }
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
 
 function normalizeBase64Image(raw: string): string {
   const trimmed = raw.trim();
@@ -207,17 +239,24 @@ export function readLocalImageFile(file: File): Promise<GeneratedAiImage> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      if (!dataUrl.startsWith("data:image/")) {
-        reject(new Error("无法读取图片内容"));
-        return;
-      }
-      resolve({
-        id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        dataUrl,
-        source: "upload",
-        fileName: file.name,
-      });
+      void (async () => {
+        const rawDataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!rawDataUrl.startsWith("data:image/")) {
+          reject(new Error("无法读取图片内容"));
+          return;
+        }
+        try {
+          const dataUrl = await compressUploadDataUrl(rawDataUrl);
+          resolve({
+            id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            dataUrl,
+            source: "upload",
+            fileName: file.name.replace(/\.[^.]+$/, "") + ".jpg",
+          });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error("图片压缩失败"));
+        }
+      })();
     };
     reader.onerror = () => reject(new Error("读取图片失败"));
     reader.readAsDataURL(file);
