@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -70,6 +71,30 @@ func (store AICreditsStore) Balance(serial string) int {
 		return 0
 	}
 	return balance
+}
+
+// TryReloadAICreditsStore reloads from disk when the file changed (e.g. admin GUI sync).
+func TryReloadAICreditsStore(path string, current *AICreditsStore, lastMod *time.Time) error {
+	if current == nil || lastMod == nil {
+		return fmt.Errorf("invalid reload state")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !lastMod.IsZero() && !info.ModTime().After(*lastMod) {
+		return nil
+	}
+	latest, err := LoadAICreditsStore(path)
+	if err != nil {
+		return err
+	}
+	*current = latest
+	*lastMod = info.ModTime()
+	return nil
 }
 
 func (store *AICreditsStore) Spend(serial string, amount int) (int, error) {

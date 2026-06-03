@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const MaxAISharesPerDevice = 50
@@ -49,6 +50,30 @@ func SaveAIShareQuotaStore(path string, store AIShareQuotaStore) error {
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+// TryReloadAIShareQuotaStore reloads from disk when the file changed.
+func TryReloadAIShareQuotaStore(path string, current *AIShareQuotaStore, lastMod *time.Time) error {
+	if current == nil || lastMod == nil {
+		return fmt.Errorf("invalid reload state")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !lastMod.IsZero() && !info.ModTime().After(*lastMod) {
+		return nil
+	}
+	latest, err := LoadAIShareQuotaStore(path)
+	if err != nil {
+		return err
+	}
+	*current = latest
+	*lastMod = info.ModTime()
+	return nil
 }
 
 func (store AIShareQuotaStore) ShareCount(serial string) int {

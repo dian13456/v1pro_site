@@ -935,6 +935,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("load ai image credits failed: %v", err)
 	}
+	var aiCreditsLastMod time.Time
+	if info, err := os.Stat(aiImageCreditsPath); err == nil {
+		aiCreditsLastMod = info.ModTime()
+	}
+	var aiShareQuotaLastMod time.Time
+	if info, err := os.Stat(aiImageSharesPath); err == nil {
+		aiShareQuotaLastMod = info.ModTime()
+	}
+	reloadAICreditsLocked := func() {
+		if err := service.TryReloadAICreditsStore(aiImageCreditsPath, &aiCredits, &aiCreditsLastMod); err != nil {
+			log.Printf("warn: reload ai credits failed: %v", err)
+		}
+	}
+	reloadAIShareQuotaLocked := func() {
+		if err := service.TryReloadAIShareQuotaStore(aiImageSharesPath, &aiShareQuota, &aiShareQuotaLastMod); err != nil {
+			log.Printf("warn: reload ai share quota failed: %v", err)
+		}
+	}
 	imageReviewPath := os.Getenv("IMAGE_REVIEW_QUEUE_PATH")
 	if imageReviewPath == "" {
 		imageReviewPath = filepath.Join("config", "image_review_queue.json")
@@ -1098,6 +1116,7 @@ func main() {
 		profilesMu.RUnlock()
 
 		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
 		credits := aiCredits.Balance(serial)
 		aiCreditsMu.Unlock()
 
@@ -1135,6 +1154,7 @@ func main() {
 		}
 
 		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
 		credits := aiCredits.Balance(serial)
 		aiCreditsMu.Unlock()
 
@@ -1246,6 +1266,7 @@ func main() {
 		}
 
 		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
 		creditsRemaining, spendErr := aiCredits.Spend(serial, service.AICreditCostPerGeneration)
 		if spendErr != nil {
 			balance := aiCredits.Balance(serial)
@@ -1275,6 +1296,7 @@ func main() {
 		)
 		if err != nil {
 			aiCreditsMu.Lock()
+			reloadAICreditsLocked()
 			creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
 			if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
 				log.Printf("warn: refund ai image credits failed: %v", refundErr)
@@ -1312,6 +1334,7 @@ func main() {
 					log.Printf("warn: save image review queue failed: %v", saveErr)
 				}
 				aiCreditsMu.Lock()
+				reloadAICreditsLocked()
 				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
 				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
 					log.Printf("warn: refund ai image credits failed: %v", refundErr)
@@ -1323,6 +1346,7 @@ func main() {
 			imageReviewMu.Unlock()
 			if modErr != nil {
 				aiCreditsMu.Lock()
+				reloadAICreditsLocked()
 				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
 				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
 					log.Printf("warn: refund ai image credits failed: %v", refundErr)
@@ -1431,6 +1455,7 @@ func main() {
 		}
 
 		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
 		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
 			shareCount := aiShareQuota.ShareCount(serial)
 			aiShareMu.Unlock()
@@ -1501,6 +1526,7 @@ func main() {
 		}
 
 		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
 		shareCount := aiShareQuota.RecordShare(serial)
 		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
 		aiShareMu.Unlock()
@@ -1536,6 +1562,7 @@ func main() {
 		}
 
 		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
 		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
 			shareCount := aiShareQuota.ShareCount(serial)
 			aiShareMu.Unlock()
@@ -1605,6 +1632,7 @@ func main() {
 		}
 
 		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
 		shareCount := aiShareQuota.RecordShare(serial)
 		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
 		aiShareMu.Unlock()
@@ -1711,6 +1739,7 @@ func main() {
 		}
 		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
 			aiShareMu.Lock()
+			reloadAIShareQuotaLocked()
 			if limitMsg := aiShareQuota.ShareLimitMessage(item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
 				shareCount := aiShareQuota.ShareCount(item.Serial)
 				aiShareMu.Unlock()
@@ -1762,6 +1791,7 @@ func main() {
 		}
 		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
 			aiShareMu.Lock()
+			reloadAIShareQuotaLocked()
 			shareCount := aiShareQuota.RecordShare(item.Serial)
 			saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
 			aiShareMu.Unlock()

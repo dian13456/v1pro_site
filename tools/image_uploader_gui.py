@@ -131,6 +131,42 @@ def save_column_tags(tags: list[dict]) -> None:
     save_json(COLUMN_TAGS_PATH, tags)
 
 
+def _resource_updated_at(item: dict) -> str:
+    return str(item.get("updatedAt") or "")
+
+
+def merge_resource_lists(local: list, remote: list) -> list:
+    """Union by id; on conflict keep the entry with newer updatedAt."""
+    by_id: dict[int, dict] = {}
+    for item in (remote or []) + (local or []):
+        if not isinstance(item, dict) or item.get("id") is None:
+            continue
+        rid = int(item["id"])
+        current = by_id.get(rid)
+        if current is None or _resource_updated_at(item) >= _resource_updated_at(current):
+            by_id[rid] = item
+    return sorted(by_id.values(), key=lambda x: int(x.get("id", 0)))
+
+
+def merge_string_maps(local: dict, remote: dict) -> dict:
+    """Keep all remote keys; add/overwrite with local (remote-only entries survive)."""
+    merged = dict(remote or {})
+    merged.update(local or {})
+    return merged
+
+
+def merge_column_tags(local: list, remote: list) -> list:
+    by_id: dict[str, dict] = {}
+    for item in (remote or []) + (local or []):
+        if not isinstance(item, dict):
+            continue
+        tag_id = str(item.get("id") or "").strip()
+        if not tag_id:
+            continue
+        by_id[tag_id] = item
+    return list(by_id.values())
+
+
 def make_column_id(label: str, existing_ids: set[str]) -> str:
     import hashlib
 
@@ -516,7 +552,11 @@ class ImageUploaderGUI:
         sync_frame.columnconfigure(1, weight=1)
         sync_frame.columnconfigure(3, weight=1)
 
-        ttk.Checkbutton(sync_frame, text="上传后自动同步到云服务器", variable=self.auto_sync_var).grid(
+        ttk.Checkbutton(
+            sync_frame,
+            text="上传后自动同步到云服务器（同步前会先合并服务器清单，避免覆盖网站分享）",
+            variable=self.auto_sync_var,
+        ).grid(
             row=0, column=0, columnspan=4, sticky="w", pady=(0, 4)
         )
         ttk.Label(sync_frame, text="主机").grid(row=1, column=0, sticky="w", pady=2)
@@ -890,6 +930,92 @@ class ImageUploaderGUI:
         if install_err and "password" not in install_err.lower():
             raise RuntimeError(f"远程写入失败 ({remote_path}): {install_err}")
 
+    def _remote_catalog_pairs(self, base_path: str) -> list[tuple[Path, str]]:
+        base_path = base_path.rstrip("/")
+        return [
+            (RESOURCES_PATH, f"{base_path}/src/data/resources.json"),
+            (COLUMN_TAGS_PATH, f"{base_path}/src/data/columnTags.json"),
+            (IMAGE_MAP_PATH, f"{base_path}/backend/config/image_map.json"),
+            (RESOURCE_MAP_PATH, f"{base_path}/backend/config/resource_map.json"),
+        ]
+
+    def _pull_remote_catalog_merge(self) -> None:
+        """Download server catalog/maps and merge into local (preserve website shares)."""
+        if paramiko is None:
+            raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
+
+        host = self.remote_host_var.get().strip()
+        user = self.remote_user_var.get().strip()
+        password = self.remote_password_var.get().strip()
+        base_path = self.remote_base_path_var.get().strip().rstrip("/")
+        if not host or not user or not password or not base_path:
+            raise RuntimeError("云同步配置不完整（主机/用户/密码/远程路径）")
+
+        local_resources = load_json(RESOURCES_PATH, [])
+        local_tags = load_json(COLUMN_TAGS_PATH, [])
+        local_image_map = load_json(IMAGE_MAP_PATH, {})
+        local_resource_map = load_json(RESOURCE_MAP_PATH, {})
+
+        remote_resources: list = []
+        remote_tags: list = []
+        remote_image_map: dict = {}
+        remote_resource_map: dict = {}
+
+        self.log(f"从云服务器拉取并合并清单：{user}@{host}")
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=host, username=user, password=password, timeout=15)
+        try:
+            sftp = client.open_sftp()
+            try:
+                for local_path, remote_path in self._remote_catalog_pairs(base_path):
+                    try:
+                        with sftp.open(remote_path, "r") as remote_file:
+                            payload = json.load(remote_file)
+                    except FileNotFoundError:
+                        continue
+                    except OSError as exc:
+                        if getattr(exc, "errno", None) == 2:
+                            continue
+                        raise
+                    if local_path == RESOURCES_PATH and isinstance(payload, list):
+                        remote_resources = payload
+                    elif local_path == COLUMN_TAGS_PATH and isinstance(payload, list):
+                        remote_tags = payload
+                    elif local_path == IMAGE_MAP_PATH and isinstance(payload, dict):
+                        remote_image_map = payload
+                    elif local_path == RESOURCE_MAP_PATH and isinstance(payload, dict):
+                        remote_resource_map = payload
+            finally:
+                sftp.close()
+        finally:
+            client.close()
+
+        if not isinstance(local_resources, list):
+            local_resources = []
+        if not isinstance(local_tags, list):
+            local_tags = []
+        if not isinstance(local_image_map, dict):
+            local_image_map = {}
+        if not isinstance(local_resource_map, dict):
+            local_resource_map = {}
+
+        merged_resources = merge_resource_lists(local_resources, remote_resources)
+        merged_tags = merge_column_tags(local_tags, remote_tags)
+        merged_image_map = merge_string_maps(local_image_map, remote_image_map)
+        merged_resource_map = merge_string_maps(local_resource_map, remote_resource_map)
+
+        save_json(RESOURCES_PATH, merged_resources)
+        save_json(COLUMN_TAGS_PATH, merged_tags)
+        save_json(IMAGE_MAP_PATH, merged_image_map)
+        save_json(RESOURCE_MAP_PATH, merged_resource_map)
+
+        added = len(merged_resources) - len(local_resources)
+        self.log(
+            f"合并完成：resources {len(local_resources)} -> {len(merged_resources)} "
+            f"(+{max(0, added)} 条来自服务器)"
+        )
+
     def _sync_remote_files(self):
         if paramiko is None:
             raise RuntimeError("缺少依赖 paramiko，请先运行：pip install -r tools/requirements.txt")
@@ -901,13 +1027,9 @@ class ImageUploaderGUI:
         if not host or not user or not password or not base_path:
             raise RuntimeError("云同步配置不完整（主机/用户/密码/远程路径）")
 
-        upload_pairs = [
-            (RESOURCES_PATH, f"{base_path}/src/data/resources.json"),
-            (COLUMN_TAGS_PATH, f"{base_path}/src/data/columnTags.json"),
-            (IMAGE_MAP_PATH, f"{base_path}/backend/config/image_map.json"),
-            (RESOURCE_MAP_PATH, f"{base_path}/backend/config/resource_map.json"),
-        ]
+        upload_pairs = self._remote_catalog_pairs(base_path)
         self.log(f"开始同步云服务器：{user}@{host}")
+        self._pull_remote_catalog_merge()
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(hostname=host, username=user, password=password, timeout=10)
@@ -1014,6 +1136,13 @@ class ImageUploaderGUI:
         confirmed = messagebox.askyesno("确认删除", f"确定删除 {len(selected_ids)} 条资源？\nID: {preview}")
         if not confirmed:
             return
+
+        if self.auto_sync_var.get():
+            try:
+                self._pull_remote_catalog_merge()
+            except Exception as exc:
+                messagebox.showerror("失败", f"拉取服务器清单失败：{exc}")
+                return
 
         resources = load_json(RESOURCES_PATH, [])
         image_map = load_json(IMAGE_MAP_PATH, {})
@@ -1158,7 +1287,11 @@ class ImageUploaderGUI:
             ):
                 return
             self._sync_quota_files(restart=restart)
-            messagebox.showinfo("完成", "配额已同步到云服务器。")
+            messagebox.showinfo(
+                "完成",
+                "配额已同步到云服务器。\n"
+                "请让用户在个人中心刷新查看；SN 须与设备认证时完全一致。",
+            )
         except Exception as exc:
             self.log(f"[错误] 同步配额失败: {exc}")
             messagebox.showerror("同步失败", str(exc))
@@ -1295,6 +1428,9 @@ class ImageUploaderGUI:
                 raise RuntimeError("标题和描述不能为空")
             if is_batch and material_type == "gif" and (self.cover_path_var.get().strip() or self.cover_url_var.get().strip()):
                 self.log("批量 GIF 模式已忽略手动封面设置，将自动提取每个 GIF 第一帧。")
+
+            if self.auto_sync_var.get():
+                self._pull_remote_catalog_merge()
 
             resources = load_json(RESOURCES_PATH, [])
             image_map = load_json(IMAGE_MAP_PATH, {})

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import posixpath
 import sys
 from pathlib import Path
 
@@ -24,6 +25,9 @@ except ImportError as exc:
     raise SystemExit("缺少 paramiko，请先运行：pip install -r tools/requirements.txt") from exc
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import catalog_merge
+
 HOST = os.getenv("REMOTE_SYNC_HOST", "124.221.5.162")
 USER = os.getenv("REMOTE_SYNC_USER", "ubuntu")
 PASSWORD = os.getenv("REMOTE_SYNC_PASSWORD", "").strip()
@@ -61,15 +65,37 @@ def ensure_dirs(client: paramiko.SSHClient, dirs: set[str]) -> None:
             raise RuntimeError(f"创建远程目录失败 ({remote_dir}): {err}")
 
 
+def sftp_put_via_sudo(
+    client: paramiko.SSHClient,
+    local_path: Path,
+    remote_path: str,
+    *,
+    mode: str = "644",
+) -> None:
+    staging_path = f"/home/ubuntu/{posixpath.basename(remote_path)}.upload"
+    remote_dir = posixpath.dirname(remote_path)
+    sftp = client.open_sftp()
+    try:
+        sftp.put(str(local_path), staging_path)
+    finally:
+        sftp.close()
+    run_remote(client, f"echo '{PASSWORD}' | sudo -S -p '' mkdir -p '{remote_dir}'")
+    _, err = run_remote(
+        client,
+        f"echo '{PASSWORD}' | sudo -S -p '' install -m {mode} '{staging_path}' '{remote_path}'",
+    )
+    if err and "password" not in err.lower():
+        raise RuntimeError(f"远程写入失败 ({remote_path}): {err}")
+
+
 def sftp_upload(client: paramiko.SSHClient, pairs: list[tuple[Path, str]]) -> None:
     for local_path, remote_path in pairs:
         if not local_path.is_file():
             raise FileNotFoundError(f"本地文件不存在: {local_path}")
-        sftp = client.open_sftp()
-        try:
-            sftp.put(str(local_path), remote_path)
-        finally:
-            sftp.close()
+        if remote_path.endswith("jiadian-api"):
+            sftp_put_via_sudo(client, local_path, remote_path, mode="755")
+        else:
+            sftp_put_via_sudo(client, local_path, remote_path)
         print(f"已上传: {local_path.relative_to(ROOT)} -> {remote_path}")
 
 
@@ -108,6 +134,12 @@ def main() -> int:
     print(f"连接云服务器: {USER}@{HOST}")
     client = connect()
     try:
+        if upload_pairs and any(p[0].name.endswith(".json") for p in upload_pairs):
+            added = catalog_merge.merge_local_with_remote(BASE, client)
+            print(
+                f"已合并服务器清单到本地（resources +{max(0, added)} 条来自服务器）"
+            )
+
         ensure_dirs(client, remote_dirs)
         sftp_upload(client, upload_pairs)
 

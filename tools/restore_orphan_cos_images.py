@@ -41,6 +41,41 @@ RESTORES = [
         "updated_at": "2026-06-03T18:06:32+08:00",
         "size": "201KB",
     },
+    {
+        "id": 2606032002564267,
+        "object_key": "img_20260603200256_10ab363f.jpg",
+        "updated_at": "2026-06-03T20:02:57+08:00",
+        "size": "406KB",
+        "author": "网站分享",
+    },
+    {
+        "id": 2606032003346535,
+        "object_key": "img_20260603200334_8eb7b0f7.jpg",
+        "updated_at": "2026-06-03T20:03:34+08:00",
+        "size": "406KB",
+        "author": "网站分享",
+    },
+    {
+        "id": 2606032004088436,
+        "object_key": "img_20260603200408_bd346841.jpg",
+        "updated_at": "2026-06-03T20:04:08+08:00",
+        "size": "485KB",
+        "author": "网站分享",
+    },
+    {
+        "id": 2606032004469899,
+        "object_key": "img_20260603200446_26abccab.jpg",
+        "updated_at": "2026-06-03T20:04:46+08:00",
+        "size": "383KB",
+        "author": "网站分享",
+    },
+    {
+        "id": 2606032005214783,
+        "object_key": "img_20260603200521_aeef10c1.jpg",
+        "updated_at": "2026-06-03T20:05:22+08:00",
+        "size": "403KB",
+        "author": "网站分享",
+    },
 ]
 
 AUTHOR = "微笑"
@@ -64,7 +99,7 @@ def main() -> int:
                 "id": rid,
                 "title": "AI 生成图片",
                 "description": "AI 生成图片（已恢复入库）",
-                "author": AUTHOR,
+                "author": item.get("author", AUTHOR),
                 "size": item["size"],
                 "image": key,
                 "download": key,
