@@ -56,7 +56,7 @@ func NewImageModerationClient(secretID, secretKey, region, bizType string, enabl
 		BizType:   bizType,
 		Enabled:   enabled,
 	}
-	if !client.Available() {
+	if !enabled || secretID == "" || secretKey == "" {
 		return client, nil
 	}
 

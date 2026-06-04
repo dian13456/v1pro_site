@@ -12,6 +12,29 @@ func TestImageModerationClientUnavailableSkips(t *testing.T) {
 	}
 }
 
+func TestNewImageModerationClientInitializesSDK(t *testing.T) {
+	client, err := NewImageModerationClient("test-id", "test-key", "ap-guangzhou", "upload", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !client.Available() {
+		t.Fatal("expected IMS SDK client to initialize when enabled with credentials")
+	}
+	if client.BizType != "upload" {
+		t.Fatalf("expected bizType upload, got %q", client.BizType)
+	}
+}
+
+func TestNewImageModerationClientDisabledSkipsSDK(t *testing.T) {
+	client, err := NewImageModerationClient("test-id", "test-key", "ap-guangzhou", "upload", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if client.Available() {
+		t.Fatal("disabled client should not be available")
+	}
+}
+
 func TestIsImageModerationRejected(t *testing.T) {
 	if IsImageModerationRejected(nil) {
 		t.Fatal("nil should not be rejected")
