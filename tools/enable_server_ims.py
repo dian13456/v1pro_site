@@ -51,6 +51,7 @@ def main() -> int:
 
         new_env = upsert_env_line(out, "IMS_ENABLED", "true")
         new_env = upsert_env_line(new_env, "IMS_BIZ_TYPE", "upload")
+        new_env = upsert_env_line(new_env, "IMS_AIGC_MODERATION_TYPE", "IMAGE")
         if "IMS_REGION=" not in new_env:
             new_env = upsert_env_line(new_env, "IMS_REGION", "ap-guangzhou")
 

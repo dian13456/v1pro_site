@@ -583,10 +583,21 @@ func parseBearerToken(c *gin.Context) string {
 	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 }
 
+var imsAigcModerationType = "IMAGE_AIGC"
+
+func isAIGeneratedSource(source string) bool {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "upload", "user":
+		return false
+	default:
+		return true
+	}
+}
+
 func imsModerationType(source string, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "ai", "aigc":
-		return "IMAGE_AIGC"
+		return imsAigcModerationType
 	case "upload", "user":
 		return "IMAGE"
 	default:
@@ -889,6 +900,10 @@ func main() {
 	}
 	imsRegion := strings.TrimSpace(os.Getenv("IMS_REGION"))
 	imsBizType := strings.TrimSpace(os.Getenv("IMS_BIZ_TYPE"))
+	imsAigcModerationType = strings.TrimSpace(os.Getenv("IMS_AIGC_MODERATION_TYPE"))
+	if imsAigcModerationType == "" {
+		imsAigcModerationType = "IMAGE_AIGC"
+	}
 	imsEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv("IMS_ENABLED")), "false")
 	if imsSecretID == "" || imsSecretKey == "" {
 		imsEnabled = false
@@ -898,7 +913,7 @@ func main() {
 		log.Fatalf("init image moderation failed: %v", err)
 	}
 	if imsClient.Available() {
-		log.Printf("info: Tencent IMS image moderation enabled")
+		log.Printf("info: Tencent IMS image moderation enabled (aigcType=%s bizType=%s)", imsAigcModerationType, imsBizType)
 	} else {
 		log.Printf("warn: IMS image moderation disabled or not configured")
 	}
@@ -1311,52 +1326,6 @@ func main() {
 			return
 		}
 
-		for idx, imageBase64 := range result.Images {
-			imageReviewMu.Lock()
-			reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
-				c.Request.Context(),
-				imsClient,
-				imageSigner,
-				&imageReviewStore,
-				service.EnqueueImageReviewInput{
-					Serial:      serial,
-					Action:      service.ReviewActionGenerate,
-					ImageBase64: imageBase64,
-					Source:      "ai",
-				},
-				fmt.Sprintf("%s-ai-%d", serial, idx),
-				"IMAGE_AIGC",
-			)
-			if pending {
-				saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
-				imageReviewMu.Unlock()
-				if saveErr != nil {
-					log.Printf("warn: save image review queue failed: %v", saveErr)
-				}
-				aiCreditsMu.Lock()
-				reloadAICreditsLocked()
-				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
-				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
-					log.Printf("warn: refund ai image credits failed: %v", refundErr)
-				}
-				aiCreditsMu.Unlock()
-				writeImageReviewPending(c, reviewItem)
-				return
-			}
-			imageReviewMu.Unlock()
-			if modErr != nil {
-				aiCreditsMu.Lock()
-				reloadAICreditsLocked()
-				creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
-				if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
-					log.Printf("warn: refund ai image credits failed: %v", refundErr)
-				}
-				aiCreditsMu.Unlock()
-				writeImageModerationError(c, modErr)
-				return
-			}
-		}
-
 		c.JSON(http.StatusOK, gin.H{
 			"success":          true,
 			"images":           result.Images,
@@ -1386,35 +1355,37 @@ func main() {
 		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
 
-		imageReviewMu.Lock()
-		reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
-			c.Request.Context(),
-			imsClient,
-			imageSigner,
-			&imageReviewStore,
-			service.EnqueueImageReviewInput{
-				Serial:      serial,
-				Author:      author,
-				Action:      service.ReviewActionTransfer,
-				ImageBase64: req.ImageBase64,
-				Source:      req.Source,
-			},
-			serial+"-transfer",
-			imsModerationType(req.Source, "IMAGE"),
-		)
-		if pending {
-			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
-			imageReviewMu.Unlock()
-			if saveErr != nil {
-				log.Printf("warn: save image review queue failed: %v", saveErr)
+		if !isAIGeneratedSource(req.Source) {
+			imageReviewMu.Lock()
+			reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
+				c.Request.Context(),
+				imsClient,
+				imageSigner,
+				&imageReviewStore,
+				service.EnqueueImageReviewInput{
+					Serial:      serial,
+					Author:      author,
+					Action:      service.ReviewActionTransfer,
+					ImageBase64: req.ImageBase64,
+					Source:      req.Source,
+				},
+				serial+"-transfer",
+				imsModerationType(req.Source, "IMAGE"),
+			)
+			if pending {
+				saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+				imageReviewMu.Unlock()
+				if saveErr != nil {
+					log.Printf("warn: save image review queue failed: %v", saveErr)
+				}
+				writeImageReviewPending(c, reviewItem)
+				return
 			}
-			writeImageReviewPending(c, reviewItem)
-			return
-		}
-		imageReviewMu.Unlock()
-		if modErr != nil {
-			writeImageModerationError(c, modErr)
-			return
+			imageReviewMu.Unlock()
+			if modErr != nil {
+				writeImageModerationError(c, modErr)
+				return
+			}
 		}
 
 		signedURL, err := service.StageAIImageForTransfer(
@@ -1472,39 +1443,6 @@ func main() {
 		profilesMu.RLock()
 		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
-
-		imageReviewMu.Lock()
-		reviewItem, pending, modErr := service.ProcessImageModerationWithReview(
-			c.Request.Context(),
-			imsClient,
-			imageSigner,
-			&imageReviewStore,
-			service.EnqueueImageReviewInput{
-				Serial:      serial,
-				Author:      author,
-				Action:      service.ReviewActionShareAI,
-				Title:       req.Title,
-				Prompt:      req.Prompt,
-				Source:      req.Source,
-				ImageBase64: req.ImageBase64,
-			},
-			serial+"-share",
-			imsModerationType(req.Source, "IMAGE_AIGC"),
-		)
-		if pending {
-			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
-			imageReviewMu.Unlock()
-			if saveErr != nil {
-				log.Printf("warn: save image review queue failed: %v", saveErr)
-			}
-			writeImageReviewPending(c, reviewItem)
-			return
-		}
-		imageReviewMu.Unlock()
-		if modErr != nil {
-			writeImageModerationError(c, modErr)
-			return
-		}
 
 		result, err := service.ShareAIImageToCatalog(
 			c.Request.Context(),
