@@ -126,7 +126,7 @@ export default function AiImagePage() {
     setUploadingPick(true);
     try {
       const uploaded = await readLocalImageFile(file);
-      setImages((prev) => [uploaded, ...prev]);
+      setImages([uploaded]);
       setSharedIds(new Set());
       if (!prompt.trim()) {
         setPrompt(uploaded.fileName || "用户上传图片");
