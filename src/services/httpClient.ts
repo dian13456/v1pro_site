@@ -18,6 +18,8 @@ const DEV_AI_CREDIT_COST = 1;
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
 const DEV_MAX_DOWNLOADS_PER_DAY = 100;
 
+import { withApiSignature } from "./apiSign";
+
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 type JsonValue = Record<string, unknown>;
@@ -591,12 +593,14 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
 export async function apiFetch<T extends JsonValue>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
+    const signedInit = await withApiSignature(path, init);
+    const headers = new Headers(signedInit.headers || init.headers);
+    if (signedInit.body !== undefined && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
     response = await fetch(`${API_BASE}${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers || {}),
-      },
-      ...init,
+      ...signedInit,
+      headers,
     });
   } catch {
     if (import.meta.env.DEV && path.startsWith("/api")) {

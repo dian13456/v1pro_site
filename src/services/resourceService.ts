@@ -1,5 +1,5 @@
 import type { ResourceItem } from "../types/resource";
-import { API_BASE } from "./httpClient";
+import { apiFetch } from "./httpClient";
 
 type ResourceRecord = Partial<ResourceItem> & {
   id?: number;
@@ -16,7 +16,6 @@ type ResourceRecord = Partial<ResourceItem> & {
 };
 
 const COS_MANIFEST_URL = import.meta.env.VITE_COS_RESOURCE_MANIFEST_URL || "";
-const RESOURCE_API_URL = API_BASE ? `${API_BASE}/api/resources` : "/api/resources";
 
 /** 将 COS 公网 URL 转为对象键；已是相对路径则原样返回。 */
 export function stripPublicObjectUrl(raw: string): string {
@@ -93,11 +92,7 @@ async function fetchFromCosManifest(): Promise<ResourceItem[]> {
 }
 
 async function fetchFromRuntimeApi(): Promise<ResourceItem[]> {
-  const response = await fetch(RESOURCE_API_URL, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`动态清单拉取失败（HTTP ${response.status}）`);
-  }
-  const payload = (await response.json()) as unknown;
+  const payload = (await apiFetch<unknown>("/api/resources")) as unknown;
   return parseResourcePayload(payload);
 }
 

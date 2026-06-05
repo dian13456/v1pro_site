@@ -1,7 +1,7 @@
 import { DEFAULT_COLUMN_TAG_OPTIONS, type ColumnTagOption } from "../data/columnTags";
-import { API_BASE } from "./httpClient";
+import { apiFetch } from "./httpClient";
 
-const COLUMN_TAGS_API_URL = API_BASE ? `${API_BASE}/api/column-tags` : "/api/column-tags";
+const COLUMN_TAGS_API_URL = "/api/column-tags";
 
 function normalizeColumnTags(payload: unknown): ColumnTagOption[] {
   if (!Array.isArray(payload)) {
@@ -30,11 +30,7 @@ function normalizeColumnTags(payload: unknown): ColumnTagOption[] {
 
 export async function fetchColumnTags(): Promise<ColumnTagOption[]> {
   try {
-    const response = await fetch(COLUMN_TAGS_API_URL, { cache: "no-store" });
-    if (!response.ok) {
-      return DEFAULT_COLUMN_TAG_OPTIONS;
-    }
-    const payload = await response.json();
+    const payload = await apiFetch<unknown>(COLUMN_TAGS_API_URL);
     return normalizeColumnTags(payload);
   } catch {
     return DEFAULT_COLUMN_TAG_OPTIONS;

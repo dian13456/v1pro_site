@@ -684,7 +684,7 @@ func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", "*")
 		}
 		c.Header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token, X-Api-Timestamp, X-Api-Nonce, X-Api-Signature")
 		c.Header("Access-Control-Allow-Credentials", "false")
 		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 
@@ -801,6 +801,14 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
 	}
+	apiSignSecret, apiSignMaxSkew, apiSignRequired := service.APISignConfigFromEnv()
+	if apiSignRequired && apiSignSecret == "" {
+		log.Fatal("API_SIGN_SECRET is required when API_SIGN_REQUIRED is enabled")
+	}
+	if apiSignSecret == "" {
+		log.Printf("warn: API_SIGN_SECRET not set, request signature verification disabled")
+	}
+	apiSignVerifier := service.NewAPISignVerifier(apiSignSecret, apiSignMaxSkew, apiSignRequired)
 	tokenTTL := service.ParseTokenTTLDays(os.Getenv("TOKEN_TTL_DAYS"))
 	authRateLimiter := service.NewIPRateLimiter(parseAuthRateLimitPerMin(os.Getenv("AUTH_RATE_LIMIT_PER_MIN")), time.Minute)
 	aiTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_TOKEN_PER_MIN"), 10), time.Minute)
@@ -1051,6 +1059,7 @@ func main() {
 
 	router := gin.Default()
 	router.Use(corsMiddleware(corsAllowOrigin))
+	router.Use(apiSignVerifier.Middleware())
 	router.Use(abuseGuard.Middleware())
 
 	router.POST("/api/auth", func(c *gin.Context) {

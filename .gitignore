@@ -5,6 +5,7 @@ dist
 .env
 .env.local
 backend/.env
+backend/.api_sign_secret.local
 backend/*.exe
 tools/
 github-上传与保密说明.md
