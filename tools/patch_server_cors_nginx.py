@@ -13,7 +13,10 @@ USER = os.getenv("REMOTE_SYNC_USER", "ubuntu")
 PASSWORD = os.getenv("REMOTE_SYNC_PASSWORD", "").strip()
 NGINX_SITE = "/etc/nginx/sites-enabled/jiadian-api"
 ENV_PATH = "/opt/jiadian-hub/app/backend/.env"
-CORS_VALUE = "https://jadot.cn,https://www.jadot.cn"
+CORS_VALUE = (
+    "https://jiadianer.cloud,https://www.jiadianer.cloud,"
+    "https://jadot.cn,https://www.jadot.cn"
+)
 BODY_SIZE = "20m"
 
 
@@ -75,7 +78,7 @@ def main() -> int:
         remote_exec(client, f"echo '{PASSWORD}' | sudo -S -p '' systemctl reload nginx")
         print("nginx 已更新 client_max_body_size", BODY_SIZE)
 
-        out, _ = remote_exec(client, f"cat {ENV_PATH}")
+        out, _ = remote_exec(client, f"echo '{PASSWORD}' | sudo -S -p '' cat {ENV_PATH}")
         new_env = upsert_env_line(out, "CORS_ALLOW_ORIGIN", CORS_VALUE)
         env_tmp = "/home/ubuntu/backend.env.upload"
         sftp = client.open_sftp()
@@ -96,10 +99,10 @@ def main() -> int:
             client,
             "curl -sS -D - -o /dev/null -X OPTIONS "
             "'http://127.0.0.1:8080/api/user-image/share' "
-            "-H 'Origin: https://jadot.cn' "
+            "-H 'Origin: https://www.jiadianer.cloud' "
             "-H 'Access-Control-Request-Method: POST' | grep -i access-control-allow-origin",
         )
-        print("CORS check (jadot.cn):", headers.strip() or "(empty)")
+        print("CORS check (www.jiadianer.cloud):", headers.strip() or "(empty)")
     finally:
         client.close()
     return 0
