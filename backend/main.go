@@ -809,6 +809,7 @@ func main() {
 	messageIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_IP_PER_MIN"), 15), time.Minute)
 	likeTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_TOKEN_PER_MIN"), 30), time.Minute)
 	likeIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
+	abuseGuard := service.NewAbuseGuard(service.AbuseGuardConfigFromEnv())
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {
 		// 兼容旧配置：未设置 ALLOWED_DEVICES 时使用 ALLOWED_VID/ALLOWED_PID
@@ -1050,6 +1051,7 @@ func main() {
 
 	router := gin.Default()
 	router.Use(corsMiddleware(corsAllowOrigin))
+	router.Use(abuseGuard.Middleware())
 
 	router.POST("/api/auth", func(c *gin.Context) {
 		clientIP := service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
@@ -1069,6 +1071,7 @@ func main() {
 		}
 
 		if !isAllowedDevice(req.Vid, req.Pid, allowedDevices) {
+			abuseGuard.RecordInvalidToken(clientIP)
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "设备不匹配，请购买正规产品"})
 			return
 		}
@@ -1078,12 +1081,17 @@ func main() {
 	})
 
 	router.GET("/api/verify-token", func(c *gin.Context) {
+		clientIP := ginClientIP(c)
+		if abuseGuard.RejectRead(c, clientIP) {
+			return
+		}
 		token := parseBearerToken(c)
 		valid := verifyToken(token, jwtSecret, tokenTTL)
 		if valid {
 			c.JSON(http.StatusOK, gin.H{"success": true})
 			return
 		}
+		abuseGuard.RecordInvalidToken(clientIP)
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "token 无效或已过期，请重新验证设备"})
 	})
 
@@ -1184,6 +1192,9 @@ func main() {
 	})
 
 	router.GET("/api/resources", func(c *gin.Context) {
+		if abuseGuard.RejectRead(c, ginClientIP(c)) {
+			return
+		}
 		items, err := loadResourceCatalog(resourcesPath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
@@ -1193,6 +1204,9 @@ func main() {
 	})
 
 	router.GET("/api/column-tags", func(c *gin.Context) {
+		if abuseGuard.RejectRead(c, ginClientIP(c)) {
+			return
+		}
 		items, err := loadColumnTags(columnTagsPath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load column tags failed"})
@@ -1896,7 +1910,11 @@ func main() {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
+			abuseGuard.RecordInvalidToken(ginClientIP(c))
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if abuseGuard.RejectDownloadSign(c, ginClientIP(c), serial) {
 			return
 		}
 
@@ -1943,16 +1961,26 @@ func main() {
 	})
 
 	handleResource := func(c *gin.Context, id string, previewOnly bool) {
+		clientIP := ginClientIP(c)
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
+			abuseGuard.RecordInvalidToken(clientIP)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+			return
+		}
+		if previewOnly {
+			if abuseGuard.RejectRead(c, clientIP) {
+				return
+			}
+		} else if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
 			return
 		}
 
 		rawObjectKey, ok := resourceMapStore.get(id)
 		objectKey := normalizeObjectKey(rawObjectKey)
 		if !ok || objectKey == "" {
+			abuseGuard.RecordNotFound(clientIP)
 			c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 			return
 		}
@@ -2016,16 +2044,26 @@ func main() {
 	}
 
 	handleImage := func(c *gin.Context, id string, forDownload bool) {
+		clientIP := ginClientIP(c)
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
+			abuseGuard.RecordInvalidToken(clientIP)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+			return
+		}
+		if forDownload {
+			if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
+				return
+			}
+		} else if abuseGuard.RejectRead(c, clientIP) {
 			return
 		}
 
 		rawImageObjectKey, ok := imageMapStore.get(id)
 		objectKey := normalizeObjectKey(rawImageObjectKey)
 		if !ok || objectKey == "" {
+			abuseGuard.RecordNotFound(clientIP)
 			c.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
 			return
 		}

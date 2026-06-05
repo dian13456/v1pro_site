@@ -33,10 +33,21 @@ jobs:
       - name: Build
         env:
           VITE_BASE_PATH: /
-          # 443 在部分运营商/地区会被重置，8443 稳定可用
-          VITE_API_BASE: https://api.jadot.cn:8443
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_STATIC_MODE: "false"
         run: npm run build
+
+      - name: Scan dist for leaked secrets
+        run: |
+          set -e
+          if find dist -name '*.map' | grep -q .; then
+            echo "Source map files must not be published"
+            exit 1
+          fi
+          if grep -R -E 'sourceMappingURL|dev-token|AKID[A-Za-z0-9]{10,}|SECRET_KEY|BEGIN PRIVATE KEY' dist/; then
+            echo "Sensitive pattern found in dist/"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

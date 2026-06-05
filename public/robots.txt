@@ -2,4 +2,3 @@ User-agent: *
 Disallow: /
 
 # 本站内容受使用条款保护，禁止未经授权的爬取、抓取与批量下载。
-# 详见：https://www.jiadianer.cloud/#/terms
