@@ -6,7 +6,7 @@ dist
 .env.local
 backend/.env
 backend/*.exe
-tools/image_review_gui_config.json
+tools/
 github-上传与保密说明.md
 __pycache__/
 *.pyc
