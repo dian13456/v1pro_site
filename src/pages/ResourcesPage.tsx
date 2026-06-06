@@ -22,7 +22,9 @@ import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
-  transferResourceToDevice,
+  V1PRO_TRANSFER_NOT_READY_MESSAGE,
+  executeTransferToDevice,
+  prefetchTransferDownloadUrl,
 } from "../services/v1proTransferService";
 
 const RANDOM_PAGE_SIZE = 4;
@@ -251,28 +253,25 @@ export default function ResourcesPage() {
     }
   };
 
-  const handleTransfer = async (resource: ResourceItem) => {
+  const handleTransferPrepare = (resource: ResourceItem) => {
+    prefetchTransferDownloadUrl(resource);
+  };
+
+  const handleTransfer = (resource: ResourceItem) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
     }
 
-    try {
-      setTransferringId(resource.id);
-      setErrorMessage("");
-      const { stats } = await transferResourceToDevice(resource, { auto: true });
-      applyDownloadStats(resource.id, stats);
-      setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
-      window.setTimeout(() => setTransferNotice(""), 5000);
-    } catch (err) {
-      const message = (err as Error)?.message || "传输失败";
-      setErrorMessage(message);
-      if (message.includes("认证")) {
-        navigate("/auth", { replace: true });
-      }
-    } finally {
-      setTransferringId(null);
+    setErrorMessage("");
+    const result = executeTransferToDevice(resource, { auto: true });
+    if (!result.launched) {
+      setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+      return;
     }
+    applyDownloadStats(resource.id, result.stats);
+    setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+    window.setTimeout(() => setTransferNotice(""), 5000);
   };
 
   const handleLike = async (resource: ResourceItem) => {
@@ -518,6 +517,7 @@ export default function ResourcesPage() {
                 resource={resource}
                 onDownload={handleDownload}
                 onTransfer={handleTransfer}
+                onTransferPrepare={handleTransferPrepare}
                 onPlay={handlePlay}
                 onStopPlay={() => {
                   setPlayingResourceId(null);

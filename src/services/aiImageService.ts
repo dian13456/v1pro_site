@@ -9,7 +9,7 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { spendDevCredits } from "./profileService";
-import { launchV1ProTransfer, assertCosTransferUrl, fileNameFromTransferUrl } from "./v1proTransferService";
+import { launchV1ProTransferSync, assertCosTransferUrl, fileNameFromTransferUrl } from "./v1proTransferService";
 
 export class ImageReviewPendingError extends Error {
   readonly reviewId: string;
@@ -307,7 +307,7 @@ export async function transferAiImageToDevice(
   }
   assertCosTransferUrl(payload.url);
 
-  launchV1ProTransfer(payload.url, {
+  launchV1ProTransferSync(payload.url, {
     name: fileNameFromTransferUrl(payload.url),
     auto: true,
   });

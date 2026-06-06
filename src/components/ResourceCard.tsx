@@ -8,6 +8,7 @@ interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
   onTransfer?: (resource: ResourceItem) => void;
+  onTransferPrepare?: (resource: ResourceItem) => void;
   onPlay: (resource: ResourceItem) => void;
   onStopPlay: () => void;
   onLike: (resource: ResourceItem) => void;
@@ -28,6 +29,7 @@ function ResourceCardComponent({
   resource,
   onDownload,
   onTransfer,
+  onTransferPrepare,
   onPlay,
   onStopPlay,
   onLike,
@@ -171,6 +173,8 @@ function ResourceCardComponent({
             <button
               type="button"
               disabled={downloading || transferring}
+              onMouseEnter={() => onTransferPrepare?.(resource)}
+              onFocus={() => onTransferPrepare?.(resource)}
               onClick={() => onTransfer?.(resource)}
               className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
             >

@@ -56,6 +56,7 @@ export default function AiGuidePage() {
     setTotalDownloadCounts,
     setWeeklyDownloadCounts,
     handleDownload,
+    handleTransferPrepare,
     handleTransfer,
     handlePlay,
     handleLike,
@@ -196,6 +197,7 @@ export default function AiGuidePage() {
                         resource={resource}
                         onDownload={handleDownload}
                         onTransfer={handleTransfer}
+                        onTransferPrepare={handleTransferPrepare}
                         onPlay={handlePlay}
                         onStopPlay={stopPlay}
                         onLike={handleLike}

@@ -17,8 +17,28 @@ interface TransferUrlResponse {
   downloadStats?: Record<string, unknown>;
 }
 
+interface TransferCacheEntry {
+  url: string;
+  stats?: DownloadStatsSnapshot | null;
+  fetchedAt: number;
+}
+
+export interface TransferExecuteResult {
+  launched: boolean;
+  url?: string;
+  stats?: DownloadStatsSnapshot | null;
+  error?: string;
+}
+
 export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
   "已发送传输请求，请在佳点 V1PRO 控制工具中查看进度。";
+
+export const V1PRO_TRANSFER_NOT_READY_MESSAGE =
+  "下载地址尚未就绪，请将鼠标在按钮上稍停片刻后再点「传输到设备」。";
+
+const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
+const transferCache = new Map<number, TransferCacheEntry>();
+const transferInflight = new Map<number, Promise<void>>();
 
 function isBlockedTransferHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
@@ -29,9 +49,13 @@ function isBlockedTransferHost(host: string): boolean {
   return false;
 }
 
+function isCacheEntryFresh(entry: TransferCacheEntry): boolean {
+  return Date.now() - entry.fetchedAt < TRANSFER_URL_TTL_MS;
+}
+
 export function fileNameFromTransferUrl(fileUrl: string): string {
   try {
-    const pathname = new URL(normalizeTransferFileUrl(fileUrl)).pathname;
+    const pathname = new URL(fileUrl.trim()).pathname;
     const basename = decodeURIComponent(pathname.split("/").pop() || "").trim();
     if (basename) {
       return basename;
@@ -42,19 +66,9 @@ export function fileNameFromTransferUrl(fileUrl: string): string {
   return "material.bin";
 }
 
-/** 避免 q-sign-time 等字段里的 %3B 在 v1pro 参数里被错误截断。 */
-export function normalizeTransferFileUrl(fileUrl: string): string {
-  const trimmed = fileUrl.trim();
-  try {
-    return decodeURIComponent(trimmed);
-  } catch {
-    return trimmed;
-  }
-}
-
 /** 传输到设备只允许 download=1 返回的 COS 预签名 HTTPS 直链。禁止网站/API/base64 预览地址。 */
 export function assertCosTransferUrl(url: string): void {
-  const trimmed = normalizeTransferFileUrl(url);
+  const trimmed = url.trim();
   if (!trimmed) {
     throw new Error("无法获取 HTTPS 传输链接，请稍后重试");
   }
@@ -79,13 +93,13 @@ export function assertCosTransferUrl(url: string): void {
 }
 
 export function buildV1ProUrl(fileUrl: string, options: V1ProOpenOptions = {}): string {
-  const normalized = normalizeTransferFileUrl(fileUrl);
-  assertCosTransferUrl(normalized);
+  const trimmed = fileUrl.trim();
+  assertCosTransferUrl(trimmed);
 
   const params = new URLSearchParams();
-  params.set("url", normalized);
+  params.set("url", trimmed);
   params.set("auto", options.auto === false ? "0" : "1");
-  const fileName = options.name?.trim() || fileNameFromTransferUrl(normalized);
+  const fileName = options.name?.trim() || fileNameFromTransferUrl(trimmed);
   if (fileName) {
     params.set("name", fileName);
   }
@@ -178,15 +192,56 @@ async function fetchTransferDownloadUrl(resource: ResourceItem): Promise<{
   };
 }
 
-/** 通过隐藏 iframe 唤起 v1pro://，避免 location.href 导致页面跳转或误判未安装。 */
+function storeTransferCache(resourceId: number, entry: Omit<TransferCacheEntry, "fetchedAt">): void {
+  transferCache.set(resourceId, { ...entry, fetchedAt: Date.now() });
+}
+
+export function isTransferDownloadUrlReady(resourceId: number): boolean {
+  const cached = transferCache.get(resourceId);
+  return Boolean(cached && isCacheEntryFresh(cached));
+}
+
+export function isTransferDownloadUrlPrefetching(resourceId: number): boolean {
+  return transferInflight.has(resourceId);
+}
+
+/** 预先请求 download=1（可在 mouseenter / 页面展示时调用，勿在 click 里 await）。 */
+export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
+  if (!canTransferViaV1Pro(resource) || isStaticMode() || !hasValidLocalAuth()) {
+    return;
+  }
+
+  const resourceId = resource.id;
+  const cached = transferCache.get(resourceId);
+  if (cached && isCacheEntryFresh(cached)) {
+    return;
+  }
+  if (transferInflight.has(resourceId)) {
+    return;
+  }
+
+  const task = fetchTransferDownloadUrl(resource)
+    .then(({ url, stats }) => {
+      storeTransferCache(resourceId, { url, stats });
+    })
+    .catch(() => {
+      // prefetch 失败时静默，点击传输再提示
+    })
+    .finally(() => {
+      transferInflight.delete(resourceId);
+    });
+
+  transferInflight.set(resourceId, task);
+}
+
+/** 必须在用户点击的同步调用栈里执行（window.location.href）。 */
+export function launchV1ProTransferSync(fileUrl: string, options: V1ProOpenOptions = {}): void {
+  window.location.href = buildV1ProUrl(fileUrl, options);
+}
+
+/** @deprecated 使用 launchV1ProTransferSync；iframe 会被浏览器静默拦截。 */
 export function launchV1ProTransfer(fileUrl: string, options: V1ProOpenOptions = {}): void {
-  const url = buildV1ProUrl(fileUrl, options);
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  window.setTimeout(() => iframe.remove(), 2000);
+  launchV1ProTransferSync(fileUrl, options);
 }
 
 export async function resolveTransferSignedUrl(
@@ -195,15 +250,34 @@ export async function resolveTransferSignedUrl(
   return fetchTransferDownloadUrl(resource);
 }
 
-/** 传输到设备：先 GET download=1 取 JSON.url，再用 COS 链接唤起 v1pro://。 */
+/** 同步唤起 v1pro://；需事先 prefetchTransferDownloadUrl。 */
+export function executeTransferToDevice(
+  resource: ResourceItem,
+  options: Pick<V1ProOpenOptions, "auto"> = {},
+): TransferExecuteResult {
+  const cached = transferCache.get(resource.id);
+  if (!cached || !isCacheEntryFresh(cached)) {
+    prefetchTransferDownloadUrl(resource);
+    return { launched: false, error: V1PRO_TRANSFER_NOT_READY_MESSAGE };
+  }
+
+  launchV1ProTransferSync(cached.url, {
+    name: fileNameFromTransferUrl(cached.url),
+    auto: options.auto,
+  });
+  return { url: cached.url, stats: cached.stats, launched: true };
+}
+
+/** @deprecated 使用 prefetchTransferDownloadUrl + executeTransferToDevice */
 export async function transferResourceToDevice(
   resource: ResourceItem,
   options: Pick<V1ProOpenOptions, "auto"> = {},
 ): Promise<{ url: string; stats?: DownloadStatsSnapshot | null }> {
-  const { url, stats } = await fetchTransferDownloadUrl(resource);
-  launchV1ProTransfer(url, {
-    name: fileNameFromTransferUrl(url),
-    auto: options.auto,
-  });
-  return { url, stats };
+  prefetchTransferDownloadUrl(resource);
+  await transferInflight.get(resource.id);
+  const result = executeTransferToDevice(resource, options);
+  if (!result.launched || !result.url) {
+    throw new Error(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+  }
+  return { url: result.url, stats: result.stats };
 }

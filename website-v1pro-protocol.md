@@ -44,9 +44,12 @@ function transferToDevice(fileUrl, options) {
 
 推荐流程：
 
-1. 前端请求后端 API 获取 **短期有效的 HTTPS 下载地址**（可带 token）
-2. 用户点击「传输到设备」
-3. `window.location.href = buildV1ProUrl(signedUrl, { auto: true, name })`
+1. 用户登录后，在 **mouseenter / 展示素材时** 预先请求 `GET ...&download=1` 缓存 `data.url`（可 async）
+2. 用户点击「传输到设备」时 **禁止 await**，在同一同步调用栈执行：
+   `window.location.href = buildV1ProUrl(cachedUrl, { auto: true, name })`
+3. 页面轻提示：「已发送传输请求，请在控制工具中查看」
+
+**禁止** 在 click 的 async 回调里用 iframe / `window.open` 打开 `v1pro://`（Chrome/Edge 会静默拦截，不弹「打开应用」）。
 
 ## 3. 后端要求
 
