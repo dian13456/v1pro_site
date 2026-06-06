@@ -1,7 +1,8 @@
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { parseDownloadStats } from "../types/downloadStats";
 import type { ResourceItem } from "../types/resource";
-import { API_BASE } from "./httpClient";
+import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authService";
+import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 
 export interface V1ProOpenOptions {
@@ -141,36 +142,33 @@ async function fetchTransferDownloadUrl(resource: ResourceItem): Promise<{
   url: string;
   stats?: DownloadStatsSnapshot | null;
 }> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  const auth = getAuthState();
+  if (!auth?.token) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+
+  const valid = await verifyTokenRemote();
+  if (!valid) {
+    throw new Error("认证已失效，请重新验证设备");
+  }
+
   if (isStaticMode()) {
     throw new Error("静态模式下无法传输到设备");
   }
 
-  const path = transferApiPath(resource);
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
-  } catch {
-    throw new Error("接口不可达，请确认鉴权服务已启动");
-  }
+  const payload = await apiFetch<TransferUrlResponse>(transferApiPath(resource), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+    },
+  });
 
-  let payload: TransferUrlResponse | null = null;
-  try {
-    payload = (await response.json()) as TransferUrlResponse;
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    const message = payload?.error || payload?.message || `请求失败（HTTP ${response.status})`;
-    throw new Error(message);
-  }
-
-  const url = payload?.url?.trim();
+  const url = payload.url?.trim();
   if (!url) {
-    throw new Error(payload?.error || payload?.message || "下载链接生成失败");
+    throw new Error(payload.error || payload.message || "下载链接生成失败");
   }
 
   assertCosTransferUrl(url);

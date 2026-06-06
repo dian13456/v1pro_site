@@ -252,6 +252,11 @@ export default function ResourcesPage() {
   };
 
   const handleTransfer = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
     try {
       setTransferringId(resource.id);
       setErrorMessage("");
@@ -262,6 +267,9 @@ export default function ResourcesPage() {
     } catch (err) {
       const message = (err as Error)?.message || "传输失败";
       setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
     } finally {
       setTransferringId(null);
     }
