@@ -20,9 +20,41 @@ interface TransferUrlResponse {
 export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
   "已发送传输请求，请在佳点 V1PRO 控制工具中查看进度。";
 
-/** 传输到设备只允许 COS 预签名 HTTPS 直链，禁止 API 地址与 base64 预览。 */
+function isBlockedTransferHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === "api.jadot.cn") return true;
+  if (normalized === "jiadianer.cloud" || normalized.endsWith(".jiadianer.cloud")) return true;
+  if (normalized === "jadot.cn" || normalized.endsWith(".jadot.cn")) return true;
+  return false;
+}
+
+export function fileNameFromTransferUrl(fileUrl: string): string {
+  try {
+    const pathname = new URL(normalizeTransferFileUrl(fileUrl)).pathname;
+    const basename = decodeURIComponent(pathname.split("/").pop() || "").trim();
+    if (basename) {
+      return basename;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return "material.bin";
+}
+
+/** 避免 q-sign-time 等字段里的 %3B 在 v1pro 参数里被错误截断。 */
+export function normalizeTransferFileUrl(fileUrl: string): string {
+  const trimmed = fileUrl.trim();
+  try {
+    return decodeURIComponent(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+/** 传输到设备只允许 download=1 返回的 COS 预签名 HTTPS 直链。禁止网站/API/base64 预览地址。 */
 export function assertCosTransferUrl(url: string): void {
-  const trimmed = url.trim();
+  const trimmed = normalizeTransferFileUrl(url);
   if (!trimmed) {
     throw new Error("无法获取 HTTPS 传输链接，请稍后重试");
   }
@@ -38,22 +70,24 @@ export function assertCosTransferUrl(url: string): void {
   } catch {
     throw new Error("传输链接格式无效");
   }
-  if (/api\.jadot\.cn$/i.test(parsed.host) || /(^|\.)jiadianer\.cloud$/i.test(parsed.host)) {
-    throw new Error("传输链接不能使用 API 或网站地址，请使用 COS 下载直链");
+  if (isBlockedTransferHost(parsed.hostname)) {
+    throw new Error("传输链接不能使用网站或 API 地址，请使用 COS 下载直链");
   }
-  if (!/\.myqcloud\.com$/i.test(parsed.host)) {
+  if (!/\.myqcloud\.com$/i.test(parsed.hostname)) {
     throw new Error("传输链接必须是 COS 签名地址");
   }
 }
 
 export function buildV1ProUrl(fileUrl: string, options: V1ProOpenOptions = {}): string {
-  assertCosTransferUrl(fileUrl);
+  const normalized = normalizeTransferFileUrl(fileUrl);
+  assertCosTransferUrl(normalized);
 
   const params = new URLSearchParams();
-  params.set("url", fileUrl.trim());
+  params.set("url", normalized);
   params.set("auto", options.auto === false ? "0" : "1");
-  if (options.name?.trim()) {
-    params.set("name", options.name.trim());
+  const fileName = options.name?.trim() || fileNameFromTransferUrl(normalized);
+  if (fileName) {
+    params.set("name", fileName);
   }
   return `v1pro://open?${params.toString()}`;
 }
@@ -159,4 +193,17 @@ export async function resolveTransferSignedUrl(
   resource: ResourceItem
 ): Promise<{ url: string; stats?: DownloadStatsSnapshot | null }> {
   return fetchTransferDownloadUrl(resource);
+}
+
+/** 传输到设备：先 GET download=1 取 JSON.url，再用 COS 链接唤起 v1pro://。 */
+export async function transferResourceToDevice(
+  resource: ResourceItem,
+  options: Pick<V1ProOpenOptions, "auto"> = {},
+): Promise<{ url: string; stats?: DownloadStatsSnapshot | null }> {
+  const { url, stats } = await fetchTransferDownloadUrl(resource);
+  launchV1ProTransfer(url, {
+    name: fileNameFromTransferUrl(url),
+    auto: options.auto,
+  });
+  return { url, stats };
 }

@@ -22,9 +22,7 @@ import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
-  guessTransferFileName,
-  launchV1ProTransfer,
-  resolveTransferSignedUrl,
+  transferResourceToDevice,
 } from "../services/v1proTransferService";
 
 const RANDOM_PAGE_SIZE = 4;
@@ -262,12 +260,8 @@ export default function ResourcesPage() {
     try {
       setTransferringId(resource.id);
       setErrorMessage("");
-      const { url, stats } = await resolveTransferSignedUrl(resource);
+      const { stats } = await transferResourceToDevice(resource, { auto: true });
       applyDownloadStats(resource.id, stats);
-      launchV1ProTransfer(url, {
-        name: guessTransferFileName(resource),
-        auto: true,
-      });
       setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
       window.setTimeout(() => setTransferNotice(""), 5000);
     } catch (err) {
