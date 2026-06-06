@@ -76,6 +76,23 @@ func TestAPISignMiddlewareAcceptsValidSignature(t *testing.T) {
 	}
 }
 
+func TestAPISignMiddlewareSkipsDownloadQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)
+	r := gin.New()
+	r.Use(verifier.Middleware())
+	r.GET("/api/image/", func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+
+	req := httptest.NewRequest("GET", "/api/image/?id=1&download=1", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("expected 200 without api sign for download=1, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAPISignMiddlewareSkipsAdminRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)

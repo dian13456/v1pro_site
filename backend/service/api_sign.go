@@ -131,11 +131,17 @@ func parseBearerForSign(c *gin.Context) string {
 	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 }
 
-func (v *APISignVerifier) shouldVerify(path string) bool {
+func (v *APISignVerifier) shouldVerify(c *gin.Context) bool {
+	path := c.Request.URL.Path
 	if !strings.HasPrefix(path, "/api/") {
 		return false
 	}
 	if strings.HasPrefix(path, "/api/admin/") {
+		return false
+	}
+	// 传输到设备：download=1 暂不要求 API 签名（与 v1pro 联调一致）
+	if c.Query("download") == "1" &&
+		(strings.HasPrefix(path, "/api/image/") || strings.HasPrefix(path, "/api/resource/")) {
 		return false
 	}
 	return true
@@ -160,7 +166,7 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 		}
 
 		path := c.Request.URL.Path
-		if !v.shouldVerify(path) {
+		if !v.shouldVerify(c) {
 			c.Next()
 			return
 		}

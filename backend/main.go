@@ -1972,16 +1972,26 @@ func main() {
 	handleResource := func(c *gin.Context, id string, previewOnly bool) {
 		clientIP := ginClientIP(c)
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
-		if !ok {
-			abuseGuard.RecordInvalidToken(clientIP)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
-			return
-		}
+		serial, hasSerial := serialFromToken(token, jwtSecret, tokenTTL)
+		allowAnonymousDownload := c.Query("download") == "1"
+
 		if previewOnly {
+			if !hasSerial {
+				abuseGuard.RecordInvalidToken(clientIP)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+				return
+			}
 			if abuseGuard.RejectRead(c, clientIP) {
 				return
 			}
+		} else if allowAnonymousDownload && !hasSerial {
+			if abuseGuard.RejectRead(c, clientIP) {
+				return
+			}
+		} else if !hasSerial {
+			abuseGuard.RecordInvalidToken(clientIP)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+			return
 		} else if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
 			return
 		}
@@ -1999,7 +2009,7 @@ func main() {
 		var totalCount int
 		var weeklyCount int
 		var weekKey string
-		if !previewOnly {
+		if !previewOnly && hasSerial {
 			downloadsMu.Lock()
 			var limitMsg string
 			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
@@ -2040,6 +2050,11 @@ func main() {
 			return
 		}
 
+		if !hasSerial {
+			c.JSON(http.StatusOK, gin.H{"url": url})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"url": url,
 			"downloadStats": gin.H{
@@ -2055,13 +2070,18 @@ func main() {
 	handleImage := func(c *gin.Context, id string, forDownload bool) {
 		clientIP := ginClientIP(c)
 		token := parseBearerToken(c)
-		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
-		if !ok {
+		serial, hasSerial := serialFromToken(token, jwtSecret, tokenTTL)
+		allowAnonymousDownload := forDownload && c.Query("download") == "1"
+
+		if forDownload && allowAnonymousDownload && !hasSerial {
+			if abuseGuard.RejectRead(c, clientIP) {
+				return
+			}
+		} else if !hasSerial {
 			abuseGuard.RecordInvalidToken(clientIP)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
 			return
-		}
-		if forDownload {
+		} else if forDownload {
 			if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
 				return
 			}
@@ -2096,7 +2116,7 @@ func main() {
 		var totalCount int
 		var weeklyCount int
 		var weekKey string
-		if forDownload {
+		if forDownload && hasSerial {
 			downloadsMu.Lock()
 			var limitMsg string
 			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
@@ -2122,6 +2142,10 @@ func main() {
 		imageURLCacheMu.RUnlock()
 		if hasCached && cached.expiresAt.After(now) {
 			if forDownload {
+				if !hasSerial {
+					c.JSON(http.StatusOK, gin.H{"url": cached.url})
+					return
+				}
 				c.JSON(http.StatusOK, gin.H{
 					"url": cached.url,
 					"downloadStats": gin.H{
@@ -2151,6 +2175,10 @@ func main() {
 		imageURLCacheMu.Unlock()
 
 		if forDownload {
+			if !hasSerial {
+				c.JSON(http.StatusOK, gin.H{"url": url})
+				return
+			}
 			c.JSON(http.StatusOK, gin.H{
 				"url": url,
 				"downloadStats": gin.H{
