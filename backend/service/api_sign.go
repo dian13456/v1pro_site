@@ -165,7 +165,6 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 			return
 		}
 
-		path := c.Request.URL.Path
 		if !v.shouldVerify(c) {
 			c.Next()
 			return
