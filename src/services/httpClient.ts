@@ -542,7 +542,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     return {
       success: true,
       resourceId: Date.now(),
-      downloadUrl: "https://www.jiadianer.cloud/favicon.ico",
+      downloadUrl: "https://www.jadot.cn/favicon.ico",
       title: titleSource.slice(0, 40),
       shareCount,
       shareLimit: DEV_AI_SHARE_LIMIT,
@@ -556,7 +556,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     }
     return {
       success: true,
-      url: "https://www.jiadianer.cloud/favicon.ico",
+      url: "https://www.jadot.cn/favicon.ico",
     };
   }
 

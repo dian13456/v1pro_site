@@ -51,8 +51,8 @@ function transferToDevice(fileUrl, options) {
 ## 3. 后端要求
 
 - 仅提供 **HTTPS** 地址（客户端拒绝 `http://`）
-- 当前主站域名（备案中）：`jiadianer.cloud`、`www.jiadianer.cloud`
-- 历史域名：`jadot.cn`、`www.jadot.cn`（及子域名，如 `cdn.jadot.cn`）
+- 当前主站域名：`jadot.cn`、`www.jadot.cn`（及子域名，如 `cdn.jadot.cn`）
+- 过渡域名（仍可解析）：`jiadianer.cloud`、`www.jiadianer.cloud`
 - 需扩展域名时，修改客户端 `v1pro_gui/constants.py` 中 `PROTOCOL_ALLOWED_HOST_SUFFIXES` 并重新打包
 - 单文件上限：**500 MB**
 - 支持格式：图片 / GIF / GFM1 / 常见视频（与客户端拖放一致）
