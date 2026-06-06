@@ -2168,10 +2168,10 @@ func main() {
 	}
 
 	router.GET("/api/resource/:id", func(c *gin.Context) {
-		handleResource(c, c.Param("id"), c.Query("preview") == "1")
+		handleResource(c, c.Param("id"), c.Query("preview") == "1" && c.Query("download") != "1")
 	})
 	router.GET("/api/resource/", func(c *gin.Context) {
-		handleResource(c, c.Query("id"), c.Query("preview") == "1")
+		handleResource(c, c.Query("id"), c.Query("preview") == "1" && c.Query("download") != "1")
 	})
 	router.GET("/api/image/:id", func(c *gin.Context) {
 		handleImage(c, c.Param("id"), c.Query("download") == "1")

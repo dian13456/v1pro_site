@@ -45,7 +45,7 @@ export async function createDownloadUrl(
 
   try {
     const query = forDownload
-      ? `/api/resource/?id=${resourceId}`
+      ? `/api/resource/?id=${resourceId}&download=1`
       : `/api/resource/?id=${resourceId}&preview=1`;
     const signed = await apiFetch<GinResourceResponse>(query, {
       method: "GET",

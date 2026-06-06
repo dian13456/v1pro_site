@@ -83,12 +83,18 @@ func hmacSHA256Hex(key []byte, message string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+func hmacSHA256(key []byte, message string) []byte {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(message))
+	return mac.Sum(nil)
+}
+
 func deriveAPISignKey(secret []byte, bearerToken string) []byte {
 	token := strings.TrimSpace(bearerToken)
 	if token == "" {
-		return []byte(hmacSHA256Hex(secret, apiSignClientSalt))
+		return hmacSHA256(secret, apiSignClientSalt)
 	}
-	return []byte(hmacSHA256Hex(secret, token))
+	return hmacSHA256(secret, token)
 }
 
 // BuildAPICanonicalString builds the canonical payload used for signing.
