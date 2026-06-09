@@ -32,6 +32,7 @@ export function WelcomeModal() {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [displayName, setDisplayNameState] = useState(() => getDisplayName(serial));
+  const [nameError, setNameError] = useState("");
 
   const loadWelcome = async () => {
     setLoading(true);
@@ -67,11 +68,16 @@ export function WelcomeModal() {
   };
 
   const handleSaveName = async () => {
-    const nextName = await saveDisplayName(serial, nameInput);
-    setEditing(false);
-    setNameInput(nextName);
-    setDisplayNameState(nextName);
-    await loadWelcome();
+    setNameError("");
+    try {
+      const nextName = await saveDisplayName(serial, nameInput);
+      setEditing(false);
+      setNameInput(nextName);
+      setDisplayNameState(nextName);
+      await loadWelcome();
+    } catch (err) {
+      setNameError((err as Error)?.message || "昵称保存失败");
+    }
   };
 
   const currentName = displayName || welcome?.username || getDisplayName(serial);
@@ -110,7 +116,10 @@ export function WelcomeModal() {
             <>
               <input
                 value={nameInput}
-                onChange={(event) => setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH))}
+                onChange={(event) => {
+                  setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH));
+                  setNameError("");
+                }}
                 className="min-w-0 flex-1 rounded-xl border border-cyan-200 bg-white px-3 py-1.5 text-sm outline-none ring-cyan-400/40 focus:ring-2 dark:border-cyan-500/30 dark:bg-slate-950/60 dark:text-slate-100"
                 placeholder={getDefaultDisplayName(serial)}
               />
@@ -126,6 +135,7 @@ export function WelcomeModal() {
                 onClick={() => {
                   setEditing(false);
                   setNameInput(currentName);
+                  setNameError("");
                 }}
                 className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
               >
@@ -151,6 +161,9 @@ export function WelcomeModal() {
             </>
           )}
         </div>
+        {nameError ? (
+          <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{nameError}</p>
+        ) : null}
 
         <div className="mt-5 min-h-[4.5rem] rounded-2xl border border-cyan-100/80 bg-white/70 p-4 dark:border-cyan-500/15 dark:bg-slate-950/40">
           {loading ? (

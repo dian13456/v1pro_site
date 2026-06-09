@@ -13,6 +13,7 @@ import {
 } from "../services/profileService";
 import {
   MAX_DISPLAY_NAME_LENGTH,
+  checkDisplayNameAvailable,
   getDefaultDisplayName,
   getDisplayName,
   saveDisplayName,
@@ -30,6 +31,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [nameHint, setNameHint] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
@@ -59,8 +61,14 @@ export default function ProfilePage() {
     if (!serial) return;
     setSaving(true);
     setErrorMessage("");
+    setNameHint("");
     setNotice("");
     try {
+      const available = await checkDisplayNameAvailable(serial, nameInput);
+      if (!available) {
+        setErrorMessage("该昵称已被使用，请换一个");
+        return;
+      }
       const saved = await saveDisplayName(serial, nameInput);
       setDisplayName(saved);
       setNameInput(saved);
@@ -136,17 +144,33 @@ export default function ProfilePage() {
             <input
               value={nameInput}
               disabled={loading || saving}
-              onChange={(event) => setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH))}
+              onChange={(event) => {
+                setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH));
+                setNameHint("");
+                setErrorMessage("");
+              }}
+              onBlur={() => {
+                if (!serial || !nameInput.trim() || nameInput.trim() === defaultName) {
+                  setNameHint("");
+                  return;
+                }
+                void checkDisplayNameAvailable(serial, nameInput).then((available) => {
+                  setNameHint(available ? "" : "该昵称已被使用");
+                });
+              }}
               placeholder={defaultName}
               className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 disabled:opacity-60 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
             />
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              留言板、欢迎语与 AI 分享作者名将显示此昵称。当前显示：
+              留言板、欢迎语与 AI 分享作者名将显示此昵称。自定义昵称全站不可重复。当前显示：
               <span className="ml-1 font-medium text-violet-600 dark:text-violet-300">
                 {loading ? "加载中…" : displayName}
               </span>
               {usingCustomName ? null : "（默认）"}
             </p>
+            {nameHint ? (
+              <p className="text-xs text-amber-600 dark:text-amber-300">{nameHint}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">

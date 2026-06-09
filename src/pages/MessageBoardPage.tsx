@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader";
 import { SiteFooter } from "../components/SiteFooter";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePageToolbar } from "../components/SitePageToolbar";
 import { useThemeMode } from "../hooks/useThemeMode";
-import { clearAuthState, getAuthState, hasValidLocalAuth } from "../services/authService";
+import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
   MAX_MESSAGE_LENGTH,
   fetchMessages,
@@ -59,11 +59,6 @@ export default function MessageBoardPage() {
     void loadMessages();
   }, [navigate]);
 
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
-
   const handleSubmit = async () => {
     if (!content.trim()) {
       setErrorMessage("请输入留言内容");
@@ -88,24 +83,11 @@ export default function MessageBoardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-6 lg:px-8">
+    <SitePageShell>
         <SiteHeader
-          title="用户留言板"
-          subtitle="分享使用体验、素材建议或问题反馈。留言将显示你的网站昵称。"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
+          title="佳点电子资源中心"
+          subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
+          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
         />
 
         <section className="mb-6 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
@@ -179,7 +161,6 @@ export default function MessageBoardPage() {
           )}
         </section>
         <SiteFooter />
-      </div>
-    </div>
+    </SitePageShell>
   );
 }

@@ -195,6 +195,28 @@ function resolveDevDisplayName(messageSerial: string): string {
   return displayUsernameFromSerial(messageSerial);
 }
 
+function readDevProfiles(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(DEV_PROFILES_KEY) || "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function devDisplayNameTaken(serial: string, candidate: string): boolean {
+  const target = candidate.trim();
+  if (!target) return false;
+  const profiles = readDevProfiles();
+  for (const [ownerSerial, value] of Object.entries(profiles)) {
+    if (ownerSerial === serial) continue;
+    const saved = value?.trim();
+    if (saved && saved.localeCompare(target, undefined, { sensitivity: "accent" }) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function withResolvedDevUsernames(messages: DevBoardMessage[]): DevBoardMessage[] {
   return messages.map((item) => {
     if (!item.serial) return item;
@@ -464,19 +486,37 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/profile/display-name-check")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const queryIndex = path.indexOf("?");
+    const params = queryIndex === -1 ? new URLSearchParams() : new URLSearchParams(path.slice(queryIndex + 1));
+    const displayName = String(params.get("displayName") || "").trim().slice(0, 20);
+    const defaultName = displayUsernameFromSerial(serial);
+    const available =
+      !displayName ||
+      displayName === defaultName ||
+      !devDisplayNameTaken(serial, displayName);
+    return {
+      success: true,
+      available,
+      displayName: displayName || defaultName,
+    };
+  }
+
   if (path.startsWith("/api/profile")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
     }
-    let profiles: Record<string, string> = {};
-    try {
-      profiles = JSON.parse(localStorage.getItem(DEV_PROFILES_KEY) || "{}") as Record<string, string>;
-    } catch {
-      profiles = {};
-    }
+    let profiles = readDevProfiles();
     if ((init.method || "GET").toUpperCase() === "POST") {
       const displayName = String(body.displayName || "").trim().slice(0, 20);
-      if (displayName) {
+      const defaultName = displayUsernameFromSerial(serial);
+      if (displayName && displayName !== defaultName && devDisplayNameTaken(serial, displayName)) {
+        return { success: false, message: "该昵称已被使用，请换一个" };
+      }
+      if (displayName && displayName !== defaultName) {
         profiles[serial] = displayName;
       } else {
         delete profiles[serial];
@@ -485,7 +525,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       return {
         success: true,
         serial,
-        displayName: displayName || displayUsernameFromSerial(serial),
+        displayName: displayName || defaultName,
         ...devAiCreditsProfileFields(serial),
       };
     }

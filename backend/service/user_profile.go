@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+var ErrDisplayNameTaken = errors.New("display name already taken")
+
 type UserProfilesStore struct {
 	Profiles map[string]string `json:"profiles"`
 }
@@ -58,15 +60,34 @@ func ResolveStoredDisplayName(store UserProfilesStore, serial, requested string)
 	return DisplayUsernameFromSerial(serial)
 }
 
-func SetStoredDisplayName(store *UserProfilesStore, serial, name string) string {
+func DisplayNameTakenByOther(store UserProfilesStore, serial, normalized string) bool {
+	target := strings.TrimSpace(normalized)
+	if target == "" {
+		return false
+	}
+	for otherSerial, otherName := range store.Profiles {
+		if otherSerial == serial {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(otherName), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func SetStoredDisplayName(store *UserProfilesStore, serial, name string) (string, error) {
 	if store.Profiles == nil {
 		store.Profiles = map[string]string{}
 	}
 	normalized := NormalizeDisplayName(serial, name)
 	if normalized == DisplayUsernameFromSerial(serial) {
 		delete(store.Profiles, serial)
-	} else {
-		store.Profiles[serial] = normalized
+		return normalized, nil
 	}
-	return normalized
+	if DisplayNameTakenByOther(*store, serial, normalized) {
+		return "", ErrDisplayNameTaken
+	}
+	store.Profiles[serial] = normalized
+	return normalized, nil
 }

@@ -925,6 +925,32 @@ func main() {
 		})
 	})
 
+	router.GET("/api/profile/display-name-check", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		requested := strings.TrimSpace(c.Query("displayName"))
+		normalized := service.NormalizeDisplayName(serial, requested)
+		defaultName := service.DisplayUsernameFromSerial(serial)
+		available := normalized == defaultName
+
+		if !available {
+			profilesMu.RLock()
+			available = !service.DisplayNameTakenByOther(userProfiles, serial, normalized)
+			profilesMu.RUnlock()
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"available": available,
+			"displayName": normalized,
+		})
+	})
+
 	router.GET("/api/profile", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
@@ -967,7 +993,16 @@ func main() {
 		}
 
 		profilesMu.Lock()
-		displayName := service.SetStoredDisplayName(&userProfiles, serial, req.DisplayName)
+		displayName, setErr := service.SetStoredDisplayName(&userProfiles, serial, req.DisplayName)
+		if setErr != nil {
+			profilesMu.Unlock()
+			if errors.Is(setErr, service.ErrDisplayNameTaken) {
+				c.JSON(http.StatusConflict, gin.H{"success": false, "message": "该昵称已被使用，请换一个"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "昵称保存失败"})
+			return
+		}
 		saveErr := userDataRepo.SaveUserProfiles(userProfiles)
 		profilesMu.Unlock()
 		if saveErr != nil {

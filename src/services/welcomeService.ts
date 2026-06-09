@@ -6,6 +6,7 @@ import type { WelcomePayload } from "../types/welcome";
 
 const DISPLAY_NAME_PREFIX = "jiadian_hub_display_name_";
 export const MAX_DISPLAY_NAME_LENGTH = 20;
+export const DISPLAY_NAME_TAKEN_MESSAGE = "该昵称已被使用，请换一个";
 
 function displayNameKey(serial: string): string {
   return `${DISPLAY_NAME_PREFIX}${serial}`;
@@ -21,6 +22,64 @@ function readLocalDisplayName(serial: string): string {
     // ignore
   }
   return "";
+}
+
+function isDisplayNameTakenLocally(serial: string, candidate: string): boolean {
+  const target = candidate.trim();
+  if (!target) return false;
+  try {
+    const prefix = DISPLAY_NAME_PREFIX;
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(prefix)) continue;
+      const ownerSerial = key.slice(prefix.length);
+      if (ownerSerial === serial) continue;
+      const value = localStorage.getItem(key)?.trim();
+      if (value && value.localeCompare(target, undefined, { sensitivity: "accent" }) === 0) {
+        return true;
+      }
+    }
+    if (import.meta.env.DEV) {
+      const profiles = JSON.parse(localStorage.getItem("jiadian_dev_profiles") || "{}") as Record<string, string>;
+      for (const [ownerSerial, value] of Object.entries(profiles)) {
+        if (ownerSerial === serial) continue;
+        const saved = value?.trim();
+        if (saved && saved.localeCompare(target, undefined, { sensitivity: "accent" }) === 0) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+export async function checkDisplayNameAvailable(serial: string, name: string): Promise<boolean> {
+  const trimmed = name.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+  if (!trimmed || trimmed === getDefaultDisplayName(serial)) {
+    return true;
+  }
+
+  if (isStaticMode()) {
+    return !isDisplayNameTakenLocally(serial, trimmed);
+  }
+
+  const auth = getAuthState();
+  if (!auth?.token || auth.serial !== serial) {
+    return !isDisplayNameTakenLocally(serial, trimmed);
+  }
+
+  const payload = await apiFetch<{ available?: boolean }>(
+    `/api/profile/display-name-check?displayName=${encodeURIComponent(trimmed)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+      },
+    },
+  );
+  return payload.available !== false;
 }
 
 export function getDefaultDisplayName(serial: string): string {
@@ -67,33 +126,38 @@ export function setDisplayName(serial: string, name: string): string {
 }
 
 export async function saveDisplayName(serial: string, name: string): Promise<string> {
-  const saved = persistDisplayNameLocally(serial, name);
+  const trimmed = name.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+  const defaultName = getDefaultDisplayName(serial);
 
   if (isStaticMode()) {
-    return saved;
+    if (trimmed && trimmed !== defaultName && isDisplayNameTakenLocally(serial, trimmed)) {
+      throw new Error(DISPLAY_NAME_TAKEN_MESSAGE);
+    }
+    return persistDisplayNameLocally(serial, name);
   }
 
   const auth = getAuthState();
   if (!auth?.token || auth.serial !== serial) {
-    return saved;
-  }
-
-  try {
-    const payload = await apiFetch<{ success?: boolean; displayName?: string }>("/api/profile", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
-      },
-      body: JSON.stringify({ displayName: saved }),
-    });
-    if (payload.displayName) {
-      return persistDisplayNameLocally(serial, payload.displayName);
+    if (trimmed && trimmed !== defaultName && isDisplayNameTakenLocally(serial, trimmed)) {
+      throw new Error(DISPLAY_NAME_TAKEN_MESSAGE);
     }
-  } catch {
-    // keep local copy
+    return persistDisplayNameLocally(serial, name);
   }
 
-  return saved;
+  const payload = await apiFetch<{ success?: boolean; displayName?: string; message?: string }>("/api/profile", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+    },
+    body: JSON.stringify({ displayName: trimmed }),
+  });
+  if (payload.success === false) {
+    throw new Error(payload.message || DISPLAY_NAME_TAKEN_MESSAGE);
+  }
+  if (payload.displayName) {
+    return persistDisplayNameLocally(serial, payload.displayName);
+  }
+  return persistDisplayNameLocally(serial, name);
 }
 
 export async function syncDisplayNameFromServer(serial: string): Promise<string> {
