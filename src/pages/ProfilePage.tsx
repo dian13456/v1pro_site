@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePageToolbar } from "../components/SitePageToolbar";
 import { useThemeMode } from "../hooks/useThemeMode";
-import { clearAuthState, getAuthState, hasValidLocalAuth } from "../services/authService";
+import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
   AI_CREDIT_COST,
   DEFAULT_AI_CREDITS,
@@ -55,11 +55,6 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, [navigate, serial]);
 
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
-
   const handleSave = async () => {
     if (!serial) return;
     setSaving(true);
@@ -102,26 +97,14 @@ export default function ProfilePage() {
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[720px] px-4 py-6 sm:px-6 lg:px-8">
+    <SitePageShell>
         <SiteHeader
-          title="个人中心"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
+          title="佳点电子资源中心"
+          subtitle="个人中心 · 昵称与 AI 积分"
+          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
         />
 
-        <section className="space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <section className="mx-auto w-full max-w-3xl space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
           <div className="space-y-2">
             <label className="text-sm text-slate-600 dark:text-slate-300">设备 SN 码</label>
             <div className="break-all rounded-2xl border border-white/30 bg-white/70 px-4 py-3 font-mono text-sm text-slate-800 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100">
@@ -199,7 +182,6 @@ export default function ProfilePage() {
         </section>
 
         <SiteFooter />
-      </div>
-    </div>
+    </SitePageShell>
   );
 }

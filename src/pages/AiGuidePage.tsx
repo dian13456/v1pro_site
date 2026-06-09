@@ -4,12 +4,12 @@ import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePageToolbar } from "../components/SitePageToolbar";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { MAX_QUESTION_LENGTH, askAiGuide } from "../services/aiGuideService";
-import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { hasValidLocalAuth } from "../services/authService";
 import { displayDownloadCount, fetchResourceDownloads } from "../services/downloadStatsService";
 import { fetchResourceFavorites } from "../services/favoriteService";
 import { fetchResourceLikes } from "../services/likeService";
@@ -100,11 +100,6 @@ export default function AiGuidePage() {
     return map;
   }, [resources]);
 
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
-
   const submitQuestion = async (question: string) => {
     const trimmed = question.trim();
     if (!trimmed || loading) return;
@@ -137,24 +132,15 @@ export default function AiGuidePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+    <SitePageShell
+      beforeContent={
+        <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      }
+    >
         <SiteHeader
           title="佳点电子资源中心"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
+          subtitle="AI 助手 · 从素材库中智能推荐"
+          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
         />
 
         <section className="mb-4 flex flex-wrap gap-2">
@@ -187,7 +173,7 @@ export default function AiGuidePage() {
               </div>
 
               {message.role === "assistant" && message.resourceIds && message.resourceIds.length > 0 ? (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
                   {message.resourceIds.map((id) => {
                     const resource = resourceMap.get(id);
                     if (!resource) {
@@ -266,7 +252,6 @@ export default function AiGuidePage() {
         </section>
 
         <SiteFooter />
-      </div>
-    </div>
+    </SitePageShell>
   );
 }

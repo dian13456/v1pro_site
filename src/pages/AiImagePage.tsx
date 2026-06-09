@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
 import { SiteHeader } from "../components/SiteHeader";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePageToolbar } from "../components/SitePageToolbar";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
@@ -17,7 +17,7 @@ import {
   shareAiImageToCatalog,
   transferAiImageToDevice,
 } from "../services/aiImageService";
-import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { hasValidLocalAuth } from "../services/authService";
 import {
   AI_CREDIT_COST,
   DEFAULT_AI_CREDITS,
@@ -68,11 +68,6 @@ export default function AiImagePage() {
 
   const creditsKnown = typeof credits === "number";
   const canGenerate = creditsKnown ? credits > 0 : true;
-
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
 
   const handleGenerate = async () => {
     if (loading) return;
@@ -212,25 +207,18 @@ export default function AiImagePage() {
   const isBusy = Boolean(transferringId || sharingId);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
-      <V1ProTransferNotice message={shareNotice} onDismiss={() => setShareNotice("")} />
-      <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
+    <SitePageShell
+      beforeContent={
+        <>
+          <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+          <V1ProTransferNotice message={shareNotice} onDismiss={() => setShareNotice("")} />
+        </>
+      }
+    >
         <SiteHeader
           title="佳点电子资源中心"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
+          subtitle="AI 生图 / 上传图片"
+          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
         />
 
         <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
@@ -308,7 +296,7 @@ export default function AiImagePage() {
           ) : null}
 
           {images.length > 0 ? (
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
               {images.map((image, index) => (
                 <article
                   key={image.id}
@@ -361,7 +349,6 @@ export default function AiImagePage() {
         </section>
 
         <SiteFooter />
-      </div>
-    </div>
+    </SitePageShell>
   );
 }

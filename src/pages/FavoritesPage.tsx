@@ -3,13 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePageToolbar } from "../components/SitePageToolbar";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
 import { useThemeMode } from "../hooks/useThemeMode";
-import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { hasValidLocalAuth } from "../services/authService";
 import { fetchResourceDownloads } from "../services/downloadStatsService";
 import { fetchResourceFavorites } from "../services/favoriteService";
 import { fetchResourceLikes } from "../services/likeService";
@@ -85,33 +85,17 @@ export default function FavoritesPage() {
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
   }, [favoriteIds, resources]);
 
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
-
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-        <SiteHeader
-          title="我的收藏"
-          subtitle="按 SN 码保存的素材列表；传输到设备成功后会自动加入收藏"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
-        />
-
+    <SitePageShell
+      beforeContent={
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      }
+    >
+        <SiteHeader
+          title="佳点电子资源中心"
+          subtitle="我的收藏 · 按 SN 码保存的素材列表；传输到设备成功后会自动加入收藏"
+          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
+        />
 
         {error || errorMessage ? (
           <div className="mb-4 rounded-xl border border-rose-300/60 bg-rose-100/70 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
@@ -169,7 +153,6 @@ export default function FavoritesPage() {
         ) : null}
 
         <SiteFooter />
-      </div>
-    </div>
+    </SitePageShell>
   );
 }
