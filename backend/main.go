@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,17 +33,8 @@ type signedURLCacheEntry struct {
 	expiresAt time.Time
 }
 
-type likesStore struct {
-	Counts      map[string]int             `json:"counts"`
-	DeviceLikes map[string]map[string]bool `json:"deviceLikes"`
-}
-
 type likeRequest struct {
 	ResourceID string `json:"resourceId"`
-}
-
-type favoritesStore struct {
-	DeviceFavorites map[string]map[string]int64 `json:"deviceFavorites"`
 }
 
 type favoriteRequest struct {
@@ -52,49 +42,21 @@ type favoriteRequest struct {
 	Action     string `json:"action"`
 }
 
-type downloadsStore struct {
-	TotalCounts   map[string]int                    `json:"totalCounts"`
-	WeekKey       string                            `json:"weekKey"`
-	WeeklyCounts  map[string]int                    `json:"weeklyCounts"`
-	DeviceWindows map[string]deviceDownloadWindow   `json:"deviceWindows"`
-}
-
-type deviceDownloadWindow struct {
-	HourKey   string `json:"hourKey"`
-	DayKey    string `json:"dayKey"`
-	HourCount int    `json:"hourCount"`
-	DayCount  int    `json:"dayCount"`
-}
-
 type downloadRequest struct {
 	ResourceID string `json:"resourceId"`
 }
 
 const (
-	maxDownloadsPerHour = 50
-	maxDownloadsPerDay  = 100
-	maxMessageLength    = 500
-	maxMessagesPerPage  = 100
+	maxMessageLength   = 500
+	maxMessagesPerPage = 100
 )
 
-type messageEntry struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Content   string `json:"content"`
-	CreatedAt int64  `json:"createdAt"`
-	Serial    string `json:"serial,omitempty"`
-}
-
-type messagesStore struct {
-	Messages []messageEntry `json:"messages"`
+type profilePostRequest struct {
+	DisplayName string `json:"displayName"`
 }
 
 type messagePostRequest struct {
 	Content     string `json:"content"`
-	DisplayName string `json:"displayName"`
-}
-
-type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
@@ -226,143 +188,6 @@ func loadColumnTags(path string) ([]map[string]any, error) {
 	return list, nil
 }
 
-func loadLikesStore(path string) (likesStore, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return likesStore{
-				Counts:      map[string]int{},
-				DeviceLikes: map[string]map[string]bool{},
-			}, nil
-		}
-		return likesStore{}, err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		return likesStore{
-			Counts:      map[string]int{},
-			DeviceLikes: map[string]map[string]bool{},
-		}, nil
-	}
-	var store likesStore
-	if err := json.Unmarshal(raw, &store); err != nil {
-		return likesStore{}, err
-	}
-	if store.Counts == nil {
-		store.Counts = map[string]int{}
-	}
-	if store.DeviceLikes == nil {
-		store.DeviceLikes = map[string]map[string]bool{}
-	}
-	return store, nil
-}
-
-func saveLikesStore(path string, store likesStore) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	return os.WriteFile(path, raw, 0o644)
-}
-
-func loadFavoritesStore(path string) (favoritesStore, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return favoritesStore{DeviceFavorites: map[string]map[string]int64{}}, nil
-		}
-		return favoritesStore{}, err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		return favoritesStore{DeviceFavorites: map[string]map[string]int64{}}, nil
-	}
-	var store favoritesStore
-	if err := json.Unmarshal(raw, &store); err != nil {
-		return favoritesStore{}, err
-	}
-	if store.DeviceFavorites == nil {
-		store.DeviceFavorites = map[string]map[string]int64{}
-	}
-	return store, nil
-}
-
-func saveFavoritesStore(path string, store favoritesStore) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	return os.WriteFile(path, raw, 0o644)
-}
-
-func favoriteResourceIDsForSerial(store favoritesStore, serial string) []string {
-	deviceMap := store.DeviceFavorites[serial]
-	if len(deviceMap) == 0 {
-		return []string{}
-	}
-	type favoritePair struct {
-		id string
-		ts int64
-	}
-	pairs := make([]favoritePair, 0, len(deviceMap))
-	for id, ts := range deviceMap {
-		if strings.TrimSpace(id) == "" {
-			continue
-		}
-		pairs = append(pairs, favoritePair{id: id, ts: ts})
-	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].ts == pairs[j].ts {
-			return pairs[i].id > pairs[j].id
-		}
-		return pairs[i].ts > pairs[j].ts
-	})
-	ids := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		ids = append(ids, pair.id)
-	}
-	return ids
-}
-
-func loadMessagesStore(path string) (messagesStore, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return messagesStore{Messages: []messageEntry{}}, nil
-		}
-		return messagesStore{}, err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		return messagesStore{Messages: []messageEntry{}}, nil
-	}
-	var store messagesStore
-	if err := json.Unmarshal(raw, &store); err != nil {
-		return messagesStore{}, err
-	}
-	if store.Messages == nil {
-		store.Messages = []messageEntry{}
-	}
-	return store, nil
-}
-
-func saveMessagesStore(path string, store messagesStore) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	return os.WriteFile(path, raw, 0o644)
-}
-
 func displayUsernameFromSerial(serial string) string {
 	s := strings.TrimSpace(serial)
 	if s == "" {
@@ -381,139 +206,6 @@ func newMessageID() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(buf))
-}
-
-func currentWeekKey(now time.Time) string {
-	year, week := now.ISOWeek()
-	return fmt.Sprintf("%d-W%02d", year, week)
-}
-
-func loadDownloadsStore(path string) (downloadsStore, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			now := time.Now()
-			return downloadsStore{
-				TotalCounts:   map[string]int{},
-				WeekKey:       currentWeekKey(now),
-				WeeklyCounts:  map[string]int{},
-				DeviceWindows: map[string]deviceDownloadWindow{},
-			}, nil
-		}
-		return downloadsStore{}, err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		now := time.Now()
-		return downloadsStore{
-			TotalCounts:  map[string]int{},
-			WeekKey:      currentWeekKey(now),
-			WeeklyCounts: map[string]int{},
-		}, nil
-	}
-	var store downloadsStore
-	if err := json.Unmarshal(raw, &store); err != nil {
-		return downloadsStore{}, err
-	}
-	if store.TotalCounts == nil {
-		store.TotalCounts = map[string]int{}
-	}
-	if store.WeeklyCounts == nil {
-		store.WeeklyCounts = map[string]int{}
-	}
-	if store.DeviceWindows == nil {
-		store.DeviceWindows = map[string]deviceDownloadWindow{}
-	}
-	if strings.TrimSpace(store.WeekKey) == "" {
-		store.WeekKey = currentWeekKey(time.Now())
-	}
-	return store, nil
-}
-
-func saveDownloadsStore(path string, store downloadsStore) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	return os.WriteFile(path, raw, 0o644)
-}
-
-func currentDayKey(now time.Time) string {
-	return now.Format("2006-01-02")
-}
-
-func currentHourKey(now time.Time) string {
-	return now.Format("2006-01-02T15")
-}
-
-func (store *downloadsStore) ensureDeviceWindow(serial string, now time.Time) {
-	if store.DeviceWindows == nil {
-		store.DeviceWindows = map[string]deviceDownloadWindow{}
-	}
-	hourKey := currentHourKey(now)
-	dayKey := currentDayKey(now)
-	window := store.DeviceWindows[serial]
-	if window.HourKey != hourKey {
-		window.HourKey = hourKey
-		window.HourCount = 0
-	}
-	if window.DayKey != dayKey {
-		window.DayKey = dayKey
-		window.DayCount = 0
-	}
-	store.DeviceWindows[serial] = window
-}
-
-func (store *downloadsStore) deviceDownloadLimitMessage(serial string, now time.Time) string {
-	store.ensureDeviceWindow(serial, now)
-	window := store.DeviceWindows[serial]
-	if window.HourCount >= maxDownloadsPerHour {
-		return fmt.Sprintf("每小时最多下载%d次，请稍后再试", maxDownloadsPerHour)
-	}
-	if window.DayCount >= maxDownloadsPerDay {
-		return fmt.Sprintf("每天最多下载%d次，请明天再试", maxDownloadsPerDay)
-	}
-	return ""
-}
-
-func (store *downloadsStore) attemptDeviceDownload(serial, resourceID string, now time.Time) (deviceDownloadWindow, int, int, string) {
-	store.ensureDeviceWindow(serial, now)
-	if limitMsg := store.deviceDownloadLimitMessage(serial, now); limitMsg != "" {
-		window := store.DeviceWindows[serial]
-		totalCount := store.TotalCounts[resourceID]
-		weeklyCount := store.WeeklyCounts[resourceID]
-		return window, totalCount, weeklyCount, limitMsg
-	}
-
-	window := store.DeviceWindows[serial]
-	window.HourCount++
-	window.DayCount++
-	store.DeviceWindows[serial] = window
-	store.recordDownload(resourceID, now)
-	return window, store.TotalCounts[resourceID], store.WeeklyCounts[resourceID], ""
-}
-
-func (store *downloadsStore) ensureCurrentWeek(now time.Time) {
-	weekKey := currentWeekKey(now)
-	if store.WeekKey != weekKey {
-		store.WeekKey = weekKey
-		store.WeeklyCounts = map[string]int{}
-	}
-}
-
-func (store *downloadsStore) recordDownload(resourceID string, now time.Time) {
-	store.ensureCurrentWeek(now)
-	if store.TotalCounts == nil {
-		store.TotalCounts = map[string]int{}
-	}
-	if store.WeeklyCounts == nil {
-		store.WeeklyCounts = map[string]int{}
-	}
-	store.TotalCounts[resourceID] = store.TotalCounts[resourceID] + 1
-	store.WeeklyCounts[resourceID] = store.WeeklyCounts[resourceID] + 1
 }
 
 func normalizeHexID(v string) string {
@@ -1011,49 +703,66 @@ func main() {
 	if err != nil {
 		log.Fatalf("load image map failed: %v", err)
 	}
-	likes, err := loadLikesStore(resourceLikesPath)
+	userDataRepo, err := service.NewUserDataRepo(service.UserDataPaths{
+		LikesPath:     resourceLikesPath,
+		FavoritesPath: resourceFavoritesPath,
+		DownloadsPath: resourceDownloadsPath,
+		MessagesPath:  messageBoardPath,
+		ProfilesPath:  userProfilesPath,
+		CreditsPath:   aiImageCreditsPath,
+		SharesPath:    aiImageSharesPath,
+	})
+	if err != nil {
+		log.Fatalf("init user data storage failed: %v", err)
+	}
+	defer userDataRepo.Close()
+	if userDataRepo.UsesMySQL() {
+		log.Printf("info: user data storage backend=mysql")
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("MYSQL_IMPORT_JSON")), "1") {
+			if err := userDataRepo.ImportJSONFiles(); err != nil {
+				log.Fatalf("mysql import json failed: %v", err)
+			}
+			log.Printf("info: imported JSON files into MySQL")
+		}
+	} else {
+		log.Printf("info: user data storage backend=json")
+	}
+
+	likes, err := userDataRepo.LoadLikes()
 	if err != nil {
 		log.Fatalf("load resource likes failed: %v", err)
 	}
-	favorites, err := loadFavoritesStore(resourceFavoritesPath)
+	favorites, err := userDataRepo.LoadFavorites()
 	if err != nil {
 		log.Fatalf("load resource favorites failed: %v", err)
 	}
-	downloads, err := loadDownloadsStore(resourceDownloadsPath)
+	downloads, err := userDataRepo.LoadDownloads()
 	if err != nil {
 		log.Fatalf("load resource downloads failed: %v", err)
 	}
-	messages, err := loadMessagesStore(messageBoardPath)
+	messages, err := userDataRepo.LoadMessages()
 	if err != nil {
 		log.Fatalf("load message board failed: %v", err)
 	}
-	userProfiles, err := service.LoadUserProfiles(userProfilesPath)
+	userProfiles, err := userDataRepo.LoadUserProfiles()
 	if err != nil {
 		log.Fatalf("load user profiles failed: %v", err)
 	}
-	aiShareQuota, err := service.LoadAIShareQuotaStore(aiImageSharesPath)
+	aiShareQuota, err := userDataRepo.LoadAIShareQuota()
 	if err != nil {
 		log.Fatalf("load ai image share counts failed: %v", err)
 	}
-	aiCredits, err := service.LoadAICreditsStore(aiImageCreditsPath)
+	aiCredits, err := userDataRepo.LoadAICredits()
 	if err != nil {
 		log.Fatalf("load ai image credits failed: %v", err)
 	}
-	var aiCreditsLastMod time.Time
-	if info, err := os.Stat(aiImageCreditsPath); err == nil {
-		aiCreditsLastMod = info.ModTime()
-	}
-	var aiShareQuotaLastMod time.Time
-	if info, err := os.Stat(aiImageSharesPath); err == nil {
-		aiShareQuotaLastMod = info.ModTime()
-	}
 	reloadAICreditsLocked := func() {
-		if err := service.TryReloadAICreditsStore(aiImageCreditsPath, &aiCredits, &aiCreditsLastMod); err != nil {
+		if err := userDataRepo.TryReloadAICredits(&aiCredits); err != nil {
 			log.Printf("warn: reload ai credits failed: %v", err)
 		}
 	}
 	reloadAIShareQuotaLocked := func() {
-		if err := service.TryReloadAIShareQuotaStore(aiImageSharesPath, &aiShareQuota, &aiShareQuotaLastMod); err != nil {
+		if err := userDataRepo.TryReloadAIShareQuota(&aiShareQuota); err != nil {
 			log.Printf("warn: reload ai share quota failed: %v", err)
 		}
 	}
@@ -1259,7 +968,7 @@ func main() {
 
 		profilesMu.Lock()
 		displayName := service.SetStoredDisplayName(&userProfiles, serial, req.DisplayName)
-		saveErr := service.SaveUserProfiles(userProfilesPath, userProfiles)
+		saveErr := userDataRepo.SaveUserProfiles(userProfiles)
 		profilesMu.Unlock()
 		if saveErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "昵称保存失败"})
@@ -1398,7 +1107,7 @@ func main() {
 			})
 			return
 		}
-		if saveErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); saveErr != nil {
+		if saveErr := userDataRepo.SaveAICredits(aiCredits); saveErr != nil {
 			aiCredits.Refund(serial, service.AICreditCostPerGeneration)
 			aiCreditsMu.Unlock()
 			log.Printf("warn: save ai image credits failed: %v", saveErr)
@@ -1417,7 +1126,7 @@ func main() {
 			aiCreditsMu.Lock()
 			reloadAICreditsLocked()
 			creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
-			if refundErr := service.SaveAICreditsStore(aiImageCreditsPath, aiCredits); refundErr != nil {
+			if refundErr := userDataRepo.SaveAICredits(aiCredits); refundErr != nil {
 				log.Printf("warn: refund ai image credits failed: %v", refundErr)
 			}
 			aiCreditsMu.Unlock()
@@ -1570,7 +1279,7 @@ func main() {
 		aiShareMu.Lock()
 		reloadAIShareQuotaLocked()
 		shareCount := aiShareQuota.RecordShare(serial)
-		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save ai image share counts failed: %v", saveErr)
@@ -1676,7 +1385,7 @@ func main() {
 		aiShareMu.Lock()
 		reloadAIShareQuotaLocked()
 		shareCount := aiShareQuota.RecordShare(serial)
-		saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save user image share counts failed: %v", saveErr)
@@ -1835,7 +1544,7 @@ func main() {
 			aiShareMu.Lock()
 			reloadAIShareQuotaLocked()
 			shareCount := aiShareQuota.RecordShare(item.Serial)
-			saveErr := service.SaveAIShareQuotaStore(aiImageSharesPath, aiShareQuota)
+			saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
 			aiShareMu.Unlock()
 			if saveErr != nil {
 				log.Printf("warn: save ai image share counts after review approve failed: %v", saveErr)
@@ -1947,7 +1656,7 @@ func main() {
 		if likeCount < 0 {
 			likeCount = 0
 		}
-		saveErr := saveLikesStore(resourceLikesPath, likes)
+		saveErr := userDataRepo.SaveLikes(likes)
 		likesMu.Unlock()
 		if saveErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "点赞保存失败"})
@@ -1971,7 +1680,7 @@ func main() {
 		}
 
 		favoritesMu.RLock()
-		favoriteResourceIDs := favoriteResourceIDsForSerial(favorites, serial)
+		favoriteResourceIDs := service.FavoriteResourceIDsForSerial(favorites, serial)
 		favoritesMu.RUnlock()
 
 		c.JSON(http.StatusOK, gin.H{
@@ -2033,8 +1742,8 @@ func main() {
 				favorited = true
 			}
 		}
-		favoriteResourceIDs := favoriteResourceIDsForSerial(favorites, serial)
-		saveErr := saveFavoritesStore(resourceFavoritesPath, favorites)
+		favoriteResourceIDs := service.FavoriteResourceIDsForSerial(favorites, serial)
+		saveErr := userDataRepo.SaveFavorites(favorites)
 		favoritesMu.Unlock()
 		if saveErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "收藏保存失败"})
@@ -2056,7 +1765,7 @@ func main() {
 		}
 
 		downloadsMu.Lock()
-		downloads.ensureCurrentWeek(time.Now())
+		downloads.EnsureCurrentWeek(time.Now())
 		totalCounts := make(map[string]int, len(downloads.TotalCounts))
 		for id, count := range downloads.TotalCounts {
 			if count < 0 {
@@ -2107,13 +1816,13 @@ func main() {
 
 		now := time.Now()
 		downloadsMu.Lock()
-		downloads.ensureDeviceWindow(serial, now)
-		downloads.ensureCurrentWeek(now)
+		downloads.EnsureDeviceWindow(serial, now)
+		downloads.EnsureCurrentWeek(now)
 		window := downloads.DeviceWindows[serial]
 		totalCount := downloads.TotalCounts[resourceID]
 		weeklyCount := downloads.WeeklyCounts[resourceID]
 		weekKey := downloads.WeekKey
-		limitMsg := downloads.deviceDownloadLimitMessage(serial, now)
+		limitMsg := downloads.DeviceDownloadLimitMessage(serial, now)
 		downloadsMu.Unlock()
 
 		if limitMsg != "" {
@@ -2162,16 +1871,16 @@ func main() {
 		}
 
 		now := time.Now()
-		var window deviceDownloadWindow
+		var window service.DeviceDownloadWindow
 		var totalCount int
 		var weeklyCount int
 		var weekKey string
 		if !previewOnly {
 			downloadsMu.Lock()
 			var limitMsg string
-			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
+			window, totalCount, weeklyCount, limitMsg = downloads.AttemptDeviceDownload(serial, id, now)
 			weekKey = downloads.WeekKey
-			saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+			saveErr := userDataRepo.SaveDownloads(downloads)
 			downloadsMu.Unlock()
 			if limitMsg != "" {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -2259,16 +1968,16 @@ func main() {
 		cacheKey := cacheKeyPrefix + objectKey
 
 		now := time.Now()
-		var window deviceDownloadWindow
+		var window service.DeviceDownloadWindow
 		var totalCount int
 		var weeklyCount int
 		var weekKey string
 		if forDownload {
 			downloadsMu.Lock()
 			var limitMsg string
-			window, totalCount, weeklyCount, limitMsg = downloads.attemptDeviceDownload(serial, id, now)
+			window, totalCount, weeklyCount, limitMsg = downloads.AttemptDeviceDownload(serial, id, now)
 			weekKey = downloads.WeekKey
-			saveErr := saveDownloadsStore(resourceDownloadsPath, downloads)
+			saveErr := userDataRepo.SaveDownloads(downloads)
 			downloadsMu.Unlock()
 			if limitMsg != "" {
 				c.JSON(http.StatusTooManyRequests, gin.H{
@@ -2370,7 +2079,7 @@ func main() {
 		if start < 0 {
 			start = 0
 		}
-		slice := make([]messageEntry, len(messages.Messages[start:]))
+		slice := make([]service.MessageEntry, len(messages.Messages[start:]))
 		copy(slice, messages.Messages[start:])
 		messagesMu.RUnlock()
 
@@ -2419,7 +2128,7 @@ func main() {
 			return
 		}
 
-		entry := messageEntry{
+		entry := service.MessageEntry{
 			ID:     newMessageID(),
 			Serial: serial,
 			Username: func() string {
@@ -2433,7 +2142,7 @@ func main() {
 
 		messagesMu.Lock()
 		messages.Messages = append(messages.Messages, entry)
-		saveErr := saveMessagesStore(messageBoardPath, messages)
+		saveErr := userDataRepo.SaveMessages(messages)
 		messagesMu.Unlock()
 		if saveErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "留言保存失败"})
