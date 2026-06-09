@@ -11,6 +11,7 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import { MAX_QUESTION_LENGTH, askAiGuide } from "../services/aiGuideService";
 import { clearAuthState, hasValidLocalAuth } from "../services/authService";
 import { displayDownloadCount, fetchResourceDownloads } from "../services/downloadStatsService";
+import { fetchResourceFavorites } from "../services/favoriteService";
 import { fetchResourceLikes } from "../services/likeService";
 import { fetchResources } from "../services/resourceService";
 import type { AiGuideMessage } from "../types/aiGuide";
@@ -47,12 +48,16 @@ export default function AiGuidePage() {
     likingId,
     likeCounts,
     likedIds,
+    favoriteIds,
+    favoriteIdSet,
+    favoritingId,
     totalDownloadCounts,
     weeklyDownloadCounts,
     errorMessage,
     setErrorMessage,
     setLikeCounts,
     setLikedIds,
+    setFavoriteIds,
     setTotalDownloadCounts,
     setWeeklyDownloadCounts,
     handleDownload,
@@ -60,6 +65,7 @@ export default function AiGuidePage() {
     handleTransfer,
     handlePlay,
     handleLike,
+    handleFavorite,
     stopPlay,
   } = useResourceInteractions();
 
@@ -75,13 +81,16 @@ export default function AiGuidePage() {
         setLikedIds(state.likedIds);
       })
       .catch(() => undefined);
+    void fetchResourceFavorites()
+      .then((state) => setFavoriteIds(state.favoriteIds))
+      .catch(() => undefined);
     void fetchResourceDownloads()
       .then((state) => {
         setTotalDownloadCounts(state.totalCounts);
         setWeeklyDownloadCounts(state.weeklyCounts);
       })
       .catch(() => undefined);
-  }, [navigate, setLikeCounts, setLikedIds, setTotalDownloadCounts, setWeeklyDownloadCounts]);
+  }, [navigate, setFavoriteIds, setLikeCounts, setLikedIds, setTotalDownloadCounts, setWeeklyDownloadCounts]);
 
   const resourceMap = useMemo(() => {
     const map = new Map<number, ResourceItem>();
@@ -201,6 +210,7 @@ export default function AiGuidePage() {
                         onPlay={handlePlay}
                         onStopPlay={stopPlay}
                         onLike={handleLike}
+                        onFavorite={handleFavorite}
                         downloading={downloadingId === resource.id}
                         transferring={transferringId === resource.id}
                         playing={playingId === resource.id}
@@ -209,6 +219,8 @@ export default function AiGuidePage() {
                         liking={likingId === resource.id}
                         liked={likedIds.has(resource.id)}
                         likeCount={likeCounts[resource.id] || 0}
+                        favorited={favoriteIdSet.has(resource.id)}
+                        favoriting={favoritingId === resource.id}
                         downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
                         weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
                       />

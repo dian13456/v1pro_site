@@ -12,6 +12,7 @@ interface ResourceCardProps {
   onPlay: (resource: ResourceItem) => void;
   onStopPlay: () => void;
   onLike: (resource: ResourceItem) => void;
+  onFavorite?: (resource: ResourceItem) => void;
   downloading: boolean;
   transferring?: boolean;
   playing: boolean;
@@ -20,6 +21,8 @@ interface ResourceCardProps {
   liking: boolean;
   liked: boolean;
   likeCount: number;
+  favorited?: boolean;
+  favoriting?: boolean;
   downloadCount: number;
   weeklyDownloadCount: number;
   showWeeklyDownloadCount?: boolean;
@@ -33,6 +36,7 @@ function ResourceCardComponent({
   onPlay,
   onStopPlay,
   onLike,
+  onFavorite,
   downloading,
   transferring = false,
   playing,
@@ -41,6 +45,8 @@ function ResourceCardComponent({
   liking,
   liked,
   likeCount,
+  favorited = false,
+  favoriting = false,
   downloadCount,
   weeklyDownloadCount,
   showWeeklyDownloadCount = false,
@@ -111,7 +117,25 @@ function ResourceCardComponent({
         <div className="inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs text-white dark:bg-white dark:text-slate-900">
           {materialLabel}
         </div>
-        <div className="flex flex-col items-end gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-2">
+          {onFavorite ? (
+            <button
+              type="button"
+              aria-label={favorited ? "取消收藏" : "收藏"}
+              disabled={favoriting || transferring}
+              onClick={() => onFavorite(resource)}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                favorited
+                  ? "border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/50 dark:bg-amber-500/15 dark:text-amber-300"
+                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.8L12 16.9 5.8 20.2l1.6-6.8-5.2-4.5 6.9-.6L12 2z" />
+              </svg>
+            </button>
+          ) : null}
+          <div className="flex flex-col items-end gap-1 text-[11px] text-slate-500 dark:text-slate-400">
           {showWeeklyDownloadCount && weeklyDownloadCount > 0 ? (
             <div className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
               本周 {weeklyDownloadCount}
@@ -119,6 +143,7 @@ function ResourceCardComponent({
           ) : null}
           {downloadCount > 0 ? <div>总下载 {downloadCount}</div> : null}
           {resource.author ? <div>上传人：{resource.author}</div> : null}
+          </div>
         </div>
       </div>
       <DevicePreviewFrame hoverGlow>

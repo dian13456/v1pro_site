@@ -17,6 +17,7 @@ import { fetchResourceDownloads, displayDownloadCount } from "../services/downlo
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
+import { addResourceFavorite, fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
@@ -43,6 +44,8 @@ export default function ResourcesPage() {
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [favoritingId, setFavoritingId] = useState<number | null>(null);
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
   const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
@@ -168,6 +171,12 @@ export default function ResourcesPage() {
       .catch(() => {
         // Ignore like init errors, download flow handles auth failures explicitly.
       });
+    fetchResourceFavorites()
+      .then((state) => {
+        if (!active) return;
+        setFavoriteIds(state.favoriteIds);
+      })
+      .catch(() => undefined);
     fetchResourceDownloads()
       .then((state) => {
         if (!active) return;
@@ -272,6 +281,30 @@ export default function ResourcesPage() {
     applyDownloadStats(resource.id, result.stats);
     setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
     window.setTimeout(() => setTransferNotice(""), 5000);
+    void addResourceFavorite(resource.id)
+      .then((state) => setFavoriteIds(state.favoriteIds))
+      .catch(() => undefined);
+  };
+
+  const handleFavorite = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setFavoritingId(resource.id);
+      setErrorMessage("");
+      const result = await toggleResourceFavorite(resource.id);
+      setFavoriteIds(result.state.favoriteIds);
+    } catch (err) {
+      const message = (err as Error)?.message || "收藏操作失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setFavoritingId(null);
+    }
   };
 
   const handleLike = async (resource: ResourceItem) => {
@@ -524,6 +557,7 @@ export default function ResourcesPage() {
                   setPlayingUrl("");
                 }}
                 onLike={handleLike}
+                onFavorite={handleFavorite}
                 downloading={downloadingId === resource.id}
                 transferring={transferringId === resource.id}
                 playing={playingId === resource.id}
@@ -532,6 +566,8 @@ export default function ResourcesPage() {
                 liking={likingId === resource.id}
                 liked={likedIds.has(resource.id)}
                 likeCount={likeCounts[resource.id] || 0}
+                favorited={favoriteIds.includes(resource.id)}
+                favoriting={favoritingId === resource.id}
                 downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
                 weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
                 showWeeklyDownloadCount={sortMode === "weeklyTop"}

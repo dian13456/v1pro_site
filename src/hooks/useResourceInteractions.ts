@@ -4,6 +4,7 @@ import { hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
+import { addResourceFavorite, toggleResourceFavorite } from "../services/favoriteService";
 import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -24,6 +25,8 @@ export function useResourceInteractions() {
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [favoritingId, setFavoritingId] = useState<number | null>(null);
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
   const [errorMessage, setErrorMessage] = useState("");
@@ -110,6 +113,30 @@ export function useResourceInteractions() {
     applyDownloadStats(resource.id, result.stats);
     setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
     window.setTimeout(() => setTransferNotice(""), 5000);
+    void addResourceFavorite(resource.id)
+      .then((state) => setFavoriteIds(state.favoriteIds))
+      .catch(() => undefined);
+  };
+
+  const handleFavorite = async (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setFavoritingId(resource.id);
+      setErrorMessage("");
+      const result = await toggleResourceFavorite(resource.id);
+      setFavoriteIds(result.state.favoriteIds);
+    } catch (err) {
+      const message = (err as Error)?.message || "收藏操作失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) {
+        navigate("/auth", { replace: true });
+      }
+    } finally {
+      setFavoritingId(null);
+    }
   };
 
   const handleLike = async (resource: ResourceItem) => {
@@ -152,6 +179,10 @@ export function useResourceInteractions() {
     likingId,
     likeCounts,
     likedIds,
+    favoriteIds,
+    favoriteIdSet: new Set(favoriteIds),
+    favoritingId,
+    setFavoriteIds,
     totalDownloadCounts,
     weeklyDownloadCounts,
     errorMessage,
@@ -165,6 +196,7 @@ export function useResourceInteractions() {
     handleTransfer,
     handlePlay,
     handleLike,
+    handleFavorite,
     stopPlay,
   };
 }

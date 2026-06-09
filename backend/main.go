@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,15 @@ type likesStore struct {
 
 type likeRequest struct {
 	ResourceID string `json:"resourceId"`
+}
+
+type favoritesStore struct {
+	DeviceFavorites map[string]map[string]int64 `json:"deviceFavorites"`
+}
+
+type favoriteRequest struct {
+	ResourceID string `json:"resourceId"`
+	Action     string `json:"action"`
 }
 
 type downloadsStore struct {
@@ -256,6 +266,68 @@ func saveLikesStore(path string, store likesStore) error {
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+func loadFavoritesStore(path string) (favoritesStore, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return favoritesStore{DeviceFavorites: map[string]map[string]int64{}}, nil
+		}
+		return favoritesStore{}, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return favoritesStore{DeviceFavorites: map[string]map[string]int64{}}, nil
+	}
+	var store favoritesStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		return favoritesStore{}, err
+	}
+	if store.DeviceFavorites == nil {
+		store.DeviceFavorites = map[string]map[string]int64{}
+	}
+	return store, nil
+}
+
+func saveFavoritesStore(path string, store favoritesStore) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return os.WriteFile(path, raw, 0o644)
+}
+
+func favoriteResourceIDsForSerial(store favoritesStore, serial string) []string {
+	deviceMap := store.DeviceFavorites[serial]
+	if len(deviceMap) == 0 {
+		return []string{}
+	}
+	type favoritePair struct {
+		id string
+		ts int64
+	}
+	pairs := make([]favoritePair, 0, len(deviceMap))
+	for id, ts := range deviceMap {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		pairs = append(pairs, favoritePair{id: id, ts: ts})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].ts == pairs[j].ts {
+			return pairs[i].id > pairs[j].id
+		}
+		return pairs[i].ts > pairs[j].ts
+	})
+	ids := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		ids = append(ids, pair.id)
+	}
+	return ids
 }
 
 func loadMessagesStore(path string) (messagesStore, error) {
@@ -852,6 +924,10 @@ func main() {
 	if resourceLikesPath == "" {
 		resourceLikesPath = filepath.Join("config", "resource_likes.json")
 	}
+	resourceFavoritesPath := os.Getenv("RESOURCE_FAVORITES_PATH")
+	if resourceFavoritesPath == "" {
+		resourceFavoritesPath = filepath.Join("config", "resource_favorites.json")
+	}
 	resourceDownloadsPath := os.Getenv("RESOURCE_DOWNLOADS_PATH")
 	if resourceDownloadsPath == "" {
 		resourceDownloadsPath = filepath.Join("config", "resource_downloads.json")
@@ -938,6 +1014,10 @@ func main() {
 	likes, err := loadLikesStore(resourceLikesPath)
 	if err != nil {
 		log.Fatalf("load resource likes failed: %v", err)
+	}
+	favorites, err := loadFavoritesStore(resourceFavoritesPath)
+	if err != nil {
+		log.Fatalf("load resource favorites failed: %v", err)
 	}
 	downloads, err := loadDownloadsStore(resourceDownloadsPath)
 	if err != nil {
@@ -1043,6 +1123,7 @@ func main() {
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
 	var likesMu sync.RWMutex
+	var favoritesMu sync.RWMutex
 	var downloadsMu sync.Mutex
 	var messagesMu sync.RWMutex
 	var profilesMu sync.RWMutex
@@ -1878,6 +1959,92 @@ func main() {
 			"alreadyLiked": alreadyLiked,
 			"liked":        true,
 			"likeCount":    likeCount,
+		})
+	})
+
+	router.GET("/api/resource-favorites", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		favoritesMu.RLock()
+		favoriteResourceIDs := favoriteResourceIDsForSerial(favorites, serial)
+		favoritesMu.RUnlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":             true,
+			"favoriteResourceIds": favoriteResourceIDs,
+		})
+	})
+
+	router.POST("/api/resource-favorite", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, likeTokenRateLimiter, likeIPRateLimiter, serial, "收藏操作过于频繁，请稍后再试") {
+			return
+		}
+
+		var req favoriteRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 不能为空"})
+			return
+		}
+		resourceID := strings.TrimSpace(req.ResourceID)
+		action := strings.ToLower(strings.TrimSpace(req.Action))
+		if action == "" {
+			action = "toggle"
+		}
+		if action != "toggle" && action != "add" && action != "remove" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "action 无效"})
+			return
+		}
+
+		favoritesMu.Lock()
+		if favorites.DeviceFavorites[serial] == nil {
+			favorites.DeviceFavorites[serial] = map[string]int64{}
+		}
+		deviceFavorites := favorites.DeviceFavorites[serial]
+		_, exists := deviceFavorites[resourceID]
+		favorited := exists
+		switch action {
+		case "add":
+			if !exists {
+				deviceFavorites[resourceID] = time.Now().Unix()
+				favorited = true
+			}
+		case "remove":
+			if exists {
+				delete(deviceFavorites, resourceID)
+				favorited = false
+			}
+		case "toggle":
+			if exists {
+				delete(deviceFavorites, resourceID)
+				favorited = false
+			} else {
+				deviceFavorites[resourceID] = time.Now().Unix()
+				favorited = true
+			}
+		}
+		favoriteResourceIDs := favoriteResourceIDsForSerial(favorites, serial)
+		saveErr := saveFavoritesStore(resourceFavoritesPath, favorites)
+		favoritesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "收藏保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":             true,
+			"favorited":           favorited,
+			"favoriteResourceIds": favoriteResourceIDs,
 		})
 	})
 

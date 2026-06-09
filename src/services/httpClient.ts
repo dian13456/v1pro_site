@@ -4,6 +4,7 @@ import { displayUsernameFromSerial } from "../utils/displayUsername";
 const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 const DEV_LIKE_COUNTS_KEY = "jiadian_dev_like_counts";
 const DEV_LIKED_DEVICES_KEY = "jiadian_dev_like_devices";
+const DEV_FAVORITES_KEY = "jiadian_dev_favorite_devices";
 const DEV_DOWNLOAD_TOTAL_KEY = "jiadian_dev_download_total_counts";
 const DEV_DOWNLOAD_WEEKLY_KEY = "jiadian_dev_download_weekly_counts";
 const DEV_DOWNLOAD_WEEK_KEY = "jiadian_dev_download_week_key";
@@ -309,6 +310,64 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       liked: true,
       likeCount: Math.max(0, Number(counts[resourceId] || 0)),
     };
+  }
+
+  if (path === "/api/resource-favorites") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const rawDevices = localStorage.getItem(DEV_FAVORITES_KEY);
+    const devices = rawDevices
+      ? (JSON.parse(rawDevices) as Record<string, Record<string, number>>)
+      : {};
+    const deviceFavorites = devices[serial] || {};
+    const favoriteResourceIds = Object.entries(deviceFavorites)
+      .sort(([, aTs], [, bTs]) => Number(bTs) - Number(aTs))
+      .map(([id]) => Number.parseInt(id, 10))
+      .filter((id) => Number.isFinite(id));
+    return { success: true, favoriteResourceIds };
+  }
+
+  if (path === "/api/resource-favorite") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const resourceId = String(body.resourceId || "");
+    if (!resourceId) {
+      return { success: false, message: "resourceId 不能为空" };
+    }
+    const action = String(body.action || "toggle").toLowerCase();
+    const rawDevices = localStorage.getItem(DEV_FAVORITES_KEY);
+    const devices = rawDevices
+      ? (JSON.parse(rawDevices) as Record<string, Record<string, number>>)
+      : {};
+    const deviceFavorites = devices[serial] || {};
+    const exists = Object.prototype.hasOwnProperty.call(deviceFavorites, resourceId);
+    let favorited = exists;
+    if (action === "add") {
+      if (!exists) {
+        deviceFavorites[resourceId] = Math.floor(Date.now() / 1000);
+        favorited = true;
+      }
+    } else if (action === "remove") {
+      if (exists) {
+        delete deviceFavorites[resourceId];
+        favorited = false;
+      }
+    } else if (exists) {
+      delete deviceFavorites[resourceId];
+      favorited = false;
+    } else {
+      deviceFavorites[resourceId] = Math.floor(Date.now() / 1000);
+      favorited = true;
+    }
+    devices[serial] = deviceFavorites;
+    localStorage.setItem(DEV_FAVORITES_KEY, JSON.stringify(devices));
+    const favoriteResourceIds = Object.entries(deviceFavorites)
+      .sort(([, aTs], [, bTs]) => Number(bTs) - Number(aTs))
+      .map(([id]) => Number.parseInt(id, 10))
+      .filter((id) => Number.isFinite(id));
+    return { success: true, favorited, favoriteResourceIds };
   }
 
   if (path === "/api/resource-downloads") {
