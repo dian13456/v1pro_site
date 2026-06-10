@@ -114,6 +114,16 @@ function ResourceCardComponent({
   const showTransfer = canTransferViaV1Pro(resource) && Boolean(onTransfer);
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
+  useEffect(() => {
+    if (resource.materialType !== "video" || !isPlaying || !playUrl) return;
+    const video = videoRef.current;
+    if (!video) return;
+    video.load();
+    void video.play().catch(() => {
+      // 自动播放被策略拦截时保留控件，用户可手动点播放
+    });
+  }, [resource.materialType, isPlaying, playUrl]);
+
   const handlePlayClick = async () => {
     if (isPlaying) {
       videoRef.current?.pause();
@@ -123,19 +133,7 @@ function ResourceCardComponent({
     if (playing) return;
 
     try {
-      const url = await onPlay(resource);
-      if (resource.materialType !== "video" || !url) {
-        return;
-      }
-
-      const video = videoRef.current;
-      if (!video) return;
-      video.src = url;
-      try {
-        await video.play();
-      } catch {
-        // 保留控件供用户手动播放
-      }
+      await onPlay(resource);
     } catch {
       // 错误信息由页面层 handlePlay 写入
     }

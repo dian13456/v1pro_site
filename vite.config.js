@@ -16,6 +16,7 @@ function injectProductionSecurity(apiBase) {
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob: https://*.myqcloud.com",
+        "media-src 'self' blob: https://*.myqcloud.com",
         `connect-src ${connectSrc.join(" ")}`,
         "font-src 'self'",
         "object-src 'none'",
