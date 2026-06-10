@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ResourceItem } from "../types/resource";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
@@ -9,7 +9,8 @@ interface ResourceCardProps {
   onDownload: (resource: ResourceItem) => void;
   onTransfer?: (resource: ResourceItem) => void;
   onTransferPrepare?: (resource: ResourceItem) => void;
-  onPlay: (resource: ResourceItem) => void;
+  onPlay: (resource: ResourceItem) => Promise<string | void>;
+  onPlayPrepare?: (resource: ResourceItem) => void;
   onStopPlay: () => void;
   onLike: (resource: ResourceItem) => void;
   onFavorite?: (resource: ResourceItem) => void;
@@ -34,6 +35,7 @@ function ResourceCardComponent({
   onTransfer,
   onTransferPrepare,
   onPlay,
+  onPlayPrepare,
   onStopPlay,
   onLike,
   onFavorite,
@@ -80,6 +82,7 @@ function ResourceCardComponent({
       ? "object-cover"
       : "object-contain";
   const [previewUrl, setPreviewUrl] = useState<string>("");
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +113,33 @@ function ResourceCardComponent({
 
   const showTransfer = canTransferViaV1Pro(resource) && Boolean(onTransfer);
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
+
+  const handlePlayClick = async () => {
+    if (isPlaying) {
+      videoRef.current?.pause();
+      onStopPlay();
+      return;
+    }
+    if (playing) return;
+
+    try {
+      const url = await onPlay(resource);
+      if (resource.materialType !== "video" || !url) {
+        return;
+      }
+
+      const video = videoRef.current;
+      if (!video) return;
+      video.src = url;
+      try {
+        await video.play();
+      } catch {
+        // 保留控件供用户手动播放
+      }
+    } catch {
+      // 错误信息由页面层 handlePlay 写入
+    }
+  };
 
   return (
     <article className="group rounded-3xl border border-white/25 bg-white/55 p-4 shadow-[0_30px_45px_-28px_rgba(0,0,0,0.55)] backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_32px_60px_-26px_rgba(34,211,238,0.45)] dark:border-white/10 dark:bg-slate-900/45">
@@ -147,16 +177,31 @@ function ResourceCardComponent({
         </div>
       </div>
       <DevicePreviewFrame hoverGlow>
-          {resource.materialType === "video" && isPlaying && playUrl ? (
-            <video
-              src={playUrl}
-              controls
-              autoPlay
-              playsInline
-              preload="metadata"
-              className={`h-full w-full ${previewFitClass}`}
-              onEnded={onStopPlay}
-            />
+          {resource.materialType === "video" ? (
+            <>
+              <video
+                ref={videoRef}
+                src={isPlaying && playUrl ? playUrl : undefined}
+                controls
+                playsInline
+                preload="metadata"
+                className={`h-full w-full ${previewFitClass} ${isPlaying && playUrl ? "" : "hidden"}`}
+                onEnded={onStopPlay}
+              />
+              {!(isPlaying && playUrl) && previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt={resource.title}
+                  loading="lazy"
+                  decoding="async"
+                  className={`h-full w-full ${previewFitClass}`}
+                />
+              ) : !(isPlaying && playUrl) ? (
+                <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                  视频预览加载中...
+                </div>
+              ) : null}
+            </>
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
             <img
               src={playUrl}
@@ -212,7 +257,9 @@ function ResourceCardComponent({
             <button
               type="button"
               disabled={playing || transferring}
-              onClick={() => onPlay(resource)}
+              onMouseEnter={() => onPlayPrepare?.(resource)}
+              onFocus={() => onPlayPrepare?.(resource)}
+              onClick={() => void handlePlayClick()}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
             >
               {playing ? "打开中..." : isPlaying ? "收起" : "播放"}

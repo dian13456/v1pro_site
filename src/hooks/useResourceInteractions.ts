@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { hasValidLocalAuth } from "../services/authService";
-import { createDownloadUrl } from "../services/downloadService";
+import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { addResourceFavorite, toggleResourceFavorite } from "../services/favoriteService";
@@ -65,7 +65,7 @@ export function useResourceInteractions() {
     }
   };
 
-  const handlePlay = async (resource: ResourceItem) => {
+  const handlePlay = async (resource: ResourceItem): Promise<string | void> => {
     if (playingResourceId === resource.id) {
       setPlayingResourceId(null);
       setPlayingUrl("");
@@ -84,15 +84,23 @@ export function useResourceInteractions() {
       }
       setPlayingResourceId(resource.id);
       setPlayingUrl(playResult.url);
+      return playResult.url;
     } catch (err) {
       const message = (err as Error)?.message || "播放链接生成失败";
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
       }
+      throw err;
     } finally {
       setPlayingId(null);
     }
+  };
+
+  const handlePlayPrepare = (resource: ResourceItem) => {
+    if (resource.materialType !== "video" && resource.materialType !== "gif") return;
+    if (!hasValidLocalAuth()) return;
+    prefetchPlayUrl(resource.id, resource.download);
   };
 
   const handleTransferPrepare = (resource: ResourceItem) => {
@@ -195,6 +203,7 @@ export function useResourceInteractions() {
     handleTransferPrepare,
     handleTransfer,
     handlePlay,
+    handlePlayPrepare,
     handleLike,
     handleFavorite,
     stopPlay,

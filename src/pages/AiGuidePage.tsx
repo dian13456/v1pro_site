@@ -64,6 +64,7 @@ export default function AiGuidePage() {
     handleTransferPrepare,
     handleTransfer,
     handlePlay,
+    handlePlayPrepare,
     handleLike,
     handleFavorite,
     stopPlay,
@@ -194,6 +195,7 @@ export default function AiGuidePage() {
                         onTransfer={handleTransfer}
                         onTransferPrepare={handleTransferPrepare}
                         onPlay={handlePlay}
+                        onPlayPrepare={handlePlayPrepare}
                         onStopPlay={stopPlay}
                         onLike={handleLike}
                         onFavorite={handleFavorite}

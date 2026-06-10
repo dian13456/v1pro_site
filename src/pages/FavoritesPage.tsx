@@ -44,6 +44,7 @@ export default function FavoritesPage() {
     handleTransferPrepare,
     handleTransfer,
     handlePlay,
+    handlePlayPrepare,
     handleLike,
     handleFavorite,
     stopPlay,
@@ -133,6 +134,7 @@ export default function FavoritesPage() {
                 onTransfer={handleTransfer}
                 onTransferPrepare={handleTransferPrepare}
                 onPlay={handlePlay}
+                onPlayPrepare={handlePlayPrepare}
                 onStopPlay={stopPlay}
                 onLike={handleLike}
                 onFavorite={handleFavorite}
