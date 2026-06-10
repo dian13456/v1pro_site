@@ -24,8 +24,9 @@ import { pickRandomItems } from "../utils/randomPick";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
   V1PRO_TRANSFER_NOT_READY_MESSAGE,
-  executeTransferToDevice,
+  canTransferViaV1Pro,
   prefetchTransferDownloadUrl,
+  runTransferToDevice,
 } from "../services/v1proTransferService";
 
 const RANDOM_PAGE_SIZE = 4;
@@ -161,6 +162,15 @@ export default function ResourcesPage() {
   useImagePreload(preloadList);
 
   useEffect(() => {
+    if (!hasValidLocalAuth() || isStaticMode()) return;
+    for (const item of visibleItems) {
+      if (canTransferViaV1Pro(item)) {
+        prefetchTransferDownloadUrl(item);
+      }
+    }
+  }, [visibleItems]);
+
+  useEffect(() => {
     let active = true;
     fetchResourceLikes()
       .then((state) => {
@@ -273,17 +283,23 @@ export default function ResourcesPage() {
     }
 
     setErrorMessage("");
-    const result = executeTransferToDevice(resource, { auto: true });
-    if (!result.launched) {
-      setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
-      return;
-    }
-    applyDownloadStats(resource.id, result.stats);
-    setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
-    window.setTimeout(() => setTransferNotice(""), 5000);
-    void addResourceFavorite(resource.id)
-      .then((state) => setFavoriteIds(state.favoriteIds))
-      .catch(() => undefined);
+    setTransferringId(resource.id);
+    void runTransferToDevice(resource, { auto: true })
+      .then((result) => {
+        if (!result.launched) {
+          setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+          return;
+        }
+        applyDownloadStats(resource.id, result.stats);
+        setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+        window.setTimeout(() => setTransferNotice(""), 5000);
+        void addResourceFavorite(resource.id)
+          .then((state) => setFavoriteIds(state.favoriteIds))
+          .catch(() => undefined);
+      })
+      .finally(() => {
+        setTransferringId(null);
+      });
   };
 
   const handleFavorite = async (resource: ResourceItem) => {

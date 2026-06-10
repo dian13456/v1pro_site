@@ -10,8 +10,8 @@ import type { ResourceItem } from "../types/resource";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
   V1PRO_TRANSFER_NOT_READY_MESSAGE,
-  executeTransferToDevice,
   prefetchTransferDownloadUrl,
+  runTransferToDevice,
 } from "../services/v1proTransferService";
 
 export function useResourceInteractions() {
@@ -113,17 +113,23 @@ export function useResourceInteractions() {
       return;
     }
     setErrorMessage("");
-    const result = executeTransferToDevice(resource, { auto: true });
-    if (!result.launched) {
-      setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
-      return;
-    }
-    applyDownloadStats(resource.id, result.stats);
-    setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
-    window.setTimeout(() => setTransferNotice(""), 5000);
-    void addResourceFavorite(resource.id)
-      .then((state) => setFavoriteIds(state.favoriteIds))
-      .catch(() => undefined);
+    setTransferringId(resource.id);
+    void runTransferToDevice(resource, { auto: true })
+      .then((result) => {
+        if (!result.launched) {
+          setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+          return;
+        }
+        applyDownloadStats(resource.id, result.stats);
+        setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+        window.setTimeout(() => setTransferNotice(""), 5000);
+        void addResourceFavorite(resource.id)
+          .then((state) => setFavoriteIds(state.favoriteIds))
+          .catch(() => undefined);
+      })
+      .finally(() => {
+        setTransferringId(null);
+      });
   };
 
   const handleFavorite = async (resource: ResourceItem) => {

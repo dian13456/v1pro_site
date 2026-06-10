@@ -115,6 +115,11 @@ function ResourceCardComponent({
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
+    if (!showTransfer) return;
+    onTransferPrepare?.(resource);
+  }, [resource.id, showTransfer, onTransferPrepare]);
+
+  useEffect(() => {
     if (resource.materialType !== "video" || !isPlaying || !playUrl) return;
     const video = videoRef.current;
     if (!video) return;
@@ -243,6 +248,7 @@ function ResourceCardComponent({
               disabled={downloading || transferring}
               onMouseEnter={() => onTransferPrepare?.(resource)}
               onFocus={() => onTransferPrepare?.(resource)}
+              onPointerDown={() => onTransferPrepare?.(resource)}
               onClick={() => onTransfer?.(resource)}
               className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
             >

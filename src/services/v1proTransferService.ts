@@ -34,7 +34,7 @@ export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
   "已发送传输请求，请在佳点 V1PRO 控制工具中查看进度。";
 
 export const V1PRO_TRANSFER_NOT_READY_MESSAGE =
-  "下载地址尚未就绪，请将鼠标在按钮上稍停片刻后再点「传输到设备」。";
+  "传输链接准备失败，请稍后重试。";
 
 const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
 const transferCache = new Map<number, TransferCacheEntry>();
@@ -152,7 +152,10 @@ function transferApiPath(resource: ResourceItem): string {
   return `/api/resource/?id=${resource.id}&download=1`;
 }
 
-async function fetchTransferDownloadUrl(resource: ResourceItem): Promise<{
+async function fetchTransferDownloadUrl(
+  resource: ResourceItem,
+  options: { verifyRemote?: boolean } = {},
+): Promise<{
   url: string;
   stats?: DownloadStatsSnapshot | null;
 }> {
@@ -164,9 +167,11 @@ async function fetchTransferDownloadUrl(resource: ResourceItem): Promise<{
     throw new Error("认证状态无效，请重新验证设备");
   }
 
-  const valid = await verifyTokenRemote();
-  if (!valid) {
-    throw new Error("认证已失效，请重新验证设备");
+  if (options.verifyRemote !== false) {
+    const valid = await verifyTokenRemote();
+    if (!valid) {
+      throw new Error("认证已失效，请重新验证设备");
+    }
   }
 
   if (isStaticMode()) {
@@ -220,7 +225,7 @@ export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
     return;
   }
 
-  const task = fetchTransferDownloadUrl(resource)
+  const task = fetchTransferDownloadUrl(resource, { verifyRemote: false })
     .then(({ url, stats }) => {
       storeTransferCache(resourceId, { url, stats });
     })
@@ -250,14 +255,51 @@ export async function resolveTransferSignedUrl(
   return fetchTransferDownloadUrl(resource);
 }
 
-/** 同步唤起 v1pro://；需事先 prefetchTransferDownloadUrl。 */
+export function waitForTransferDownloadUrl(
+  resource: ResourceItem,
+  timeoutMs = 15000,
+): Promise<TransferCacheEntry> {
+  const resourceId = resource.id;
+  const cached = transferCache.get(resourceId);
+  if (cached && isCacheEntryFresh(cached)) {
+    return Promise.resolve(cached);
+  }
+
+  prefetchTransferDownloadUrl(resource);
+  const inflight = transferInflight.get(resourceId);
+  if (!inflight) {
+    return Promise.reject(new Error(V1PRO_TRANSFER_NOT_READY_MESSAGE));
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error("传输链接准备超时，请检查网络后重试"));
+    }, timeoutMs);
+
+    void inflight
+      .then(() => {
+        window.clearTimeout(timer);
+        const entry = transferCache.get(resourceId);
+        if (entry && isCacheEntryFresh(entry)) {
+          resolve(entry);
+          return;
+        }
+        reject(new Error("下载链接生成失败，请稍后重试"));
+      })
+      .catch((err) => {
+        window.clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error("下载链接生成失败，请稍后重试"));
+      });
+  });
+}
+
+/** 同步唤起 v1pro://；链接已缓存时在同一 click 栈内执行。 */
 export function executeTransferToDevice(
   resource: ResourceItem,
   options: Pick<V1ProOpenOptions, "auto"> = {},
 ): TransferExecuteResult {
   const cached = transferCache.get(resource.id);
   if (!cached || !isCacheEntryFresh(cached)) {
-    prefetchTransferDownloadUrl(resource);
     return { launched: false, error: V1PRO_TRANSFER_NOT_READY_MESSAGE };
   }
 
@@ -268,14 +310,34 @@ export function executeTransferToDevice(
   return { url: cached.url, stats: cached.stats, launched: true };
 }
 
-/** @deprecated 使用 prefetchTransferDownloadUrl + executeTransferToDevice */
+/** 优先同步唤起；未缓存则等待预取完成后再唤起（用户只需点一次）。 */
+export async function runTransferToDevice(
+  resource: ResourceItem,
+  options: Pick<V1ProOpenOptions, "auto"> = {},
+): Promise<TransferExecuteResult> {
+  const immediate = executeTransferToDevice(resource, options);
+  if (immediate.launched) {
+    return immediate;
+  }
+
+  try {
+    await waitForTransferDownloadUrl(resource);
+  } catch (err) {
+    return {
+      launched: false,
+      error: (err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE,
+    };
+  }
+
+  return executeTransferToDevice(resource, options);
+}
+
+/** @deprecated 使用 runTransferToDevice */
 export async function transferResourceToDevice(
   resource: ResourceItem,
   options: Pick<V1ProOpenOptions, "auto"> = {},
 ): Promise<{ url: string; stats?: DownloadStatsSnapshot | null }> {
-  prefetchTransferDownloadUrl(resource);
-  await transferInflight.get(resource.id);
-  const result = executeTransferToDevice(resource, options);
+  const result = await runTransferToDevice(resource, options);
   if (!result.launched || !result.url) {
     throw new Error(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
   }

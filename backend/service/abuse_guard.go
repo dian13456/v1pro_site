@@ -61,12 +61,12 @@ func parseEnvDurationMin(key string, fallback time.Duration) time.Duration {
 
 func AbuseGuardConfigFromEnv() AbuseGuardConfig {
 	return AbuseGuardConfig{
-		ReadIPPerMin:           parseEnvInt("READ_RATE_LIMIT_IP_PER_MIN", 90),
-		DownloadTokenPerMin:    parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_TOKEN_PER_MIN", 40),
-		DownloadIPPerMin:       parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_IP_PER_MIN", 80),
-		InvalidTokenIPPerMin:   parseEnvInt("INVALID_TOKEN_RATE_LIMIT_IP_PER_MIN", 45),
-		NotFoundIPPerMin:       parseEnvInt("NOT_FOUND_SCAN_LIMIT_IP_PER_MIN", 25),
-		GlobalIPPerMin:         parseEnvInt("GLOBAL_API_RATE_LIMIT_IP_PER_MIN", 240),
+		ReadIPPerMin:           parseEnvInt("READ_RATE_LIMIT_IP_PER_MIN", 117),
+		DownloadTokenPerMin:    parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_TOKEN_PER_MIN", 52),
+		DownloadIPPerMin:       parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_IP_PER_MIN", 104),
+		InvalidTokenIPPerMin:   parseEnvInt("INVALID_TOKEN_RATE_LIMIT_IP_PER_MIN", 59),
+		NotFoundIPPerMin:       parseEnvInt("NOT_FOUND_SCAN_LIMIT_IP_PER_MIN", 33),
+		GlobalIPPerMin:         parseEnvInt("GLOBAL_API_RATE_LIMIT_IP_PER_MIN", 312),
 		NotFoundBlockThreshold: parseEnvInt("NOT_FOUND_BLOCK_THRESHOLD", 20),
 		InvalidBlockThreshold:  parseEnvInt("INVALID_TOKEN_BLOCK_THRESHOLD", 35),
 		BlockDuration:          parseEnvDurationMin("ABUSE_BLOCK_DURATION_MIN", 15*time.Minute),
