@@ -9,15 +9,16 @@ import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
-  V1PRO_TRANSFER_NOT_READY_MESSAGE,
+  V1PRO_TRANSFER_RETRY_MESSAGE,
+  handleTransferButtonClick,
   prefetchTransferDownloadUrl,
-  runTransferToDevice,
 } from "../services/v1proTransferService";
 
 export function useResourceInteractions() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
+  const [transferReadyId, setTransferReadyId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -113,23 +114,33 @@ export function useResourceInteractions() {
       return;
     }
     setErrorMessage("");
-    setTransferringId(resource.id);
-    void runTransferToDevice(resource, { auto: true })
-      .then((result) => {
-        if (!result.launched) {
-          setErrorMessage(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
-          return;
-        }
-        applyDownloadStats(resource.id, result.stats);
-        setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
-        window.setTimeout(() => setTransferNotice(""), 5000);
-        void addResourceFavorite(resource.id)
-          .then((state) => setFavoriteIds(state.favoriteIds))
-          .catch(() => undefined);
-      })
-      .finally(() => {
-        setTransferringId(null);
-      });
+    handleTransferButtonClick(
+      resource,
+      {
+        onLaunched: (result) => {
+          setTransferReadyId(null);
+          applyDownloadStats(resource.id, result.stats);
+          setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+          window.setTimeout(() => setTransferNotice(""), 5000);
+          void addResourceFavorite(resource.id)
+            .then((state) => setFavoriteIds(state.favoriteIds))
+            .catch(() => undefined);
+        },
+        onReadyForRetry: () => {
+          setTransferReadyId(resource.id);
+          setTransferNotice(V1PRO_TRANSFER_RETRY_MESSAGE);
+          window.setTimeout(() => setTransferNotice(""), 8000);
+        },
+        onError: (message) => {
+          setTransferReadyId(null);
+          setErrorMessage(message);
+        },
+        onPreparing: () => setTransferringId(resource.id),
+        onPrepareEnd: () => setTransferringId(null),
+        shouldSkipPrepare: () => transferringId === resource.id,
+      },
+      { auto: true },
+    );
   };
 
   const handleFavorite = async (resource: ResourceItem) => {
@@ -185,6 +196,7 @@ export function useResourceInteractions() {
   return {
     downloadingId,
     transferringId,
+    transferReadyId,
     transferNotice,
     setTransferNotice,
     playingId,

@@ -16,6 +16,7 @@ interface ResourceCardProps {
   onFavorite?: (resource: ResourceItem) => void;
   downloading: boolean;
   transferring?: boolean;
+  transferReady?: boolean;
   playing: boolean;
   isPlaying: boolean;
   playUrl: string;
@@ -41,6 +42,7 @@ function ResourceCardComponent({
   onFavorite,
   downloading,
   transferring = false,
+  transferReady = false,
   playing,
   isPlaying,
   playUrl,
@@ -245,14 +247,18 @@ function ResourceCardComponent({
           {showTransfer ? (
             <button
               type="button"
-              disabled={downloading || transferring}
+              disabled={downloading || (transferring && !transferReady)}
               onMouseEnter={() => onTransferPrepare?.(resource)}
               onFocus={() => onTransferPrepare?.(resource)}
               onPointerDown={() => onTransferPrepare?.(resource)}
               onClick={() => onTransfer?.(resource)}
-              className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`w-full rounded-xl px-3 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                transferReady
+                  ? "bg-amber-500 shadow-[0_0_0_2px_rgba(251,191,36,0.55)] hover:bg-amber-400"
+                  : "bg-cyan-600 hover:bg-cyan-500"
+              }`}
             >
-              {transferring ? "准备传输..." : "传输到设备"}
+              {transferring ? "准备传输..." : transferReady ? "再次点击传输" : "传输到设备"}
             </button>
           ) : null}
         </div>

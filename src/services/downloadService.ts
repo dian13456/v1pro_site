@@ -5,12 +5,6 @@ import { isStaticMode } from "./runtimeMode";
 import { parseDownloadStats } from "../types/downloadStats";
 import type { SignedDownloadResult } from "../types/downloadStats";
 
-interface DownloadSignResponse {
-  success: boolean;
-  url?: string;
-  message?: string;
-}
-
 interface GinResourceResponse {
   url?: string;
   error?: string;
@@ -86,42 +80,24 @@ export async function createDownloadUrl(
     return { url: fallbackDownloadUrl };
   }
 
-  try {
-    const query = forDownload
-      ? `/api/resource/?id=${resourceId}&download=1`
-      : `/api/resource/?id=${resourceId}&preview=1`;
-    const signed = await apiFetch<GinResourceResponse>(query, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
-      },
-    });
+  const query = forDownload
+    ? `/api/resource/?id=${resourceId}&download=1`
+    : `/api/resource/?id=${resourceId}&preview=1`;
+  const signed = await apiFetch<GinResourceResponse>(query, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+    },
+  });
 
-    if (signed.url) {
-      if (!forDownload) {
-        rememberPlayUrl(resourceId, signed.url);
-      }
-      return {
-        url: signed.url,
-        stats: parseDownloadStats(signed),
-      };
+  if (signed.url) {
+    if (!forDownload) {
+      rememberPlayUrl(resourceId, signed.url);
     }
-    throw new Error(signed.error || "下载链接生成失败");
-  } catch {
-    const result = await apiFetch<DownloadSignResponse>("/api/download-sign", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
-      },
-      body: JSON.stringify({
-        resourceId,
-      }),
-    });
-
-    if (!result.success || !result.url) {
-      throw new Error(result.message || "下载链接生成失败");
-    }
-
-    return { url: result.url };
+    return {
+      url: signed.url,
+      stats: parseDownloadStats(signed),
+    };
   }
+  throw new Error(signed.error || "下载链接生成失败");
 }

@@ -36,6 +36,9 @@ export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
 export const V1PRO_TRANSFER_NOT_READY_MESSAGE =
   "传输链接准备失败，请稍后重试。";
 
+export const V1PRO_TRANSFER_RETRY_MESSAGE =
+  "链接已就绪，请再次点击「传输到设备」，浏览器将提示打开控制工具。";
+
 const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
 const transferCache = new Map<number, TransferCacheEntry>();
 const transferInflight = new Map<number, Promise<void>>();
@@ -310,7 +313,46 @@ export function executeTransferToDevice(
   return { url: cached.url, stats: cached.stats, launched: true };
 }
 
-/** 优先同步唤起；未缓存则等待预取完成后再唤起（用户只需点一次）。 */
+export interface TransferClickHandlers {
+  onLaunched: (result: TransferExecuteResult) => void;
+  onReadyForRetry: () => void;
+  onError: (message: string) => void;
+  onPreparing: () => void;
+  onPrepareEnd: () => void;
+  shouldSkipPrepare: () => boolean;
+}
+
+/** 首次点击：链接已缓存则同步打开 v1pro://；否则后台准备并提示用户再次点击。 */
+export function handleTransferButtonClick(
+  resource: ResourceItem,
+  handlers: TransferClickHandlers,
+  options: Pick<V1ProOpenOptions, "auto"> = {},
+): void {
+  const launched = executeTransferToDevice(resource, options);
+  if (launched.launched) {
+    handlers.onLaunched(launched);
+    return;
+  }
+
+  if (handlers.shouldSkipPrepare()) {
+    return;
+  }
+
+  handlers.onPreparing();
+  prefetchTransferDownloadUrl(resource);
+  void waitForTransferDownloadUrl(resource)
+    .then(() => {
+      handlers.onReadyForRetry();
+    })
+    .catch((err) => {
+      handlers.onError((err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+    })
+    .finally(() => {
+      handlers.onPrepareEnd();
+    });
+}
+
+/** @deprecated 勿在 async 回调中调用 executeTransferToDevice */
 export async function runTransferToDevice(
   resource: ResourceItem,
   options: Pick<V1ProOpenOptions, "auto"> = {},
@@ -319,7 +361,6 @@ export async function runTransferToDevice(
   if (immediate.launched) {
     return immediate;
   }
-
   try {
     await waitForTransferDownloadUrl(resource);
   } catch (err) {
@@ -328,18 +369,20 @@ export async function runTransferToDevice(
       error: (err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE,
     };
   }
-
-  return executeTransferToDevice(resource, options);
+  return {
+    launched: false,
+    error: V1PRO_TRANSFER_RETRY_MESSAGE,
+  };
 }
 
-/** @deprecated 使用 runTransferToDevice */
+/** @deprecated 使用 executeTransferToDevice + waitForTransferDownloadUrl + 用户二次点击 */
 export async function transferResourceToDevice(
   resource: ResourceItem,
   options: Pick<V1ProOpenOptions, "auto"> = {},
 ): Promise<{ url: string; stats?: DownloadStatsSnapshot | null }> {
   const result = await runTransferToDevice(resource, options);
-  if (!result.launched || !result.url) {
-    throw new Error(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+  if (result.launched && result.url) {
+    return { url: result.url, stats: result.stats };
   }
-  return { url: result.url, stats: result.stats };
+  throw new Error(result.error || V1PRO_TRANSFER_NOT_READY_MESSAGE);
 }

@@ -20,6 +20,8 @@ export default function FavoritesPage() {
   const { resources, loading, error } = useResourceCatalog();
   const {
     downloadingId,
+    transferringId,
+    transferReadyId,
     transferNotice,
     setTransferNotice,
     playingId,
@@ -139,6 +141,8 @@ export default function FavoritesPage() {
                 onLike={handleLike}
                 onFavorite={handleFavorite}
                 downloading={downloadingId === resource.id}
+                transferring={transferringId === resource.id}
+                transferReady={transferReadyId === resource.id}
                 playing={playingId === resource.id}
                 isPlaying={playingResourceId === resource.id}
                 playUrl={playingResourceId === resource.id ? playingUrl : ""}
