@@ -39,9 +39,27 @@ export const V1PRO_TRANSFER_NOT_READY_MESSAGE =
 export const V1PRO_TRANSFER_RETRY_MESSAGE =
   "链接已就绪，请再次点击「传输到设备」，浏览器将提示打开控制工具。";
 
+const TRANSFER_PREPARE_TIMEOUT_MS = 30_000;
 const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
 const transferCache = new Map<number, TransferCacheEntry>();
 const transferInflight = new Map<number, Promise<void>>();
+
+function rejectAfterTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+    void promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        window.clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(message));
+      });
+  });
+}
 
 function isBlockedTransferHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
@@ -204,6 +222,27 @@ function storeTransferCache(resourceId: number, entry: Omit<TransferCacheEntry, 
   transferCache.set(resourceId, { ...entry, fetchedAt: Date.now() });
 }
 
+async function prepareTransferDownloadUrl(resource: ResourceItem): Promise<TransferCacheEntry> {
+  const resourceId = resource.id;
+  const cached = transferCache.get(resourceId);
+  if (cached && isCacheEntryFresh(cached)) {
+    return cached;
+  }
+
+  const inflight = transferInflight.get(resourceId);
+  if (inflight) {
+    await inflight;
+    const ready = transferCache.get(resourceId);
+    if (ready && isCacheEntryFresh(ready)) {
+      return ready;
+    }
+  }
+
+  const { url, stats } = await fetchTransferDownloadUrl(resource, { verifyRemote: false });
+  storeTransferCache(resourceId, { url, stats });
+  return transferCache.get(resourceId) as TransferCacheEntry;
+}
+
 export function isTransferDownloadUrlReady(resourceId: number): boolean {
   const cached = transferCache.get(resourceId);
   return Boolean(cached && isCacheEntryFresh(cached));
@@ -260,40 +299,14 @@ export async function resolveTransferSignedUrl(
 
 export function waitForTransferDownloadUrl(
   resource: ResourceItem,
-  timeoutMs = 15000,
+  timeoutMs = TRANSFER_PREPARE_TIMEOUT_MS,
 ): Promise<TransferCacheEntry> {
-  const resourceId = resource.id;
-  const cached = transferCache.get(resourceId);
-  if (cached && isCacheEntryFresh(cached)) {
-    return Promise.resolve(cached);
-  }
-
   prefetchTransferDownloadUrl(resource);
-  const inflight = transferInflight.get(resourceId);
-  if (!inflight) {
-    return Promise.reject(new Error(V1PRO_TRANSFER_NOT_READY_MESSAGE));
-  }
-
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      reject(new Error("传输链接准备超时，请检查网络后重试"));
-    }, timeoutMs);
-
-    void inflight
-      .then(() => {
-        window.clearTimeout(timer);
-        const entry = transferCache.get(resourceId);
-        if (entry && isCacheEntryFresh(entry)) {
-          resolve(entry);
-          return;
-        }
-        reject(new Error("下载链接生成失败，请稍后重试"));
-      })
-      .catch((err) => {
-        window.clearTimeout(timer);
-        reject(err instanceof Error ? err : new Error("下载链接生成失败，请稍后重试"));
-      });
-  });
+  return rejectAfterTimeout(
+    prepareTransferDownloadUrl(resource),
+    timeoutMs,
+    "传输链接准备超时，请检查网络后重试",
+  );
 }
 
 /** 同步唤起 v1pro://；链接已缓存时在同一 click 栈内执行。 */

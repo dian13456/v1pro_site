@@ -14,7 +14,8 @@ type IPRateLimiter struct {
 }
 
 func NewIPRateLimiter(limit int, window time.Duration) *IPRateLimiter {
-	if limit <= 0 {
+	// limit <= 0 means unlimited (always Allow).
+	if limit < 0 {
 		limit = 10
 	}
 	if window <= 0 {
@@ -28,6 +29,9 @@ func NewIPRateLimiter(limit int, window time.Duration) *IPRateLimiter {
 }
 
 func (limiter *IPRateLimiter) Allow(key string) bool {
+	if limiter.limit <= 0 {
+		return true
+	}
 	key = strings.TrimSpace(key)
 	if key == "" {
 		key = "unknown"

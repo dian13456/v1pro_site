@@ -117,11 +117,6 @@ function ResourceCardComponent({
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    if (!showTransfer) return;
-    onTransferPrepare?.(resource);
-  }, [resource.id, showTransfer, onTransferPrepare]);
-
-  useEffect(() => {
     if (resource.materialType !== "video" || !isPlaying || !playUrl) return;
     const video = videoRef.current;
     if (!video) return;

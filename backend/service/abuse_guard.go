@@ -13,6 +13,7 @@ import (
 
 // AbuseGuard limits abnormal read/download patterns and temporarily blocks abusive IPs.
 type AbuseGuard struct {
+	enabled          bool
 	readIP           *IPRateLimiter
 	downloadToken    *IPRateLimiter
 	downloadIP       *IPRateLimiter
@@ -28,6 +29,7 @@ type AbuseGuard struct {
 }
 
 type AbuseGuardConfig struct {
+	Enabled                bool
 	ReadIPPerMin           int
 	DownloadTokenPerMin    int
 	DownloadIPPerMin       int
@@ -37,6 +39,30 @@ type AbuseGuardConfig struct {
 	NotFoundBlockThreshold int
 	InvalidBlockThreshold  int
 	BlockDuration          time.Duration
+}
+
+func parseEnvBool(key string, fallback bool) bool {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if raw == "" {
+		return fallback
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func apiRateLimitsEnabled() bool {
+	return parseEnvBool("API_RATE_LIMIT_ENABLED", true)
+}
+
+// ApiRateLimitsEnabled reports whether per-route and abuse-guard throttling is active.
+func ApiRateLimitsEnabled() bool {
+	return apiRateLimitsEnabled()
 }
 
 func parseEnvInt(key string, fallback int) int {
@@ -60,7 +86,9 @@ func parseEnvDurationMin(key string, fallback time.Duration) time.Duration {
 }
 
 func AbuseGuardConfigFromEnv() AbuseGuardConfig {
+	enabled := apiRateLimitsEnabled() && parseEnvBool("ABUSE_GUARD_ENABLED", true)
 	return AbuseGuardConfig{
+		Enabled:                enabled,
 		ReadIPPerMin:           parseEnvInt("READ_RATE_LIMIT_IP_PER_MIN", 117),
 		DownloadTokenPerMin:    parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_TOKEN_PER_MIN", 52),
 		DownloadIPPerMin:       parseEnvInt("DOWNLOAD_SIGN_RATE_LIMIT_IP_PER_MIN", 104),
@@ -84,6 +112,7 @@ func NewAbuseGuard(cfg AbuseGuardConfig) *AbuseGuard {
 		cfg.InvalidBlockThreshold = 35
 	}
 	return &AbuseGuard{
+		enabled:          cfg.Enabled,
 		readIP:           NewIPRateLimiter(cfg.ReadIPPerMin, time.Minute),
 		downloadToken:    NewIPRateLimiter(cfg.DownloadTokenPerMin, time.Minute),
 		downloadIP:       NewIPRateLimiter(cfg.DownloadIPPerMin, time.Minute),
@@ -135,7 +164,7 @@ func (guard *AbuseGuard) blockIP(ip string) {
 }
 
 func (guard *AbuseGuard) rejectBlocked(c *gin.Context, ip string) bool {
-	if guard == nil || !guard.IsBlocked(ip) {
+	if guard == nil || !guard.enabled || !guard.IsBlocked(ip) {
 		return false
 	}
 	c.JSON(http.StatusTooManyRequests, gin.H{
@@ -148,7 +177,7 @@ func (guard *AbuseGuard) rejectBlocked(c *gin.Context, ip string) bool {
 // Middleware rejects temporarily blocked IPs before handlers run.
 func (guard *AbuseGuard) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if guard == nil {
+		if guard == nil || !guard.enabled {
 			c.Next()
 			return
 		}
@@ -171,7 +200,7 @@ func (guard *AbuseGuard) Middleware() gin.HandlerFunc {
 }
 
 func (guard *AbuseGuard) RejectRead(c *gin.Context, ip string) bool {
-	if guard == nil {
+	if guard == nil || !guard.enabled {
 		return false
 	}
 	if guard.rejectBlocked(c, ip) {
@@ -188,7 +217,7 @@ func (guard *AbuseGuard) RejectRead(c *gin.Context, ip string) bool {
 }
 
 func (guard *AbuseGuard) RejectDownloadSign(c *gin.Context, ip, serial string) bool {
-	if guard == nil {
+	if guard == nil || !guard.enabled {
 		return false
 	}
 	if guard.rejectBlocked(c, ip) {
@@ -205,7 +234,7 @@ func (guard *AbuseGuard) RejectDownloadSign(c *gin.Context, ip, serial string) b
 }
 
 func (guard *AbuseGuard) RecordNotFound(ip string) {
-	if guard == nil {
+	if guard == nil || !guard.enabled {
 		return
 	}
 	ip = normalizeGuardKey(ip)
@@ -215,7 +244,7 @@ func (guard *AbuseGuard) RecordNotFound(ip string) {
 }
 
 func (guard *AbuseGuard) RecordInvalidToken(ip string) {
-	if guard == nil {
+	if guard == nil || !guard.enabled {
 		return
 	}
 	ip = normalizeGuardKey(ip)

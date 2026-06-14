@@ -11,6 +11,7 @@ import (
 
 func TestAbuseGuardBlocksAfterNotFoundBurst(t *testing.T) {
 	guard := NewAbuseGuard(AbuseGuardConfig{
+		Enabled:                true,
 		ReadIPPerMin:           100,
 		DownloadTokenPerMin:    100,
 		DownloadIPPerMin:       100,
@@ -34,6 +35,7 @@ func TestAbuseGuardBlocksAfterNotFoundBurst(t *testing.T) {
 func TestAbuseGuardRejectRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	guard := NewAbuseGuard(AbuseGuardConfig{
+		Enabled:                true,
 		ReadIPPerMin:           1,
 		DownloadTokenPerMin:    10,
 		DownloadIPPerMin:       10,
@@ -61,6 +63,7 @@ func TestAbuseGuardRejectRead(t *testing.T) {
 func TestAbuseGuardDownloadSign(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	guard := NewAbuseGuard(AbuseGuardConfig{
+		Enabled:              true,
 		ReadIPPerMin:         100,
 		DownloadTokenPerMin:  1,
 		DownloadIPPerMin:     100,

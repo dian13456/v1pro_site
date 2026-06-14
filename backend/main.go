@@ -279,7 +279,17 @@ func parseRateLimitPerMin(raw string, fallback int) int {
 }
 
 func parseAuthRateLimitPerMin(raw string) int {
+	if !service.ApiRateLimitsEnabled() {
+		return 0
+	}
 	return parseRateLimitPerMin(raw, 10)
+}
+
+func endpointRateLimitPerMin(raw string, fallback int) int {
+	if !service.ApiRateLimitsEnabled() {
+		return 0
+	}
+	return parseRateLimitPerMin(raw, fallback)
 }
 
 func ginClientIP(c *gin.Context) string {
@@ -575,12 +585,12 @@ func main() {
 	apiSignVerifier := service.NewAPISignVerifier(apiSignSecret, apiSignMaxSkew, apiSignRequired)
 	tokenTTL := service.ParseTokenTTLDays(os.Getenv("TOKEN_TTL_DAYS"))
 	authRateLimiter := service.NewIPRateLimiter(parseAuthRateLimitPerMin(os.Getenv("AUTH_RATE_LIMIT_PER_MIN")), time.Minute)
-	aiTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_TOKEN_PER_MIN"), 10), time.Minute)
-	aiIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_IP_PER_MIN"), 30), time.Minute)
-	messageTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_TOKEN_PER_MIN"), 5), time.Minute)
-	messageIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_IP_PER_MIN"), 15), time.Minute)
-	likeTokenRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_TOKEN_PER_MIN"), 30), time.Minute)
-	likeIPRateLimiter := service.NewIPRateLimiter(parseRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
+	aiTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_TOKEN_PER_MIN"), 10), time.Minute)
+	aiIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("AI_RATE_LIMIT_IP_PER_MIN"), 30), time.Minute)
+	messageTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_TOKEN_PER_MIN"), 5), time.Minute)
+	messageIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_IP_PER_MIN"), 15), time.Minute)
+	likeTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_TOKEN_PER_MIN"), 30), time.Minute)
+	likeIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
 	abuseGuard := service.NewAbuseGuard(service.AbuseGuardConfigFromEnv())
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {

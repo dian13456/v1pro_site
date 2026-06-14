@@ -2,7 +2,9 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -11,6 +13,29 @@ const (
 	MaxDownloadsPerHour = 50
 	MaxDownloadsPerDay  = 100
 )
+
+func maxDownloadsPerHour() int {
+	return parseDownloadLimitEnv("MAX_DOWNLOADS_PER_HOUR", MaxDownloadsPerHour)
+}
+
+func maxDownloadsPerDay() int {
+	return parseDownloadLimitEnv("MAX_DOWNLOADS_PER_DAY", MaxDownloadsPerDay)
+}
+
+func parseDownloadLimitEnv(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		if !apiRateLimitsEnabled() {
+			return 0
+		}
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
 
 type LikesStore struct {
 	Counts      map[string]int             `json:"counts"`
@@ -110,11 +135,13 @@ func (store *DownloadsStore) EnsureDeviceWindow(serial string, now time.Time) {
 func (store *DownloadsStore) DeviceDownloadLimitMessage(serial string, now time.Time) string {
 	store.EnsureDeviceWindow(serial, now)
 	window := store.DeviceWindows[serial]
-	if window.HourCount >= MaxDownloadsPerHour {
-		return fmt.Sprintf("每小时最多下载%d次，请稍后再试", MaxDownloadsPerHour)
+	hourLimit := maxDownloadsPerHour()
+	if hourLimit > 0 && window.HourCount >= hourLimit {
+		return fmt.Sprintf("每小时最多下载%d次，请稍后再试", hourLimit)
 	}
-	if window.DayCount >= MaxDownloadsPerDay {
-		return fmt.Sprintf("每天最多下载%d次，请明天再试", MaxDownloadsPerDay)
+	dayLimit := maxDownloadsPerDay()
+	if dayLimit > 0 && window.DayCount >= dayLimit {
+		return fmt.Sprintf("每天最多下载%d次，请明天再试", dayLimit)
 	}
 	return ""
 }
