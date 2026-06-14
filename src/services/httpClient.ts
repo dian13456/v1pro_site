@@ -689,7 +689,39 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
   return null;
 }
 
-export async function apiFetch<T extends JsonValue>(path: string, init: RequestInit = {}): Promise<T> {
+const API_MAX_INFLIGHT = 4;
+let apiInflight = 0;
+const apiWaitQueue: Array<() => void> = [];
+
+async function acquireApiSlot(): Promise<void> {
+  if (apiInflight < API_MAX_INFLIGHT) {
+    apiInflight += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    apiWaitQueue.push(() => resolve());
+  });
+  apiInflight += 1;
+}
+
+function releaseApiSlot(): void {
+  apiInflight = Math.max(0, apiInflight - 1);
+  const next = apiWaitQueue.shift();
+  if (next) {
+    next();
+  }
+}
+
+function isApiSignatureError(message: string, status: number): boolean {
+  if (status !== 401) return false;
+  return /API 签名|签名已过期|签名无效|签名重复|缺少 API 签名/.test(message);
+}
+
+async function performApiFetch<T extends JsonValue>(
+  path: string,
+  init: RequestInit,
+  allowSignRetry: boolean,
+): Promise<T> {
   let response: Response;
   try {
     const signedInit = await withApiSignature(path, init);
@@ -717,14 +749,26 @@ export async function apiFetch<T extends JsonValue>(path: string, init: RequestI
   }
 
   if (!response.ok) {
+    const message =
+      (payload?.message as string) || (payload?.error as string) || `请求失败（HTTP ${response.status})`;
+    if (allowSignRetry && isApiSignatureError(message, response.status)) {
+      return performApiFetch(path, init, false);
+    }
     if (import.meta.env.DEV && path.startsWith("/api")) {
       const mocked = createDevMockResponse(path, init);
       if (mocked) return mocked as T;
     }
-    const message =
-      (payload?.message as string) || (payload?.error as string) || `请求失败（HTTP ${response.status})`;
     throw new Error(message);
   }
 
   return (payload || {}) as T;
+}
+
+export async function apiFetch<T extends JsonValue>(path: string, init: RequestInit = {}): Promise<T> {
+  await acquireApiSlot();
+  try {
+    return await performApiFetch<T>(path, init, true);
+  } finally {
+    releaseApiSlot();
+  }
 }

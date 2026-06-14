@@ -77,10 +77,10 @@ export async function buildApiSignHeaders(
     return {};
   }
 
-  const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = randomNonce();
   const bodyHash = bodyText ? await sha256Hex(bodyText) : EMPTY_BODY_SHA256;
   const signKey = await deriveSignKeyBytes(bearerToken);
+  const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = await hmacSha256Hex(
     signKey,
     buildCanonicalString(method, pathWithQuery, timestamp, nonce, bodyHash),

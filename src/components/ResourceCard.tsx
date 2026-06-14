@@ -260,8 +260,7 @@ function ResourceCardComponent({
             <button
               type="button"
               disabled={playing || transferring}
-              onMouseEnter={() => onPlayPrepare?.(resource)}
-              onFocus={() => onPlayPrepare?.(resource)}
+              onPointerDown={() => onPlayPrepare?.(resource)}
               onClick={() => void handlePlayClick()}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
             >

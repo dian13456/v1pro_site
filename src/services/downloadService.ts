@@ -12,8 +12,10 @@ interface GinResourceResponse {
 }
 
 const PLAY_URL_TTL_MS = 8 * 60 * 1000;
+const MAX_PLAY_PREFETCH = 3;
 const playUrlCache = new Map<number, { url: string; fetchedAt: number }>();
 const playUrlInflight = new Map<number, Promise<string>>();
+let activePlayPrefetchCount = 0;
 
 function getCachedPlayUrl(resourceId: number): string | null {
   const cached = playUrlCache.get(resourceId);
@@ -32,6 +34,9 @@ function rememberPlayUrl(resourceId: number, url: string): void {
 export function prefetchPlayUrl(resourceId: number, fallbackDownloadUrl?: string): void {
   if (getCachedPlayUrl(resourceId)) return;
   if (playUrlInflight.has(resourceId)) return;
+  if (activePlayPrefetchCount >= MAX_PLAY_PREFETCH) return;
+
+  activePlayPrefetchCount += 1;
   const promise = createDownloadUrl(resourceId, fallbackDownloadUrl, { forDownload: false })
     .then((result) => {
       if (result.url) {
@@ -41,6 +46,7 @@ export function prefetchPlayUrl(resourceId: number, fallbackDownloadUrl?: string
       return "";
     })
     .finally(() => {
+      activePlayPrefetchCount = Math.max(0, activePlayPrefetchCount - 1);
       playUrlInflight.delete(resourceId);
     });
   playUrlInflight.set(resourceId, promise);
