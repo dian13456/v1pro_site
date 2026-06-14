@@ -40,9 +40,33 @@ export const V1PRO_TRANSFER_RETRY_MESSAGE =
   "链接已就绪，请再次点击「传输到设备」，浏览器将提示打开控制工具。";
 
 const TRANSFER_PREPARE_TIMEOUT_MS = 30_000;
+const TRANSFER_FETCH_TIMEOUT_MS = 25_000;
+const TRANSFER_INFLIGHT_WAIT_MS = 8_000;
 const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
+const MAX_TRANSFER_PREFETCH = 2;
 const transferCache = new Map<number, TransferCacheEntry>();
 const transferInflight = new Map<number, Promise<void>>();
+const activeTransferPrepares = new Map<number, Promise<TransferCacheEntry>>();
+const transferAbortControllers = new Map<number, AbortController>();
+let activeTransferPrefetchCount = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === "AbortError" || /aborted|abort/i.test(err.message);
+}
+
+function toTransferFetchError(err: unknown, timeoutMessage: string): Error {
+  if (isAbortError(err)) {
+    return new Error(timeoutMessage);
+  }
+  return err instanceof Error ? err : new Error(timeoutMessage);
+}
 
 function rejectAfterTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -175,7 +199,7 @@ function transferApiPath(resource: ResourceItem): string {
 
 async function fetchTransferDownloadUrl(
   resource: ResourceItem,
-  options: { verifyRemote?: boolean } = {},
+  options: { verifyRemote?: boolean; priority?: boolean } = {},
 ): Promise<{
   url: string;
   stats?: DownloadStatsSnapshot | null;
@@ -199,30 +223,51 @@ async function fetchTransferDownloadUrl(
     throw new Error("静态模式下无法传输到设备");
   }
 
-  const payload = await apiFetch<TransferUrlResponse>(transferApiPath(resource), {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${auth.token}`,
-    },
-  });
-
-  const url = payload.url?.trim();
-  if (!url) {
-    throw new Error(payload.error || payload.message || "下载链接生成失败");
+  const resourceId = resource.id;
+  if (options.priority) {
+    transferAbortControllers.get(resourceId)?.abort();
   }
+  const controller = new AbortController();
+  transferAbortControllers.set(resourceId, controller);
+  const timeoutId = window.setTimeout(() => controller.abort(), TRANSFER_FETCH_TIMEOUT_MS);
 
-  assertCosTransferUrl(url);
-  return {
-    url,
-    stats: parseDownloadStats(payload),
-  };
+  try {
+    const payload = await apiFetch<TransferUrlResponse>(transferApiPath(resource), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+      },
+      signal: controller.signal,
+    });
+
+    const url = payload.url?.trim();
+    if (!url) {
+      throw new Error(payload.error || payload.message || "下载链接生成失败");
+    }
+
+    assertCosTransferUrl(url);
+    return {
+      url,
+      stats: parseDownloadStats(payload),
+    };
+  } catch (err) {
+    throw toTransferFetchError(err, "传输链接准备超时，请检查网络后重试");
+  } finally {
+    window.clearTimeout(timeoutId);
+    if (transferAbortControllers.get(resourceId) === controller) {
+      transferAbortControllers.delete(resourceId);
+    }
+  }
 }
 
 function storeTransferCache(resourceId: number, entry: Omit<TransferCacheEntry, "fetchedAt">): void {
   transferCache.set(resourceId, { ...entry, fetchedAt: Date.now() });
 }
 
-async function prepareTransferDownloadUrl(resource: ResourceItem): Promise<TransferCacheEntry> {
+async function prepareTransferDownloadUrl(
+  resource: ResourceItem,
+  options: { priority?: boolean } = {},
+): Promise<TransferCacheEntry> {
   const resourceId = resource.id;
   const cached = transferCache.get(resourceId);
   if (cached && isCacheEntryFresh(cached)) {
@@ -231,14 +276,20 @@ async function prepareTransferDownloadUrl(resource: ResourceItem): Promise<Trans
 
   const inflight = transferInflight.get(resourceId);
   if (inflight) {
-    await inflight;
+    if (options.priority) {
+      transferAbortControllers.get(resourceId)?.abort();
+    }
+    await Promise.race([inflight.catch(() => undefined), sleep(TRANSFER_INFLIGHT_WAIT_MS)]);
     const ready = transferCache.get(resourceId);
     if (ready && isCacheEntryFresh(ready)) {
       return ready;
     }
   }
 
-  const { url, stats } = await fetchTransferDownloadUrl(resource, { verifyRemote: false });
+  const { url, stats } = await fetchTransferDownloadUrl(resource, {
+    verifyRemote: false,
+    priority: options.priority,
+  });
   storeTransferCache(resourceId, { url, stats });
   return transferCache.get(resourceId) as TransferCacheEntry;
 }
@@ -250,6 +301,10 @@ export function isTransferDownloadUrlReady(resourceId: number): boolean {
 
 export function isTransferDownloadUrlPrefetching(resourceId: number): boolean {
   return transferInflight.has(resourceId);
+}
+
+export function isTransferPrepareActive(resourceId: number): boolean {
+  return activeTransferPrepares.has(resourceId);
 }
 
 /** 预先请求 download=1（可在 mouseenter / 页面展示时调用，勿在 click 里 await）。 */
@@ -266,7 +321,11 @@ export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
   if (transferInflight.has(resourceId)) {
     return;
   }
+  if (activeTransferPrefetchCount >= MAX_TRANSFER_PREFETCH) {
+    return;
+  }
 
+  activeTransferPrefetchCount += 1;
   const task = fetchTransferDownloadUrl(resource, { verifyRemote: false })
     .then(({ url, stats }) => {
       storeTransferCache(resourceId, { url, stats });
@@ -275,6 +334,7 @@ export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
       // prefetch 失败时静默，点击传输再提示
     })
     .finally(() => {
+      activeTransferPrefetchCount = Math.max(0, activeTransferPrefetchCount - 1);
       transferInflight.delete(resourceId);
     });
 
@@ -303,7 +363,7 @@ export function waitForTransferDownloadUrl(
 ): Promise<TransferCacheEntry> {
   prefetchTransferDownloadUrl(resource);
   return rejectAfterTimeout(
-    prepareTransferDownloadUrl(resource),
+    prepareTransferDownloadUrl(resource, { priority: true }),
     timeoutMs,
     "传输链接准备超时，请检查网络后重试",
   );
@@ -332,7 +392,6 @@ export interface TransferClickHandlers {
   onError: (message: string) => void;
   onPreparing: () => void;
   onPrepareEnd: () => void;
-  shouldSkipPrepare: () => boolean;
 }
 
 /** 首次点击：链接已缓存则同步打开 v1pro://；否则后台准备并提示用户再次点击。 */
@@ -347,13 +406,14 @@ export function handleTransferButtonClick(
     return;
   }
 
-  if (handlers.shouldSkipPrepare()) {
+  if (activeTransferPrepares.has(resource.id)) {
     return;
   }
 
+  const preparePromise = waitForTransferDownloadUrl(resource);
+  activeTransferPrepares.set(resource.id, preparePromise);
   handlers.onPreparing();
-  prefetchTransferDownloadUrl(resource);
-  void waitForTransferDownloadUrl(resource)
+  void preparePromise
     .then(() => {
       handlers.onReadyForRetry();
     })
@@ -361,6 +421,7 @@ export function handleTransferButtonClick(
       handlers.onError((err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE);
     })
     .finally(() => {
+      activeTransferPrepares.delete(resource.id);
       handlers.onPrepareEnd();
     });
 }

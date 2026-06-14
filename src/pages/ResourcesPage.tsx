@@ -307,7 +307,6 @@ export default function ResourcesPage() {
         },
         onPreparing: () => setTransferringId(resource.id),
         onPrepareEnd: () => setTransferringId(null),
-        shouldSkipPrepare: () => transferringId === resource.id,
       },
       { auto: true },
     );

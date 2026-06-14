@@ -243,8 +243,6 @@ function ResourceCardComponent({
             <button
               type="button"
               disabled={downloading || (transferring && !transferReady)}
-              onMouseEnter={() => onTransferPrepare?.(resource)}
-              onFocus={() => onTransferPrepare?.(resource)}
               onPointerDown={() => onTransferPrepare?.(resource)}
               onClick={() => onTransfer?.(resource)}
               className={`w-full rounded-xl px-3 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${

@@ -137,7 +137,6 @@ export function useResourceInteractions() {
         },
         onPreparing: () => setTransferringId(resource.id),
         onPrepareEnd: () => setTransferringId(null),
-        shouldSkipPrepare: () => transferringId === resource.id,
       },
       { auto: true },
     );
