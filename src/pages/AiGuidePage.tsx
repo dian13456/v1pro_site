@@ -40,7 +40,6 @@ export default function AiGuidePage() {
   const {
     downloadingId,
     transferringId,
-    transferReadyId,
     transferNotice,
     setTransferNotice,
     playingId,
@@ -202,7 +201,6 @@ export default function AiGuidePage() {
                         onFavorite={handleFavorite}
                         downloading={downloadingId === resource.id}
                         transferring={transferringId === resource.id}
-                        transferReady={transferReadyId === resource.id}
                         playing={playingId === resource.id}
                         isPlaying={playingResourceId === resource.id}
                         playUrl={playingResourceId === resource.id ? playingUrl : ""}

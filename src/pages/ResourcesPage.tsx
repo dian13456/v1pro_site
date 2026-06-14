@@ -23,7 +23,6 @@ import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
-  V1PRO_TRANSFER_RETRY_MESSAGE,
   canTransferViaV1Pro,
   handleTransferButtonClick,
   prefetchTransferDownloadUrl,
@@ -38,7 +37,6 @@ export default function ResourcesPage() {
   const [searchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
-  const [transferReadyId, setTransferReadyId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -273,8 +271,8 @@ export default function ResourcesPage() {
     }
   };
 
-  const handleTransferPrepare = (resource: ResourceItem) => {
-    prefetchTransferDownloadUrl(resource);
+  const handleTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
+    prefetchTransferDownloadUrl(resource, options);
   };
 
   const handleTransfer = (resource: ResourceItem) => {
@@ -284,11 +282,10 @@ export default function ResourcesPage() {
     }
 
     setErrorMessage("");
-    handleTransferButtonClick(
+    void handleTransferButtonClick(
       resource,
       {
         onLaunched: (result) => {
-          setTransferReadyId(null);
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
           window.setTimeout(() => setTransferNotice(""), 5000);
@@ -296,13 +293,7 @@ export default function ResourcesPage() {
             .then((state) => setFavoriteIds(state.favoriteIds))
             .catch(() => undefined);
         },
-        onReadyForRetry: () => {
-          setTransferReadyId(resource.id);
-          setTransferNotice(V1PRO_TRANSFER_RETRY_MESSAGE);
-          window.setTimeout(() => setTransferNotice(""), 8000);
-        },
         onError: (message) => {
-          setTransferReadyId(null);
           setErrorMessage(message);
         },
         onPreparing: () => setTransferringId(resource.id),
@@ -595,7 +586,6 @@ export default function ResourcesPage() {
                 onFavorite={handleFavorite}
                 downloading={downloadingId === resource.id}
                 transferring={transferringId === resource.id}
-                transferReady={transferReadyId === resource.id}
                 playing={playingId === resource.id}
                 isPlaying={playingResourceId === resource.id}
                 playUrl={playingResourceId === resource.id ? playingUrl : ""}

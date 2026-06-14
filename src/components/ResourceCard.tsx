@@ -8,7 +8,7 @@ interface ResourceCardProps {
   resource: ResourceItem;
   onDownload: (resource: ResourceItem) => void;
   onTransfer?: (resource: ResourceItem) => void;
-  onTransferPrepare?: (resource: ResourceItem) => void;
+  onTransferPrepare?: (resource: ResourceItem, options?: { urgent?: boolean }) => void;
   onPlay: (resource: ResourceItem) => Promise<string | void>;
   onPlayPrepare?: (resource: ResourceItem) => void;
   onStopPlay: () => void;
@@ -16,7 +16,6 @@ interface ResourceCardProps {
   onFavorite?: (resource: ResourceItem) => void;
   downloading: boolean;
   transferring?: boolean;
-  transferReady?: boolean;
   playing: boolean;
   isPlaying: boolean;
   playUrl: string;
@@ -42,7 +41,6 @@ function ResourceCardComponent({
   onFavorite,
   downloading,
   transferring = false,
-  transferReady = false,
   playing,
   isPlaying,
   playUrl,
@@ -85,6 +83,8 @@ function ResourceCardComponent({
       : "object-contain";
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  const transferPrefetchedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +117,25 @@ function ResourceCardComponent({
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
+    if (!showTransfer || !onTransferPrepare || transferPrefetchedRef.current) return;
+    const node = cardRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting) || transferPrefetchedRef.current) {
+          return;
+        }
+        transferPrefetchedRef.current = true;
+        onTransferPrepare(resource);
+      },
+      { rootMargin: "120px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [resource, showTransfer, onTransferPrepare]);
+
+  useEffect(() => {
     if (resource.materialType !== "video" || !isPlaying || !playUrl) return;
     const video = videoRef.current;
     if (!video) return;
@@ -142,7 +161,10 @@ function ResourceCardComponent({
   };
 
   return (
-    <article className="group rounded-3xl border border-white/25 bg-white/55 p-4 shadow-[0_30px_45px_-28px_rgba(0,0,0,0.55)] backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_32px_60px_-26px_rgba(34,211,238,0.45)] dark:border-white/10 dark:bg-slate-900/45">
+    <article
+      ref={cardRef}
+      className="group rounded-3xl border border-white/25 bg-white/55 p-4 shadow-[0_30px_45px_-28px_rgba(0,0,0,0.55)] backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_32px_60px_-26px_rgba(34,211,238,0.45)] dark:border-white/10 dark:bg-slate-900/45"
+    >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs text-white dark:bg-white dark:text-slate-900">
           {materialLabel}
@@ -242,16 +264,12 @@ function ResourceCardComponent({
           {showTransfer ? (
             <button
               type="button"
-              disabled={downloading || (transferring && !transferReady)}
-              onPointerDown={() => onTransferPrepare?.(resource)}
-              onClick={() => onTransfer?.(resource)}
-              className={`w-full rounded-xl px-3 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                transferReady
-                  ? "bg-amber-500 shadow-[0_0_0_2px_rgba(251,191,36,0.55)] hover:bg-amber-400"
-                  : "bg-cyan-600 hover:bg-cyan-500"
-              }`}
+              disabled={downloading || transferring}
+              onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
+              onClick={() => void onTransfer?.(resource)}
+              className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {transferring ? "准备传输..." : transferReady ? "再次点击传输" : "传输到设备"}
+              {transferring ? "传输中..." : "传输到设备"}
             </button>
           ) : null}
         </div>

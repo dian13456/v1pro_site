@@ -9,7 +9,6 @@ import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
-  V1PRO_TRANSFER_RETRY_MESSAGE,
   handleTransferButtonClick,
   prefetchTransferDownloadUrl,
 } from "../services/v1proTransferService";
@@ -18,7 +17,6 @@ export function useResourceInteractions() {
   const navigate = useNavigate();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
-  const [transferReadyId, setTransferReadyId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -104,8 +102,8 @@ export function useResourceInteractions() {
     prefetchPlayUrl(resource.id, resource.download);
   };
 
-  const handleTransferPrepare = (resource: ResourceItem) => {
-    prefetchTransferDownloadUrl(resource);
+  const handleTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
+    prefetchTransferDownloadUrl(resource, options);
   };
 
   const handleTransfer = (resource: ResourceItem) => {
@@ -114,11 +112,10 @@ export function useResourceInteractions() {
       return;
     }
     setErrorMessage("");
-    handleTransferButtonClick(
+    void handleTransferButtonClick(
       resource,
       {
         onLaunched: (result) => {
-          setTransferReadyId(null);
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
           window.setTimeout(() => setTransferNotice(""), 5000);
@@ -126,13 +123,7 @@ export function useResourceInteractions() {
             .then((state) => setFavoriteIds(state.favoriteIds))
             .catch(() => undefined);
         },
-        onReadyForRetry: () => {
-          setTransferReadyId(resource.id);
-          setTransferNotice(V1PRO_TRANSFER_RETRY_MESSAGE);
-          window.setTimeout(() => setTransferNotice(""), 8000);
-        },
         onError: (message) => {
-          setTransferReadyId(null);
           setErrorMessage(message);
         },
         onPreparing: () => setTransferringId(resource.id),
@@ -195,7 +186,6 @@ export function useResourceInteractions() {
   return {
     downloadingId,
     transferringId,
-    transferReadyId,
     transferNotice,
     setTransferNotice,
     playingId,

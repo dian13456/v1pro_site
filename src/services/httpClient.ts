@@ -764,10 +764,17 @@ async function performApiFetch<T extends JsonValue>(
   return (payload || {}) as T;
 }
 
-export async function apiFetch<T extends JsonValue>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetch<T extends JsonValue>(
+  path: string,
+  init: RequestInit = {},
+  options: { priority?: boolean } = {},
+): Promise<T> {
+  if (options.priority) {
+    return performApiFetch<T>(path, init, true);
+  }
   await acquireApiSlot();
   try {
-    return await performApiFetch<T>(path, init, true);
+    return performApiFetch<T>(path, init, true);
   } finally {
     releaseApiSlot();
   }

@@ -36,6 +36,7 @@ export const V1PRO_TRANSFER_LAUNCHED_MESSAGE =
 export const V1PRO_TRANSFER_NOT_READY_MESSAGE =
   "传输链接准备失败，请稍后重试。";
 
+/** @deprecated 旧版二次点击流程提示，新流程在单次点击内完成传输。 */
 export const V1PRO_TRANSFER_RETRY_MESSAGE =
   "链接已就绪，请再次点击「传输到设备」，浏览器将提示打开控制工具。";
 
@@ -43,7 +44,7 @@ const TRANSFER_PREPARE_TIMEOUT_MS = 30_000;
 const TRANSFER_FETCH_TIMEOUT_MS = 25_000;
 const TRANSFER_INFLIGHT_WAIT_MS = 8_000;
 const TRANSFER_URL_TTL_MS = 8 * 60 * 1000;
-const MAX_TRANSFER_PREFETCH = 2;
+const MAX_TRANSFER_PREFETCH = 4;
 const transferCache = new Map<number, TransferCacheEntry>();
 const transferInflight = new Map<number, Promise<void>>();
 const activeTransferPrepares = new Map<number, Promise<TransferCacheEntry>>();
@@ -232,13 +233,17 @@ async function fetchTransferDownloadUrl(
   const timeoutId = window.setTimeout(() => controller.abort(), TRANSFER_FETCH_TIMEOUT_MS);
 
   try {
-    const payload = await apiFetch<TransferUrlResponse>(transferApiPath(resource), {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
+    const payload = await apiFetch<TransferUrlResponse>(
+      transferApiPath(resource),
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+        },
+        signal: controller.signal,
       },
-      signal: controller.signal,
-    });
+      { priority: options.priority },
+    );
 
     const url = payload.url?.trim();
     if (!url) {
@@ -307,8 +312,11 @@ export function isTransferPrepareActive(resourceId: number): boolean {
   return activeTransferPrepares.has(resourceId);
 }
 
-/** 预先请求 download=1（可在 mouseenter / 页面展示时调用，勿在 click 里 await）。 */
-export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
+/** 预先请求 download=1（可见卡片 / pointerdown 预取，勿在 click 里 await）。 */
+export function prefetchTransferDownloadUrl(
+  resource: ResourceItem,
+  options: { urgent?: boolean } = {},
+): void {
   if (!canTransferViaV1Pro(resource) || isStaticMode() || !hasValidLocalAuth()) {
     return;
   }
@@ -318,15 +326,24 @@ export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
   if (cached && isCacheEntryFresh(cached)) {
     return;
   }
-  if (transferInflight.has(resourceId)) {
+
+  const urgent = options.urgent === true;
+  if (!urgent && transferInflight.has(resourceId)) {
     return;
   }
-  if (activeTransferPrefetchCount >= MAX_TRANSFER_PREFETCH) {
+  if (!urgent && activeTransferPrefetchCount >= MAX_TRANSFER_PREFETCH) {
     return;
   }
 
-  activeTransferPrefetchCount += 1;
-  const task = fetchTransferDownloadUrl(resource, { verifyRemote: false })
+  if (urgent) {
+    transferAbortControllers.get(resourceId)?.abort();
+  }
+
+  if (!urgent) {
+    activeTransferPrefetchCount += 1;
+  }
+
+  const task = fetchTransferDownloadUrl(resource, { verifyRemote: false, priority: urgent })
     .then(({ url, stats }) => {
       storeTransferCache(resourceId, { url, stats });
     })
@@ -334,7 +351,9 @@ export function prefetchTransferDownloadUrl(resource: ResourceItem): void {
       // prefetch 失败时静默，点击传输再提示
     })
     .finally(() => {
-      activeTransferPrefetchCount = Math.max(0, activeTransferPrefetchCount - 1);
+      if (!urgent) {
+        activeTransferPrefetchCount = Math.max(0, activeTransferPrefetchCount - 1);
+      }
       transferInflight.delete(resourceId);
     });
 
@@ -388,21 +407,20 @@ export function executeTransferToDevice(
 
 export interface TransferClickHandlers {
   onLaunched: (result: TransferExecuteResult) => void;
-  onReadyForRetry: () => void;
   onError: (message: string) => void;
   onPreparing: () => void;
   onPrepareEnd: () => void;
 }
 
-/** 首次点击：链接已缓存则同步打开 v1pro://；否则后台准备并提示用户再次点击。 */
-export function handleTransferButtonClick(
+/** 单次点击：有缓存则立刻打开 v1pro://；否则等待链接就绪后在同一手势链内打开。 */
+export async function handleTransferButtonClick(
   resource: ResourceItem,
   handlers: TransferClickHandlers,
   options: Pick<V1ProOpenOptions, "auto"> = {},
-): void {
-  const launched = executeTransferToDevice(resource, options);
-  if (launched.launched) {
-    handlers.onLaunched(launched);
+): Promise<void> {
+  const immediate = executeTransferToDevice(resource, options);
+  if (immediate.launched) {
+    handlers.onLaunched(immediate);
     return;
   }
 
@@ -413,17 +431,21 @@ export function handleTransferButtonClick(
   const preparePromise = waitForTransferDownloadUrl(resource);
   activeTransferPrepares.set(resource.id, preparePromise);
   handlers.onPreparing();
-  void preparePromise
-    .then(() => {
-      handlers.onReadyForRetry();
-    })
-    .catch((err) => {
-      handlers.onError((err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE);
-    })
-    .finally(() => {
-      activeTransferPrepares.delete(resource.id);
-      handlers.onPrepareEnd();
-    });
+
+  try {
+    await preparePromise;
+    const result = executeTransferToDevice(resource, options);
+    if (result.launched) {
+      handlers.onLaunched(result);
+      return;
+    }
+    handlers.onError(V1PRO_TRANSFER_NOT_READY_MESSAGE);
+  } catch (err) {
+    handlers.onError((err as Error)?.message || V1PRO_TRANSFER_NOT_READY_MESSAGE);
+  } finally {
+    activeTransferPrepares.delete(resource.id);
+    handlers.onPrepareEnd();
+  }
 }
 
 /** @deprecated 勿在 async 回调中调用 executeTransferToDevice */
@@ -437,6 +459,10 @@ export async function runTransferToDevice(
   }
   try {
     await waitForTransferDownloadUrl(resource);
+    const launched = executeTransferToDevice(resource, options);
+    if (launched.launched) {
+      return launched;
+    }
   } catch (err) {
     return {
       launched: false,
@@ -445,7 +471,7 @@ export async function runTransferToDevice(
   }
   return {
     launched: false,
-    error: V1PRO_TRANSFER_RETRY_MESSAGE,
+    error: V1PRO_TRANSFER_NOT_READY_MESSAGE,
   };
 }
 
