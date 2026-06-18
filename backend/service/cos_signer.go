@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/tencentyun/cos-go-sdk-v5"
@@ -73,4 +74,56 @@ func (s *COSSigner) GenerateReadURL(ctx context.Context, objectKey string, ttl t
 		return "", err
 	}
 	return signedURL.String(), nil
+}
+
+func (s *COSSigner) GeneratePutURL(
+	ctx context.Context,
+	objectKey string,
+	contentType string,
+	ttl time.Duration,
+) (string, error) {
+	objectKey = strings.TrimLeft(strings.TrimSpace(objectKey), "/")
+	if objectKey == "" {
+		return "", fmt.Errorf("empty object key")
+	}
+	header := &http.Header{}
+	if strings.TrimSpace(contentType) != "" {
+		header.Set("Content-Type", contentType)
+	}
+	signedURL, err := s.client.Object.GetPresignedURL(
+		ctx,
+		http.MethodPut,
+		objectKey,
+		s.secretID,
+		s.secretKey,
+		ttl,
+		&cos.PresignedURLOptions{Header: header},
+	)
+	if err != nil {
+		return "", err
+	}
+	return signedURL.String(), nil
+}
+
+type ObjectHeadInfo struct {
+	ContentLength int64
+	ContentType   string
+}
+
+func (s *COSSigner) HeadObject(ctx context.Context, objectKey string) (ObjectHeadInfo, error) {
+	objectKey = strings.TrimLeft(strings.TrimSpace(objectKey), "/")
+	if objectKey == "" {
+		return ObjectHeadInfo{}, fmt.Errorf("empty object key")
+	}
+	resp, err := s.client.Object.Head(ctx, objectKey, nil)
+	if err != nil {
+		return ObjectHeadInfo{}, err
+	}
+	if resp == nil {
+		return ObjectHeadInfo{}, fmt.Errorf("empty head response")
+	}
+	return ObjectHeadInfo{
+		ContentLength: resp.ContentLength,
+		ContentType:   resp.Header.Get("Content-Type"),
+	}, nil
 }

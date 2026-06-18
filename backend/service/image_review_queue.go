@@ -19,10 +19,11 @@ const (
 	ImageReviewStatusApproved = "approved"
 	ImageReviewStatusRejected = "rejected"
 
-	ReviewActionShareAI    = "share_ai"
-	ReviewActionShareUser  = "share_user"
-	ReviewActionTransfer   = "transfer"
-	ReviewActionGenerate   = "generate"
+	ReviewActionShareAI     = "share_ai"
+	ReviewActionShareUser   = "share_user"
+	ReviewActionShareUserGif = "share_user_gif"
+	ReviewActionTransfer    = "transfer"
+	ReviewActionGenerate    = "generate"
 )
 
 type PendingImageReview struct {
@@ -35,6 +36,8 @@ type PendingImageReview struct {
 	Description    string `json:"description,omitempty"`
 	Source         string `json:"source,omitempty"`
 	ImageObjectKey string `json:"imageObjectKey"`
+	GifObjectKey   string `json:"gifObjectKey,omitempty"`
+	CoverObjectKey string `json:"coverObjectKey,omitempty"`
 	Label          string `json:"label,omitempty"`
 	SubLabel       string `json:"subLabel,omitempty"`
 	Score          int    `json:"score,omitempty"`
@@ -208,6 +211,29 @@ func ApprovePendingImageReview(
 	reviewID string,
 	note string,
 ) (*ShareAIImageResult, error) {
+	return ApprovePendingReview(ctx, CatalogPublishDeps{
+		ImageSigner:     signer,
+		ImagePublicBase: imagePublicBase,
+		ResourcesPath:   resourcesPath,
+		ImageMapPath:    imageMapPath,
+	}, store, reviewID, note)
+}
+
+type CatalogPublishDeps struct {
+	ImageSigner     *COSSigner
+	ImagePublicBase string
+	ResourcesPath   string
+	ImageMapPath    string
+	ResourceMapPath string
+}
+
+func ApprovePendingReview(
+	ctx context.Context,
+	deps CatalogPublishDeps,
+	store *ImageReviewStore,
+	reviewID string,
+	note string,
+) (*ShareAIImageResult, error) {
 	item, _, ok := store.Find(reviewID)
 	if !ok {
 		return nil, fmt.Errorf("复核记录不存在")
@@ -215,11 +241,39 @@ func ApprovePendingImageReview(
 	if !strings.EqualFold(item.Status, ImageReviewStatusPending) {
 		return nil, fmt.Errorf("该记录已处理")
 	}
-	if item.Action != ReviewActionShareAI && item.Action != ReviewActionShareUser {
+
+	var result *ShareAIImageResult
+	var err error
+
+	switch item.Action {
+	case ReviewActionShareAI, ReviewActionShareUser:
+		if deps.ImageSigner == nil {
+			return nil, fmt.Errorf("图片存储未配置")
+		}
+		result, err = approvePendingImageShare(ctx, deps, store, item, reviewID, note)
+	case ReviewActionShareUserGif:
+		if strings.TrimSpace(deps.ResourceMapPath) == "" {
+			return nil, fmt.Errorf("素材映射未配置")
+		}
+		result, err = approvePendingGifShare(deps, item, reviewID, note, store)
+	default:
 		return nil, fmt.Errorf("该类型记录不支持发布到素材库")
 	}
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
-	signedURL, err := signer.GenerateReadURL(ctx, item.ImageObjectKey, 30*time.Minute)
+func approvePendingImageShare(
+	ctx context.Context,
+	deps CatalogPublishDeps,
+	store *ImageReviewStore,
+	item PendingImageReview,
+	reviewID string,
+	note string,
+) (*ShareAIImageResult, error) {
+	signedURL, err := deps.ImageSigner.GenerateReadURL(ctx, item.ImageObjectKey, 30*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("读取待审图片失败")
 	}
@@ -241,16 +295,74 @@ func ApprovePendingImageReview(
 
 	result, err := ShareAIImageToCatalog(
 		ctx,
-		signer,
-		imagePublicBase,
-		resourcesPath,
-		imageMapPath,
+		deps.ImageSigner,
+		deps.ImagePublicBase,
+		deps.ResourcesPath,
+		deps.ImageMapPath,
 		ShareAIImageInput{
 			ImageBase64:    imageBase64,
 			Prompt:         prompt,
 			Title:          title,
 			Author:         item.Author,
 			UploaderSerial: item.Serial,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = store.Update(reviewID, func(entry *PendingImageReview) error {
+		entry.Status = ImageReviewStatusApproved
+		entry.ReviewNote = strings.TrimSpace(note)
+		entry.ReviewedAt = time.Now().Format(time.RFC3339)
+		return nil
+	})
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func approvePendingGifShare(
+	deps CatalogPublishDeps,
+	item PendingImageReview,
+	reviewID string,
+	note string,
+	store *ImageReviewStore,
+) (*ShareAIImageResult, error) {
+	gifObjectKey := strings.TrimSpace(item.GifObjectKey)
+	coverObjectKey := strings.TrimSpace(item.CoverObjectKey)
+	if gifObjectKey == "" {
+		gifObjectKey = strings.TrimSpace(item.ImageObjectKey)
+	}
+	if coverObjectKey == "" {
+		coverObjectKey = strings.TrimSpace(item.ImageObjectKey)
+	}
+	if gifObjectKey == "" || coverObjectKey == "" {
+		return nil, fmt.Errorf("待审 GIF 信息不完整")
+	}
+
+	title := item.Title
+	description := item.Description
+	if title == "" {
+		title = item.Description
+	}
+	if description == "" {
+		description = item.Title
+	}
+
+	result, err := ShareUserGifToCatalog(
+		deps.ResourcesPath,
+		deps.ResourceMapPath,
+		deps.ImageMapPath,
+		ShareUserGifInput{
+			Title:          title,
+			Description:    description,
+			Author:         item.Author,
+			UploaderSerial: item.Serial,
+			GifObjectKey:   gifObjectKey,
+			CoverObjectKey: coverObjectKey,
+			GifSizeBytes:   0,
 		},
 	)
 	if err != nil {
@@ -309,6 +421,67 @@ func ProcessImageModerationWithReview(
 		return item, true, nil
 	default:
 		return PendingImageReview{}, false, fmt.Errorf("%w: %s", ErrImageModerationBlocked, formatModerationMessage(outcome, "图片未通过内容安全审核"))
+	}
+}
+
+type EnqueueGifReviewInput struct {
+	Serial         string
+	Author         string
+	Title          string
+	Description    string
+	GifObjectKey   string
+	CoverObjectKey string
+	Outcome        ImageModerationOutcome
+}
+
+func EnqueueGifReview(store *ImageReviewStore, input EnqueueGifReviewInput) PendingImageReview {
+	reviewID := fmt.Sprintf("rev-%d", time.Now().UnixNano())
+	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
+	return store.Enqueue(PendingImageReview{
+		ID:             reviewID,
+		Serial:         strings.TrimSpace(input.Serial),
+		Author:         strings.TrimSpace(input.Author),
+		Action:         ReviewActionShareUserGif,
+		Title:          strings.TrimSpace(input.Title),
+		Description:    strings.TrimSpace(input.Description),
+		Source:         "upload",
+		ImageObjectKey: coverObjectKey,
+		GifObjectKey:   strings.TrimSpace(input.GifObjectKey),
+		CoverObjectKey: coverObjectKey,
+		Label:          strings.TrimSpace(input.Outcome.Label),
+		SubLabel:       strings.TrimSpace(input.Outcome.SubLabel),
+		Score:          input.Outcome.Score,
+	})
+}
+
+func ProcessGifShareModerationWithReview(
+	ctx context.Context,
+	imsClient *ImageModerationClient,
+	coverSigner *COSSigner,
+	store *ImageReviewStore,
+	input EnqueueGifReviewInput,
+	dataID string,
+) (PendingImageReview, bool, error) {
+	coverBytes, err := FetchObjectBytes(ctx, coverSigner, input.CoverObjectKey, maxIMSFileBytes)
+	if err != nil {
+		return PendingImageReview{}, false, fmt.Errorf("读取 GIF 封面失败")
+	}
+	outcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID, "IMAGE")
+	if err != nil {
+		return PendingImageReview{}, false, err
+	}
+	switch outcome.Suggestion {
+	case "PASS", "":
+		return PendingImageReview{}, false, nil
+	case "REVIEW":
+		if store == nil {
+			return PendingImageReview{}, false, fmt.Errorf("%w: %s", ErrImageModerationReview, formatModerationMessage(outcome, "GIF 需人工复核，暂无法上传"))
+		}
+		input.Outcome = outcome
+		item := EnqueueGifReview(store, input)
+		return item, true, nil
+	default:
+		return PendingImageReview{}, false, fmt.Errorf("%w: %s", ErrImageModerationBlocked, formatModerationMessage(outcome, "GIF 未通过内容安全审核"))
 	}
 }
 

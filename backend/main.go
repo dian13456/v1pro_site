@@ -93,6 +93,17 @@ type userImageShareRequest struct {
 	Description string `json:"description"`
 }
 
+type userGifUploadSessionRequest struct {
+	FileName string `json:"fileName"`
+	FileSize int64  `json:"fileSize"`
+}
+
+type userGifShareRequest struct {
+	SessionID   string `json:"sessionId"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
 type imageReviewActionRequest struct {
 	Note string `json:"note"`
 }
@@ -796,6 +807,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load image review queue failed: %v", err)
 	}
+	gifUploadSessionStore := service.NewGifUploadSessionStore()
 	reviewAdminToken := strings.TrimSpace(os.Getenv("REVIEW_ADMIN_TOKEN"))
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -1547,6 +1559,184 @@ func main() {
 		})
 	})
 
+	router.POST("/api/user-gif/upload-session", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if gifSigner == nil || gifCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "GIF 存储未配置"})
+			return
+		}
+
+		var req userGifUploadSessionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		result, err := service.CreateGifUploadSession(
+			c.Request.Context(),
+			gifUploadSessionStore,
+			service.CreateGifUploadSessionInput{
+				Serial:      serial,
+				FileName:    req.FileName,
+				FileSize:    req.FileSize,
+				GifSigner:   gifSigner,
+				CoverSigner: gifCoverSigner,
+			},
+		)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"sessionId":      result.SessionID,
+			"gifUploadUrl":   result.GifUploadURL,
+			"coverUploadUrl": result.CoverUploadURL,
+			"gifObjectKey":   result.GifObjectKey,
+			"coverObjectKey": result.CoverObjectKey,
+			"maxBytes":       result.MaxBytes,
+		})
+	})
+
+	router.POST("/api/user-gif/share", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if gifSigner == nil || gifCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "GIF 存储未配置"})
+			return
+		}
+
+		var req userGifShareRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.SessionID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
+			return
+		}
+
+		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
+		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
+			shareCount := aiShareQuota.ShareCount(serial)
+			aiShareMu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":    false,
+				"message":    limitMsg,
+				"shareCount": shareCount,
+				"shareLimit": service.MaxAISharesPerDevice,
+			})
+			return
+		}
+		aiShareMu.Unlock()
+
+		session, err := gifUploadSessionStore.Consume(strings.TrimSpace(req.SessionID), serial)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		gifSize, err := service.VerifyUploadedGifObjects(c.Request.Context(), gifSigner, gifCoverSigner, session)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		profilesMu.RLock()
+		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		title := strings.TrimSpace(req.Title)
+		description := strings.TrimSpace(req.Description)
+		if title == "" {
+			title = strings.TrimSuffix(session.FileName, filepath.Ext(session.FileName))
+		}
+		if description == "" {
+			description = title
+		}
+
+		reviewInput := service.EnqueueGifReviewInput{
+			Serial:         serial,
+			Author:         author,
+			Title:          title,
+			Description:    description,
+			GifObjectKey:   session.GifObjectKey,
+			CoverObjectKey: session.CoverObjectKey,
+		}
+
+		imageReviewMu.Lock()
+		reviewItem, pending, modErr := service.ProcessGifShareModerationWithReview(
+			c.Request.Context(),
+			imsClient,
+			gifCoverSigner,
+			&imageReviewStore,
+			reviewInput,
+			serial+"-gif-share",
+		)
+		if pending {
+			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			imageReviewMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save image review queue failed: %v", saveErr)
+			}
+			writeImageReviewPending(c, reviewItem)
+			return
+		}
+		imageReviewMu.Unlock()
+		if modErr != nil {
+			writeImageModerationError(c, modErr)
+			return
+		}
+
+		result, err := service.ShareUserGifToCatalog(
+			resourcesPath,
+			resourceMapPath,
+			imageMapPath,
+			service.ShareUserGifInput{
+				Title:          title,
+				Description:    description,
+				Author:         author,
+				UploaderSerial: serial,
+				GifObjectKey:   session.GifObjectKey,
+				CoverObjectKey: session.CoverObjectKey,
+				GifSizeBytes:   gifSize,
+			},
+		)
+		if err != nil {
+			log.Printf("warn: user gif share failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
+		shareCount := aiShareQuota.RecordShare(serial)
+		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		aiShareMu.Unlock()
+		if saveErr != nil {
+			log.Printf("warn: save user gif share counts failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享计数保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"resourceId":     result.ResourceID,
+			"downloadUrl":    result.DownloadURL,
+			"title":          result.Title,
+			"shareCount":     shareCount,
+			"shareLimit":     service.MaxAISharesPerDevice,
+			"shareRemaining": service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice),
+		})
+	})
+
 	router.GET("/api/admin/image-reviews", func(c *gin.Context) {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
@@ -1597,12 +1787,25 @@ func main() {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "复核记录不存在"})
 			return
 		}
-		if imageSigner == nil {
+
+		previewSigner := imageSigner
+		previewObjectKey := item.ImageObjectKey
+		if item.Action == service.ReviewActionShareUserGif {
+			if gifCoverSigner == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "GIF 封面存储未配置"})
+				return
+			}
+			previewSigner = gifCoverSigner
+			if coverKey := strings.TrimSpace(item.CoverObjectKey); coverKey != "" {
+				previewObjectKey = coverKey
+			}
+		}
+		if previewSigner == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "图片存储未配置"})
 			return
 		}
 
-		signedURL, err := imageSigner.GenerateReadURL(c.Request.Context(), item.ImageObjectKey, 30*time.Minute)
+		signedURL, err := previewSigner.GenerateReadURL(c.Request.Context(), previewObjectKey, 30*time.Minute)
 		if err != nil {
 			log.Printf("warn: image review read url failed: %v", err)
 			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "读取待审图片失败"})
@@ -1631,7 +1834,9 @@ func main() {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "复核记录不存在"})
 			return
 		}
-		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
+		if item.Action == service.ReviewActionShareAI ||
+			item.Action == service.ReviewActionShareUser ||
+			item.Action == service.ReviewActionShareUserGif {
 			aiShareMu.Lock()
 			reloadAIShareQuotaLocked()
 			if limitMsg := aiShareQuota.ShareLimitMessage(item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
@@ -1649,12 +1854,15 @@ func main() {
 			aiShareMu.Unlock()
 		}
 
-		result, err := service.ApprovePendingImageReview(
+		result, err := service.ApprovePendingReview(
 			c.Request.Context(),
-			imageSigner,
-			imagePublicBase,
-			resourcesPath,
-			imageMapPath,
+			service.CatalogPublishDeps{
+				ImageSigner:     imageSigner,
+				ImagePublicBase: imagePublicBase,
+				ResourcesPath:   resourcesPath,
+				ImageMapPath:    imageMapPath,
+				ResourceMapPath: resourceMapPath,
+			},
 			&imageReviewStore,
 			reviewID,
 			req.Note,
@@ -1683,7 +1891,9 @@ func main() {
 			"title":       result.Title,
 			"message":     "已通过复核并发布到素材库",
 		}
-		if item.Action == service.ReviewActionShareAI || item.Action == service.ReviewActionShareUser {
+		if item.Action == service.ReviewActionShareAI ||
+			item.Action == service.ReviewActionShareUser ||
+			item.Action == service.ReviewActionShareUserGif {
 			aiShareMu.Lock()
 			reloadAIShareQuotaLocked()
 			shareCount := aiShareQuota.RecordShare(item.Serial)

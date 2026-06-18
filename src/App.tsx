@@ -4,6 +4,7 @@ import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
+import GifUploadPage from "./pages/GifUploadPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
 import ShopPage from "./pages/ShopPage.tsx";
@@ -79,6 +80,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AiImagePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload-gif"
+          element={
+            <ProtectedRoute>
+              <GifUploadPage />
             </ProtectedRoute>
           }
         />
