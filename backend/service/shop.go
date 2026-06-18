@@ -12,11 +12,13 @@ import (
 const (
 	ShopEffectAddCredits   = "add_credits"
 	ShopEffectResetAIShare = "reset_ai_share"
+	ShopEffectGrantCode    = "grant_code"
 )
 
 type ShopEffect struct {
 	Type   string `json:"type"`
 	Amount int    `json:"amount,omitempty"`
+	Code   string `json:"code,omitempty"`
 }
 
 type ShopItem struct {
@@ -57,6 +59,9 @@ func LoadShopCatalog(path string) (ShopCatalog, error) {
 		if item.Effect.Type == "" {
 			continue
 		}
+		if item.Effect.Type == ShopEffectGrantCode && strings.TrimSpace(item.Effect.Code) == "" {
+			continue
+		}
 		valid = append(valid, item)
 	}
 	catalog.Items = valid
@@ -73,6 +78,18 @@ func (catalog ShopCatalog) FindItem(itemID string) (ShopItem, bool) {
 	return ShopItem{}, false
 }
 
+// PublicItems returns catalog items safe for client display (secrets stripped).
+func (catalog ShopCatalog) PublicItems() []ShopItem {
+	items := make([]ShopItem, len(catalog.Items))
+	for i, item := range catalog.Items {
+		items[i] = item
+		if items[i].Effect.Type == ShopEffectGrantCode {
+			items[i].Effect.Code = ""
+		}
+	}
+	return items
+}
+
 type ShopRedeemInput struct {
 	Serial string
 	ItemID string
@@ -84,6 +101,7 @@ type ShopRedeemResult struct {
 	Cost             int    `json:"cost"`
 	CreditsRemaining int    `json:"creditsRemaining"`
 	RewardCredits    int    `json:"rewardCredits,omitempty"`
+	RedeemCode       string `json:"redeemCode,omitempty"`
 	ShareCount       int    `json:"shareCount,omitempty"`
 	ShareRemaining   int    `json:"shareRemaining,omitempty"`
 	Message          string `json:"message"`
@@ -137,6 +155,15 @@ func RedeemShopItem(
 		result.ShareCount = 0
 		result.ShareRemaining = RemainingAIShares(0, MaxAISharesPerDevice)
 		result.Message = "兑换成功，AI 分享次数已重置"
+	case ShopEffectGrantCode:
+		code := strings.TrimSpace(item.Effect.Code)
+		if code == "" {
+			refund := credits.Refund(input.Serial, item.Cost)
+			result.CreditsRemaining = refund
+			return result, fmt.Errorf("兑换码未配置")
+		}
+		result.RedeemCode = code
+		result.Message = fmt.Sprintf("兑换成功，请妥善保存兑换码：%s", code)
 	default:
 		refund := credits.Refund(input.Serial, item.Cost)
 		result.CreditsRemaining = refund

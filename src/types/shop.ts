@@ -1,6 +1,7 @@
 export interface ShopEffect {
-  type: "add_credits" | "reset_ai_share" | string;
+  type: "add_credits" | "reset_ai_share" | "grant_code" | string;
   amount?: number;
+  code?: string;
 }
 
 export interface ShopItem {
@@ -27,6 +28,7 @@ export interface ShopRedeemResult {
   cost?: number;
   creditsRemaining?: number;
   rewardCredits?: number;
+  redeemCode?: string;
   shareCount?: number;
   shareRemaining?: number;
 }

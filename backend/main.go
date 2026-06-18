@@ -1028,7 +1028,7 @@ func main() {
 			"success":           true,
 			"credits":           balance,
 			"likeRewardCredits": service.LikeCreditRewardAmount,
-			"items":             shopCatalog.Items,
+			"items":             shopCatalog.PublicItems(),
 		})
 	})
 
@@ -1091,6 +1091,7 @@ func main() {
 			"cost":             result.Cost,
 			"creditsRemaining": result.CreditsRemaining,
 			"rewardCredits":    result.RewardCredits,
+			"redeemCode":       result.RedeemCode,
 			"shareCount":       result.ShareCount,
 			"shareRemaining":   result.ShareRemaining,
 		})

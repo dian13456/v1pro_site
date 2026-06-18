@@ -21,7 +21,7 @@ export default function ShopPage() {
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
   const [items, setItems] = useState<ShopItem[]>([]);
-  const [notice, setNotice] = useState("");
+  const [redeemCode, setRedeemCode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   const loadCatalog = async () => {
@@ -51,11 +51,15 @@ export default function ShopPage() {
     if (redeemingId) return;
     setRedeemingId(item.id);
     setNotice("");
+    setRedeemCode("");
     setErrorMessage("");
     try {
       const result = await redeemShopItem(item.id);
       if (typeof result.creditsRemaining === "number") {
         setCredits(result.creditsRemaining);
+      }
+      if (result.redeemCode) {
+        setRedeemCode(result.redeemCode);
       }
       setNotice(result.message || `已兑换「${item.title}」`);
       window.setTimeout(() => setNotice(""), 5000);
@@ -84,14 +88,23 @@ export default function ShopPage() {
             }
           />
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            通过 AI 生图页或 GIF 上传分享素材时，系统会记录你的设备 SN。积分与 AI 生图共用同一余额。
+            通过 AI 生图、GIF 上传或素材被点赞获得积分。当前商城仅兑换 V1PRO CNC 喵喵壳子 77 帧兑换码。
           </p>
         </SitePanel>
 
         {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
+        {redeemCode ? (
+          <SitePanel>
+            <p className="text-sm text-slate-600 dark:text-slate-300">你的兑换码</p>
+            <p className="mt-2 break-all rounded-2xl border border-violet-200/70 bg-violet-50/80 px-4 py-3 font-mono text-lg font-semibold text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100">
+              {redeemCode}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">请截图或复制保存，兑换码仅在本页展示一次。</p>
+          </SitePanel>
+        ) : null}
         {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           {loading ? (
             <div className="col-span-full text-sm text-slate-500 dark:text-slate-400">加载商品中…</div>
           ) : items.length === 0 ? (
