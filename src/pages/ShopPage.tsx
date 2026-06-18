@@ -21,6 +21,7 @@ export default function ShopPage() {
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
   const [items, setItems] = useState<ShopItem[]>([]);
+  const [notice, setNotice] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
