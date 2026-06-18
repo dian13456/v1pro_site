@@ -23,6 +23,22 @@ import { withApiSignature } from "./apiSign";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+export function formatClientError(err: unknown, fallback = "操作失败"): string {
+  if (err instanceof Error) {
+    const message = err.message.trim();
+    if (
+      !message ||
+      message === "Failed to fetch" ||
+      message === "NetworkError when attempting to fetch resource" ||
+      message === "Load failed"
+    ) {
+      return "网络请求失败，请检查连接后重试";
+    }
+    return message;
+  }
+  return fallback;
+}
+
 type JsonValue = Record<string, unknown>;
 
 interface DevDeviceWindow {
@@ -748,12 +764,12 @@ async function performApiFetch<T extends JsonValue>(
       ...signedInit,
       headers,
     });
-  } catch {
+  } catch (err) {
     if (import.meta.env.DEV && path.startsWith("/api")) {
       const mocked = createDevMockResponse(path, init);
       if (mocked) return mocked as T;
     }
-    throw new Error("接口不可达，请确认鉴权服务已启动");
+    throw new Error(formatClientError(err, "接口不可达，请确认鉴权服务已启动"));
   }
 
   let payload: JsonValue | null = null;

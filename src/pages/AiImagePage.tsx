@@ -24,6 +24,7 @@ import {
   transferAiImageToDevice,
 } from "../services/aiImageService";
 import { hasValidLocalAuth } from "../services/authService";
+import { formatClientError } from "../services/httpClient";
 import {
   AI_CREDIT_COST,
   DEFAULT_AI_CREDITS,
@@ -104,7 +105,7 @@ export default function AiImagePage() {
           .catch(() => undefined);
         return;
       }
-      const message = (err as Error)?.message || "AI 图片生成失败";
+      const message = formatClientError(err, "AI 图片生成失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -133,7 +134,7 @@ export default function AiImagePage() {
         setPrompt(uploaded.fileName || "用户上传图片");
       }
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "图片上传失败");
+      setErrorMessage(formatClientError(err, "图片上传失败"));
     } finally {
       setUploadingPick(false);
     }
@@ -159,7 +160,7 @@ export default function AiImagePage() {
         window.setTimeout(() => setTransferNotice(""), 8000);
         return;
       }
-      const message = (err as Error)?.message || "传输失败";
+      const message = formatClientError(err, "传输失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -200,7 +201,7 @@ export default function AiImagePage() {
         window.setTimeout(() => setShareNotice(""), 8000);
         return;
       }
-      const message = (err as Error)?.message || "分享失败";
+      const message = formatClientError(err, "分享失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });

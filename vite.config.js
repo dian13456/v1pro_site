@@ -28,6 +28,9 @@ function injectProductionSecurity(apiBase) {
       const tags = [
         `<meta http-equiv="Content-Security-Policy" content="${csp}" />`,
         '<meta http-equiv="Permissions-Policy" content="usb=(self), geolocation=(), camera=(), microphone=()" />',
+        '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />',
+        '<meta http-equiv="Pragma" content="no-cache" />',
+        '<meta http-equiv="Expires" content="0" />',
       ].join("\n    ");
 
       return html.replace(

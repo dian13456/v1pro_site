@@ -12,6 +12,7 @@ import {
 import { useThemeMode } from "../hooks/useThemeMode";
 import { ImageReviewPendingError } from "../services/aiImageService";
 import { hasValidLocalAuth } from "../services/authService";
+import { formatClientError } from "../services/httpClient";
 import {
   MAX_GIF_UPLOAD_BYTES,
   shareGifToCatalog,
@@ -106,7 +107,7 @@ export default function GifUploadPage() {
         setSelectedFile(null);
         return;
       }
-      setErrorMessage((err as Error)?.message || "GIF 分享失败");
+      setErrorMessage(formatClientError(err, "GIF 分享失败"));
     } finally {
       setUploading(false);
       setProgress("");

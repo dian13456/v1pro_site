@@ -1,5 +1,5 @@
 import { getAuthState, hasValidLocalAuth } from "./authService";
-import { API_BASE, apiFetch } from "./httpClient";
+import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { ImageReviewPendingError } from "./aiImageService";
 
@@ -102,8 +102,8 @@ async function uploadSessionFile(
       },
       body: form,
     });
-  } catch {
-    throw new Error("上传失败，请检查网络连接后重试");
+  } catch (err) {
+    throw new Error(formatClientError(err, "上传失败，请检查网络连接后重试"));
   }
 
   let payload: GifShareResponse | null = null;
