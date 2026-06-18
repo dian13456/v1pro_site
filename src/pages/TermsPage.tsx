@@ -1,21 +1,21 @@
 import { Link } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
+import { SitePageShell } from "../components/SitePageShell";
+import { SitePanel } from "../components/SiteUi";
 import { TERMS_SECTIONS, TERMS_TITLE } from "../content/termsOfUse";
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[760px] px-4 py-8 sm:px-6">
-        <div className="mb-6">
-          <Link
-            to="/auth"
-            className="text-sm text-violet-600 underline-offset-2 hover:underline dark:text-violet-300"
-          >
-            返回
-          </Link>
-        </div>
+    <SitePageShell>
+      <div className="mx-auto max-w-[760px] space-y-6">
+        <Link
+          to="/auth"
+          className="inline-block text-sm text-violet-600 underline-offset-2 hover:underline dark:text-violet-300"
+        >
+          返回
+        </Link>
 
-        <article className="rounded-3xl border border-white/25 bg-white/70 p-6 backdrop-blur dark:border-white/10 dark:bg-slate-900/70 sm:p-8">
+        <SitePanel className="sm:p-8">
           <p className="text-xs uppercase tracking-[0.24em] text-violet-500">Legal</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">{TERMS_TITLE}</h1>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
@@ -30,10 +30,10 @@ export default function TermsPage() {
               </section>
             ))}
           </div>
-        </article>
+        </SitePanel>
 
         <SiteFooter />
       </div>
-    </div>
+    </SitePageShell>
   );
 }

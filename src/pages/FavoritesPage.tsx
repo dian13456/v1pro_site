@@ -1,10 +1,8 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteHeader } from "../components/SiteHeader";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { SitePageLayout } from "../components/SitePageLayout";
+import { SiteAlert, SiteEmptyBlock, SiteLoadingBlock } from "../components/SiteUi";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
@@ -88,31 +86,24 @@ export default function FavoritesPage() {
   }, [favoriteIds, resources]);
 
   return (
-    <SitePageShell
+    <SitePageLayout
+      subtitle="我的收藏 · 按 SN 码保存的素材列表；传输到设备成功后会自动加入收藏"
+      theme={theme}
+      onToggleTheme={toggleTheme}
       beforeContent={
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       }
     >
-        <SiteHeader
-          title="佳点电子资源中心"
-          subtitle="我的收藏 · 按 SN 码保存的素材列表；传输到设备成功后会自动加入收藏"
-          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-        />
-
         {error || errorMessage ? (
-          <div className="mb-4 rounded-xl border border-rose-300/60 bg-rose-100/70 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+          <SiteAlert variant="error" className="mb-4">
             {error || errorMessage}
-          </div>
+          </SiteAlert>
         ) : null}
 
-        {loading ? (
-          <div className="rounded-2xl border border-white/20 bg-white/45 p-8 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-            正在加载收藏...
-          </div>
-        ) : null}
+        {loading ? <SiteLoadingBlock>正在加载收藏...</SiteLoadingBlock> : null}
 
         {!loading && favoriteResources.length === 0 ? (
-          <div className="rounded-2xl border border-white/20 bg-white/45 p-8 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
+          <SiteEmptyBlock>
             还没有收藏素材。可在
             <button
               type="button"
@@ -122,7 +113,7 @@ export default function FavoritesPage() {
               素材中心
             </button>
             点星标收藏，或传输到设备后自动加入。
-          </div>
+          </SiteEmptyBlock>
         ) : null}
 
         {!loading && favoriteResources.length > 0 ? (
@@ -155,8 +146,6 @@ export default function FavoritesPage() {
             ))}
           </section>
         ) : null}
-
-        <SiteFooter />
-    </SitePageShell>
+    </SitePageLayout>
   );
 }

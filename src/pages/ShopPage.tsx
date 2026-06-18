@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteHeader } from "../components/SiteHeader";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { useNavigate } from "react-router-dom";
+import { SitePageLayout } from "../components/SitePageLayout";
+import {
+  SiteAlert,
+  SiteButton,
+  SitePanel,
+  SiteSectionTitle,
+} from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { hasValidLocalAuth } from "../services/authService";
 import { DEFAULT_AI_CREDITS } from "../services/profileService";
@@ -64,41 +67,29 @@ export default function ShopPage() {
   };
 
   return (
-    <SitePageShell>
-      <SiteHeader
-        title="佳点电子资源中心"
-        subtitle="积分商城 · 点赞得积分，积分换权益"
-        rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-      />
-
-      <section className="mx-auto w-full max-w-4xl space-y-5">
-        <div className="rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="text-sm text-slate-500 dark:text-slate-400">当前积分</div>
+    <SitePageLayout
+      subtitle="积分商城 · 点赞得积分，积分换权益"
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      contentClassName="mx-auto w-full max-w-4xl space-y-5"
+    >
+        <SitePanel>
+          <SiteSectionTitle
+            title="我的积分"
+            description={`他人为你的上传素材点赞，你可获得 ${likeRewardCredits} 积分/次（不能给自己点赞得分）。`}
+            action={
               <div className="text-3xl font-semibold text-violet-700 dark:text-violet-200">
                 {loading ? "—" : credits}
               </div>
-            </div>
-            <div className="text-sm text-slate-600 dark:text-slate-300">
-              他人为你的上传素材点赞，你可获得 <strong>{likeRewardCredits}</strong> 积分/次（不能给自己点赞得分）。
-            </div>
-          </div>
-          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            通过 AI 生图页或上传工具分享素材时，系统会记录你的设备 SN。积分与 AI 生图共用同一余额。
+            }
+          />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            通过 AI 生图页或 GIF 上传分享素材时，系统会记录你的设备 SN。积分与 AI 生图共用同一余额。
           </p>
-        </div>
+        </SitePanel>
 
-        {notice ? (
-          <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-            {notice}
-          </div>
-        ) : null}
-        {errorMessage ? (
-          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-            {errorMessage}
-          </div>
-        ) : null}
+        {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
+        {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           {loading ? (
@@ -111,39 +102,27 @@ export default function ShopPage() {
             items.map((item) => {
               const affordable = credits >= item.cost;
               return (
-                <article
-                  key={item.id}
-                  className="flex h-full flex-col rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45"
-                >
+                <article key={item.id} className="flex h-full flex-col rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
                   <div className="flex-1 space-y-2">
                     <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{item.title}</div>
                     <p className="text-sm text-slate-600 dark:text-slate-300">{item.description}</p>
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <span className="text-sm font-medium text-violet-700 dark:text-violet-200">{item.cost} 积分</span>
-                    <button
+                    <SiteButton
                       type="button"
                       disabled={!affordable || redeemingId === item.id}
                       onClick={() => void handleRedeem(item)}
-                      className="rounded-full bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="px-4 py-2"
                     >
                       {redeemingId === item.id ? "兑换中…" : affordable ? "立即兑换" : "积分不足"}
-                    </button>
+                    </SiteButton>
                   </div>
                 </article>
               );
             })
           )}
         </div>
-
-        <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-          <Link to="/profile" className="text-violet-600 hover:underline dark:text-violet-300">
-            返回个人中心
-          </Link>
-        </div>
-      </section>
-
-      <SiteFooter />
-    </SitePageShell>
+    </SitePageLayout>
   );
 }

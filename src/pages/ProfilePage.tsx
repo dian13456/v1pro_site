@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteHeader } from "../components/SiteHeader";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { SitePageLayout } from "../components/SitePageLayout";
+import {
+  SiteAlert,
+  SiteButton,
+  SiteInput,
+  SiteLabel,
+  SitePanel,
+  SITE_PANEL_NESTED_CLASS,
+} from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
@@ -109,23 +114,22 @@ export default function ProfilePage() {
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
   return (
-    <SitePageShell>
-        <SiteHeader
-          title="佳点电子资源中心"
-          subtitle="个人中心 · 昵称与 AI 积分"
-          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-        />
-
-        <section className="mx-auto w-full max-w-3xl space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+    <SitePageLayout
+      subtitle="个人中心 · 昵称与 AI 积分"
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      contentClassName="mx-auto w-full max-w-3xl"
+    >
+        <SitePanel className="space-y-5">
           <div className="space-y-2">
-            <label className="text-sm text-slate-600 dark:text-slate-300">设备 SN 码</label>
-            <div className="break-all rounded-2xl border border-white/30 bg-white/70 px-4 py-3 font-mono text-sm text-slate-800 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100">
+            <SiteLabel>设备 SN 码</SiteLabel>
+            <div className={`break-all px-4 py-3 font-mono text-sm text-slate-800 dark:text-slate-100 ${SITE_PANEL_NESTED_CLASS}`}>
               {serial || "—"}
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-slate-600 dark:text-slate-300">AI 生图积分</label>
+            <SiteLabel>AI 生图积分</SiteLabel>
             <div className="rounded-2xl border border-violet-200/70 bg-violet-50/80 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-2xl font-semibold text-violet-700 dark:text-violet-200">
@@ -147,12 +151,12 @@ export default function ProfilePage() {
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm text-slate-600 dark:text-slate-300">网站昵称</label>
+              <SiteLabel>网站昵称</SiteLabel>
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 默认：SN 后十位（{defaultName}）
               </span>
             </div>
-            <input
+            <SiteInput
               value={nameInput}
               disabled={loading || saving}
               onChange={(event) => {
@@ -170,7 +174,6 @@ export default function ProfilePage() {
                 });
               }}
               placeholder={defaultName}
-              className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 disabled:opacity-60 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
             />
             <p className="text-xs text-slate-500 dark:text-slate-400">
               留言板、欢迎语与 AI 分享作者名将显示此昵称。自定义昵称全站不可重复。当前显示：
@@ -185,38 +188,26 @@ export default function ProfilePage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
+            <SiteButton
               type="button"
               disabled={loading || saving || !nameInput.trim()}
               onClick={() => void handleSave()}
-              className="rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "保存中…" : "保存昵称"}
-            </button>
-            <button
+            </SiteButton>
+            <SiteButton
               type="button"
+              variant="secondary"
               disabled={loading || saving || !usingCustomName}
               onClick={() => void handleResetDefault()}
-              className="rounded-full border border-slate-200/80 bg-white px-5 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
             >
               恢复默认
-            </button>
+            </SiteButton>
           </div>
 
-          {notice ? (
-            <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-              {notice}
-            </div>
-          ) : null}
-
-          {errorMessage ? (
-            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-              {errorMessage}
-            </div>
-          ) : null}
-        </section>
-
-        <SiteFooter />
-    </SitePageShell>
+          {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
+          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+        </SitePanel>
+    </SitePageLayout>
   );
 }

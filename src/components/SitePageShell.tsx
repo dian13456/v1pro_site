@@ -12,9 +12,9 @@ interface SitePageShellProps {
 
 export function SitePageShell({ children, beforeContent }: SitePageShellProps) {
   return (
-    <div className={SITE_PAGE_SHELL_CLASS}>
+    <div className={`${SITE_PAGE_SHELL_CLASS} min-h-screen`}>
       {beforeContent}
-      <div className={SITE_PAGE_CONTAINER_CLASS}>{children}</div>
+      <div className={`${SITE_PAGE_CONTAINER_CLASS} pb-8`}>{children}</div>
     </div>
   );
 }

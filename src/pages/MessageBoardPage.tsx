@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { SiteHeader } from "../components/SiteHeader";
-import { SiteFooter } from "../components/SiteFooter";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { SitePageLayout } from "../components/SitePageLayout";
+import {
+  SiteAlert,
+  SiteButton,
+  SiteEmptyBlock,
+  SiteLoadingBlock,
+  SitePanel,
+  SiteTextarea,
+} from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
@@ -83,47 +88,36 @@ export default function MessageBoardPage() {
   };
 
   return (
-    <SitePageShell>
-        <SiteHeader
-          title="佳点电子资源中心"
-          subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
-          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-        />
-
-        <section className="mb-6 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+    <SitePageLayout
+      subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      contentClassName="mx-auto w-full max-w-3xl space-y-5"
+    >
+        <SitePanel>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-600 dark:text-slate-300">
               当前昵称：<span className="font-medium text-violet-600 dark:text-violet-300">{myUsername || "—"}</span>
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">最多 {MAX_MESSAGE_LENGTH} 字</p>
           </div>
-          <textarea
+          <SiteTextarea
             value={content}
             onChange={(event) => setContent(event.target.value.slice(0, MAX_MESSAGE_LENGTH))}
             rows={4}
             placeholder="写下你的留言..."
-            className="w-full resize-y rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm text-slate-800 outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
           />
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {content.trim().length}/{MAX_MESSAGE_LENGTH}
             </span>
-            <button
-              type="button"
-              disabled={submitting || !content.trim()}
-              onClick={() => void handleSubmit()}
-              className="rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <SiteButton type="button" disabled={submitting || !content.trim()} onClick={() => void handleSubmit()}>
               {submitting ? "发布中..." : "发布留言"}
-            </button>
+            </SiteButton>
           </div>
-        </section>
+        </SitePanel>
 
-        {errorMessage ? (
-          <div className="mb-4 rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-            {errorMessage}
-          </div>
-        ) : null}
+        {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -131,20 +125,13 @@ export default function MessageBoardPage() {
             <span className="text-sm text-slate-500 dark:text-slate-400">共 {total} 条</span>
           </div>
 
-          {loading ? (
-            <div className="rounded-2xl border border-white/25 bg-white/55 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
-              正在加载留言...
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/30 bg-white/40 px-4 py-10 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/30 dark:text-slate-400">
-              还没有留言，来做第一个吧。
-            </div>
-          ) : (
-            messages.map((item) => (
-              <article
-                key={item.id}
-                className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45"
-              >
+          {loading ? <SiteLoadingBlock>正在加载留言...</SiteLoadingBlock> : null}
+          {!loading && messages.length === 0 ? (
+            <SiteEmptyBlock>还没有留言，来做第一个吧。</SiteEmptyBlock>
+          ) : null}
+          {!loading && messages.length > 0
+            ? messages.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="rounded-full bg-violet-500/15 px-3 py-1 text-sm font-medium text-violet-700 dark:text-violet-200">
                     {item.username}
@@ -158,9 +145,8 @@ export default function MessageBoardPage() {
                 </p>
               </article>
             ))
-          )}
+            : null}
         </section>
-        <SiteFooter />
-    </SitePageShell>
+    </SitePageLayout>
   );
 }

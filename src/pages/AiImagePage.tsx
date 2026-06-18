@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { SiteFooter } from "../components/SiteFooter";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
-import { SiteHeader } from "../components/SiteHeader";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { SitePageLayout } from "../components/SitePageLayout";
+import {
+  SiteAlert,
+  SiteButton,
+  SiteChipButton,
+  SitePanel,
+  SiteSectionTitle,
+  SiteTextarea,
+  SITE_BTN_SECONDARY,
+} from "../components/SiteUi";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
@@ -207,7 +213,10 @@ export default function AiImagePage() {
   const isBusy = Boolean(transferringId || sharingId);
 
   return (
-    <SitePageShell
+    <SitePageLayout
+      subtitle="AI 生图 / 上传图片"
+      theme={theme}
+      onToggleTheme={toggleTheme}
       beforeContent={
         <>
           <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
@@ -215,73 +224,62 @@ export default function AiImagePage() {
         </>
       }
     >
-        <SiteHeader
-          title="佳点电子资源中心"
-          subtitle="AI 生图 / 上传图片"
-          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-        />
-
-        <section className="mb-4 rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI 生图 / 上传图片</h1>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={uploadInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif"
-                className="hidden"
-                onChange={(event) => void handleUploadPick(event)}
-              />
-              <button
-                type="button"
-                disabled={loading || isBusy || uploadingPick}
-                onClick={() => uploadInputRef.current?.click()}
-                className="rounded-full border border-cyan-200/70 bg-white/70 px-4 py-1.5 text-sm text-cyan-800 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-500/30 dark:bg-slate-900/50 dark:text-cyan-200"
-              >
-                {uploadingPick ? "处理图片中..." : "上传本地图片"}
-              </button>
-              <span className="rounded-full border border-violet-200/70 bg-white/70 px-4 py-1.5 text-sm text-violet-800 dark:border-violet-500/30 dark:bg-slate-900/50 dark:text-violet-200">
-                剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
-              </span>
-            </div>
-          </div>
-        </section>
+        <SitePanel accent>
+          <SiteSectionTitle
+            title="AI 生图 / 上传图片"
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif"
+                  className="hidden"
+                  onChange={(event) => void handleUploadPick(event)}
+                />
+                <button
+                  type="button"
+                  disabled={loading || isBusy || uploadingPick}
+                  onClick={() => uploadInputRef.current?.click()}
+                  className={SITE_BTN_SECONDARY}
+                >
+                  {uploadingPick ? "处理图片中..." : "上传本地图片"}
+                </button>
+                <span className={`${SITE_BTN_SECONDARY} cursor-default hover:bg-white/50 dark:hover:bg-slate-900/45`}>
+                  剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
+                </span>
+              </div>
+            }
+          />
+        </SitePanel>
 
         <section className="mb-4 flex flex-wrap gap-2">
           {getStarterPrompts().map((starter) => (
-            <button
-              key={starter}
-              type="button"
-              disabled={loading}
-              onClick={() => setPrompt(starter)}
-              className="rounded-full border border-violet-200/70 bg-violet-50/80 px-4 py-2 text-sm text-violet-800 transition hover:bg-violet-100 disabled:opacity-60 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200"
-            >
+            <SiteChipButton key={starter} disabled={loading} onClick={() => setPrompt(starter)}>
               {starter}
-            </button>
+            </SiteChipButton>
           ))}
         </section>
 
-        <section className="space-y-5 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <SitePanel className="space-y-5">
           <div className="space-y-3">
-            <textarea
+            <SiteTextarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value.slice(0, MAX_PROMPT_LENGTH))}
               rows={4}
               placeholder="描述你想要的画面，例如：赛博朋克风格的城市夜景，霓虹灯，雨夜反光，高细节"
-              className="w-full resize-y rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
             />
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {prompt.trim().length}/{MAX_PROMPT_LENGTH}
               </span>
-              <button
+              <SiteButton
                 type="button"
                 disabled={loading || !prompt.trim() || !canGenerate}
                 onClick={() => void handleGenerate()}
-                className="rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 px-6 py-2.5 text-sm font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 hover:brightness-110"
               >
                 {loading ? "生成中…" : canGenerate ? "生成图片" : "积分不足"}
-              </button>
+              </SiteButton>
             </div>
           </div>
 
@@ -289,11 +287,7 @@ export default function AiImagePage() {
             <div className="text-sm text-slate-500 dark:text-slate-400">正在绘制，请稍候…</div>
           ) : null}
 
-          {errorMessage ? (
-            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-              {errorMessage}
-            </div>
-          ) : null}
+          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
           {images.length > 0 ? (
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -346,9 +340,8 @@ export default function AiImagePage() {
               ))}
             </div>
           ) : null}
-        </section>
+        </SitePanel>
 
-        <SiteFooter />
-    </SitePageShell>
+    </SitePageLayout>
   );
 }

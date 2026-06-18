@@ -2,10 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteHeader } from "../components/SiteHeader";
-import { SitePageShell } from "../components/SitePageShell";
-import { SitePageToolbar } from "../components/SitePageToolbar";
+import { SitePageLayout } from "../components/SitePageLayout";
+import {
+  SiteAlert,
+  SiteButton,
+  SiteChipButton,
+  SitePanel,
+  SiteTextarea,
+} from "../components/SiteUi";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { MAX_QUESTION_LENGTH, askAiGuide } from "../services/aiGuideService";
@@ -133,32 +137,28 @@ export default function AiGuidePage() {
   };
 
   return (
-    <SitePageShell
+    <SitePageLayout
+      subtitle="AI 助手 · 从素材库中智能推荐"
+      theme={theme}
+      onToggleTheme={toggleTheme}
       beforeContent={
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       }
     >
-        <SiteHeader
-          title="佳点电子资源中心"
-          subtitle="AI 助手 · 从素材库中智能推荐"
-          rightSlot={<SitePageToolbar theme={theme} onToggleTheme={toggleTheme} />}
-        />
-
         <section className="mb-4 flex flex-wrap gap-2">
           {STARTER_PROMPTS.map((prompt) => (
-            <button
+            <SiteChipButton
               key={prompt}
-              type="button"
+              cyan
               disabled={loading}
               onClick={() => void submitQuestion(prompt)}
-              className="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-60 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200"
             >
               {prompt}
-            </button>
+            </SiteChipButton>
           ))}
         </section>
 
-        <section className="space-y-6 rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <SitePanel className="space-y-6">
           {messages.map((message, index) => (
             <div key={`${message.role}-${index}`} className="space-y-4">
               <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -223,37 +223,32 @@ export default function AiGuidePage() {
             <div className="text-sm text-slate-500 dark:text-slate-400">AI 正在思考…</div>
           ) : null}
 
-          {errorMessage ? (
-            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-              {errorMessage}
-            </div>
-          ) : null}
+          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
           <div className="flex flex-col gap-3 border-t border-white/20 pt-4 dark:border-white/10">
-            <textarea
+            <SiteTextarea
               value={input}
               onChange={(event) => setInput(event.target.value.slice(0, MAX_QUESTION_LENGTH))}
               rows={3}
               placeholder="例如：推荐几个孤独摇滚相关的 GIF"
-              className="w-full resize-y rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-cyan-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
+              className="ring-cyan-400/40"
             />
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {input.trim().length}/{MAX_QUESTION_LENGTH}
               </span>
-              <button
+              <SiteButton
                 type="button"
                 disabled={loading || !input.trim()}
                 onClick={() => void submitQuestion(input)}
-                className="rounded-full bg-cyan-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="bg-cyan-600 hover:bg-cyan-500"
               >
                 {loading ? "发送中..." : "发送"}
-              </button>
+              </SiteButton>
             </div>
           </div>
-        </section>
+        </SitePanel>
 
-        <SiteFooter />
-    </SitePageShell>
+    </SitePageLayout>
   );
 }

@@ -4,14 +4,12 @@ import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { SearchBar } from "../components/SearchBar";
-import { SiteHeader } from "../components/SiteHeader";
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteNav } from "../components/SiteNav";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { SitePageLayout } from "../components/SitePageLayout";
+import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
-import { clearAuthState, hasValidLocalAuth } from "../services/authService";
+import { hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
@@ -200,11 +198,6 @@ export default function ResourcesPage() {
       active = false;
     };
   }, []);
-
-  const handleLogout = () => {
-    clearAuthState();
-    navigate("/auth", { replace: true });
-  };
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -401,26 +394,14 @@ export default function ResourcesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_8%_14%,rgba(125,211,252,0.22),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(147,197,253,0.2),transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900 dark:bg-[radial-gradient(circle_at_8%_14%,rgba(14,116,144,0.25),transparent_42%),radial-gradient(circle_at_90%_10%,rgba(30,64,175,0.24),transparent_38%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-        <SiteHeader
-          title="佳点电子资源中心"
-          rightSlot={
-            <div className="flex flex-wrap items-center gap-2">
-              <SiteNav />
-              <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-              >
-                退出认证
-              </button>
-            </div>
-          }
-        />
-
+    <SitePageLayout
+      subtitle="素材中心 · 浏览、下载与传输到 V1PRO 设备"
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      beforeContent={
+        <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      }
+    >
         <section className="mb-6 grid gap-3 md:grid-cols-[1fr_auto]">
           <SearchBar value={keyword} onChange={setKeyword} />
           <CategoryTabs value={category} onChange={setCategory} />
@@ -436,18 +417,13 @@ export default function ResourcesPage() {
           ].map((item) => {
             const active = materialType === item.value;
             return (
-              <button
+              <SiteFilterChip
                 key={item.value}
-                type="button"
+                active={active}
                 onClick={() => setMaterialType(item.value as typeof materialType)}
-                className={`rounded-full px-4 py-2 text-sm transition ${
-                  active
-                    ? "bg-cyan-600 text-white"
-                    : "border border-white/25 bg-white/55 text-slate-700 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
-                }`}
               >
                 {item.label}
-              </button>
+              </SiteFilterChip>
             );
           })}
         </section>
@@ -642,8 +618,6 @@ export default function ResourcesPage() {
             </button>
           </section>
         ) : null}
-        <SiteFooter />
-      </div>
-    </div>
+    </SitePageLayout>
   );
 }

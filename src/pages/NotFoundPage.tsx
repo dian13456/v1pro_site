@@ -1,15 +1,20 @@
 import { Link } from "react-router-dom";
+import { SitePageShell } from "../components/SitePageShell";
+import { SiteButton, SitePanel } from "../components/SiteUi";
 
 export default function NotFoundPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
-      <div className="text-center">
-        <h1 className="text-5xl font-semibold">404</h1>
-        <p className="mt-3 text-slate-400">页面不存在</p>
-        <Link to="/" className="mt-6 inline-block rounded-full bg-white px-6 py-2 text-sm text-slate-900">
-          返回资源中心
-        </Link>
+    <SitePageShell>
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <SitePanel className="max-w-md text-center">
+          <p className="text-xs uppercase tracking-[0.24em] text-cyan-500">404</p>
+          <h1 className="mt-2 text-4xl font-semibold text-slate-900 dark:text-slate-50">页面不存在</h1>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">你访问的地址可能已失效或输入有误。</p>
+          <Link to="/" className="mt-6 inline-block">
+            <SiteButton type="button">返回素材中心</SiteButton>
+          </Link>
+        </SitePanel>
       </div>
-    </div>
+    </SitePageShell>
   );
 }
