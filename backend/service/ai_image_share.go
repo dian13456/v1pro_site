@@ -23,10 +23,11 @@ const (
 var aiImageShareMu sync.Mutex
 
 type ShareAIImageInput struct {
-	ImageBase64 string
-	Prompt      string
-	Title       string
-	Author      string
+	ImageBase64    string
+	Prompt         string
+	Title          string
+	Author         string
+	UploaderSerial string
 }
 
 type ShareAIImageResult struct {
@@ -106,6 +107,10 @@ func ShareAIImageToCatalog(
 	}
 	if author != "" {
 		entry["author"] = author
+	}
+	uploaderSerial := normalizeUploaderSerial(input.UploaderSerial)
+	if uploaderSerial != "" {
+		entry[catalogUploaderSerialKey] = uploaderSerial
 	}
 
 	resources = append(resources, entry)

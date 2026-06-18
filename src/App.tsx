@@ -6,6 +6,7 @@ import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
+import ShopPage from "./pages/ShopPage.tsx";
 import FavoritesPage from "./pages/FavoritesPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
@@ -78,6 +79,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AiImagePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/shop"
+          element={
+            <ProtectedRoute>
+              <ShopPage />
             </ProtectedRoute>
           }
         />

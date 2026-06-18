@@ -37,6 +37,10 @@ type likeRequest struct {
 	ResourceID string `json:"resourceId"`
 }
 
+type shopRedeemRequest struct {
+	ItemID string `json:"itemId"`
+}
+
 type favoriteRequest struct {
 	ResourceID string `json:"resourceId"`
 	Action     string `json:"action"`
@@ -650,6 +654,10 @@ func main() {
 	if aiImageCreditsPath == "" {
 		aiImageCreditsPath = filepath.Join("config", "ai_image_credits.json")
 	}
+	shopItemsPath := os.Getenv("SHOP_ITEMS_PATH")
+	if shopItemsPath == "" {
+		shopItemsPath = filepath.Join("config", "shop_items.json")
+	}
 	resourcesPath := os.Getenv("RESOURCES_PATH")
 	if resourcesPath == "" {
 		resourcesPath = filepath.Join("..", "src", "data", "resources.json")
@@ -765,6 +773,10 @@ func main() {
 	aiCredits, err := userDataRepo.LoadAICredits()
 	if err != nil {
 		log.Fatalf("load ai image credits failed: %v", err)
+	}
+	shopCatalog, err := service.LoadShopCatalog(shopItemsPath)
+	if err != nil {
+		log.Fatalf("load shop items failed: %v", err)
 	}
 	reloadAICreditsLocked := func() {
 		if err := userDataRepo.TryReloadAICredits(&aiCredits); err != nil {
@@ -982,9 +994,93 @@ func main() {
 			"success":        true,
 			"serial":         serial,
 			"displayName":    displayName,
-			"credits":        credits,
-			"creditsDefault": service.DefaultAICredits,
-			"creditCost":     service.AICreditCostPerGeneration,
+			"credits":           credits,
+			"creditsDefault":    service.DefaultAICredits,
+			"creditCost":        service.AICreditCostPerGeneration,
+			"likeRewardCredits": service.LikeCreditRewardAmount,
+		})
+	})
+
+	router.GET("/api/shop/items", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
+		balance := aiCredits.Balance(serial)
+		aiCreditsMu.Unlock()
+		c.JSON(http.StatusOK, gin.H{
+			"success":           true,
+			"credits":           balance,
+			"likeRewardCredits": service.LikeCreditRewardAmount,
+			"items":             shopCatalog.Items,
+		})
+	})
+
+	router.POST("/api/shop/redeem", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req shopRedeemRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ItemID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "itemId 不能为空"})
+			return
+		}
+
+		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
+		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
+		result, redeemErr := service.RedeemShopItem(
+			service.ShopRedeemInput{Serial: serial, ItemID: req.ItemID},
+			shopCatalog,
+			&aiCredits,
+			&aiShareQuota,
+		)
+		if redeemErr != nil {
+			balance := aiCredits.Balance(serial)
+			aiShareMu.Unlock()
+			aiCreditsMu.Unlock()
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success":  false,
+				"message":  redeemErr.Error(),
+				"credits":  balance,
+			})
+			return
+		}
+		if saveErr := userDataRepo.SaveAICredits(aiCredits); saveErr != nil {
+			aiShareMu.Unlock()
+			aiCreditsMu.Unlock()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分保存失败"})
+			return
+		}
+		if item, found := shopCatalog.FindItem(strings.TrimSpace(req.ItemID)); found && item.Effect.Type == service.ShopEffectResetAIShare {
+			if saveShareErr := userDataRepo.SaveAIShareQuota(aiShareQuota); saveShareErr != nil {
+				aiShareMu.Unlock()
+				aiCreditsMu.Unlock()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享次数保存失败"})
+				return
+			}
+		}
+		aiShareMu.Unlock()
+		aiCreditsMu.Unlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":          true,
+			"message":          result.Message,
+			"itemId":           result.ItemID,
+			"title":            result.Title,
+			"cost":             result.Cost,
+			"creditsRemaining": result.CreditsRemaining,
+			"rewardCredits":    result.RewardCredits,
+			"shareCount":       result.ShareCount,
+			"shareRemaining":   result.ShareRemaining,
 		})
 	})
 
@@ -1309,10 +1405,11 @@ func main() {
 			resourcesPath,
 			imageMapPath,
 			service.ShareAIImageInput{
-				ImageBase64: req.ImageBase64,
-				Prompt:      req.Prompt,
-				Title:       req.Title,
-				Author:      author,
+				ImageBase64:    req.ImageBase64,
+				Prompt:         req.Prompt,
+				Title:          req.Title,
+				Author:         author,
+				UploaderSerial: serial,
 			},
 		)
 		if err != nil {
@@ -1415,10 +1512,11 @@ func main() {
 			resourcesPath,
 			imageMapPath,
 			service.ShareAIImageInput{
-				ImageBase64: req.ImageBase64,
-				Prompt:      req.Description,
-				Title:       req.Title,
-				Author:      author,
+				ImageBase64:    req.ImageBase64,
+				Prompt:         req.Description,
+				Title:          req.Title,
+				Author:         author,
+				UploaderSerial: serial,
 			},
 		)
 		if err != nil {
@@ -1708,11 +1806,37 @@ func main() {
 			return
 		}
 
+		creditRewarded := false
+		creditRewardAmount := 0
+		if !alreadyLiked {
+			catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
+			if catalogErr != nil {
+				log.Printf("warn: load resource catalog for like reward failed: %v", catalogErr)
+			} else {
+				uploaderSerial := service.FindUploaderSerial(catalogItems, resourceID)
+				if service.ShouldAwardLikeCredit(uploaderSerial, serial) {
+					aiCreditsMu.Lock()
+					reloadAICreditsLocked()
+					if _, earnErr := aiCredits.Earn(uploaderSerial, service.LikeCreditRewardAmount); earnErr == nil {
+						if creditSaveErr := userDataRepo.SaveAICredits(aiCredits); creditSaveErr != nil {
+							log.Printf("warn: save like reward credits failed: %v", creditSaveErr)
+						} else {
+							creditRewarded = true
+							creditRewardAmount = service.LikeCreditRewardAmount
+						}
+					}
+					aiCreditsMu.Unlock()
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"success":      true,
-			"alreadyLiked": alreadyLiked,
-			"liked":        true,
-			"likeCount":    likeCount,
+			"success":            true,
+			"alreadyLiked":       alreadyLiked,
+			"liked":              true,
+			"likeCount":          likeCount,
+			"creditRewarded":     creditRewarded,
+			"creditRewardAmount": creditRewardAmount,
 		})
 	})
 

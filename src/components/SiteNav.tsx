@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: "/ai-image", label: "AI 生图", highlight: true },
   { to: "/", label: "素材中心", highlight: false },
   { to: "/favorites", label: "我的收藏", highlight: false },
+  { to: "/shop", label: "积分商城", highlight: false },
   { to: "/profile", label: "个人中心", highlight: false },
   { to: "/board", label: "留言板", highlight: false },
 ];

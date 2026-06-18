@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteHeader } from "../components/SiteHeader";
 import { SitePageShell } from "../components/SitePageShell";
@@ -33,6 +33,7 @@ export default function ProfilePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [nameHint, setNameHint] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
+  const [likeRewardCredits, setLikeRewardCredits] = useState(1);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -49,6 +50,9 @@ export default function ProfilePage() {
           setCredits(profile.credits);
         } else {
           setCredits(DEFAULT_AI_CREDITS);
+        }
+        if (typeof profile.likeRewardCredits === "number") {
+          setLikeRewardCredits(profile.likeRewardCredits);
         }
       })
       .catch(() => {
@@ -128,9 +132,16 @@ export default function ProfilePage() {
                   {loading ? "—" : credits ?? DEFAULT_AI_CREDITS}
                 </span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST}
+                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST} · 素材被点赞 +{likeRewardCredits}
                 </span>
               </div>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                上传素材被他人点赞可获得积分，前往{" "}
+                <Link to="/shop" className="text-violet-600 hover:underline dark:text-violet-300">
+                  积分商城
+                </Link>{" "}
+                兑换权益。
+              </p>
             </div>
           </div>
 

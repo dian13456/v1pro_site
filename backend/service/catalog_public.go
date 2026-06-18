@@ -38,6 +38,7 @@ func SanitizePublicResourceCatalog(items []map[string]any) []map[string]any {
 			copy[key] = value
 		}
 		delete(copy, "download")
+		delete(copy, catalogUploaderSerialKey)
 		if imageRaw, ok := copy["image"].(string); ok {
 			copy["image"] = StripPublicObjectURL(imageRaw)
 		}

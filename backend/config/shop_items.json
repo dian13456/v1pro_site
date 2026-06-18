@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "id": "ai_bonus_20",
+      "title": "AI 生图积分礼包",
+      "description": "兑换后额外获得 20 点 AI 生图积分（与点赞积分共用）",
+      "cost": 15,
+      "effect": {
+        "type": "add_credits",
+        "amount": 20
+      }
+    },
+    {
+      "id": "share_reset",
+      "title": "重置 AI 分享次数",
+      "description": "将本设备 AI 分享已用次数清零，上限仍为 50 次/设备",
+      "cost": 30,
+      "effect": {
+        "type": "reset_ai_share"
+      }
+    },
+    {
+      "id": "ai_bonus_50",
+      "title": "AI 生图豪华礼包",
+      "description": "兑换后额外获得 50 点 AI 生图积分",
+      "cost": 40,
+      "effect": {
+        "type": "add_credits",
+        "amount": 50
+      }
+    }
+  ]
+}

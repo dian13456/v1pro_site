@@ -246,10 +246,11 @@ func ApprovePendingImageReview(
 		resourcesPath,
 		imageMapPath,
 		ShareAIImageInput{
-			ImageBase64: imageBase64,
-			Prompt:      prompt,
-			Title:       title,
-			Author:      item.Author,
+			ImageBase64:    imageBase64,
+			Prompt:         prompt,
+			Title:          title,
+			Author:         item.Author,
+			UploaderSerial: item.Serial,
 		},
 	)
 	if err != nil {
