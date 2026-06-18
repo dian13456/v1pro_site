@@ -139,6 +139,27 @@ func CreateGifUploadSession(
 	}, nil
 }
 
+func (store *GifUploadSessionStore) Get(sessionID, serial string) (GifUploadSession, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	serial = normalizeUploaderSerial(serial)
+	if sessionID == "" || serial == "" {
+		return GifUploadSession{}, fmt.Errorf("上传会话无效")
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.purgeExpired(time.Now())
+
+	session, ok := store.sessions[sessionID]
+	if !ok {
+		return GifUploadSession{}, fmt.Errorf("上传会话不存在或已过期")
+	}
+	if session.Serial != serial {
+		return GifUploadSession{}, fmt.Errorf("上传会话与当前设备不匹配")
+	}
+	return session, nil
+}
+
 func (store *GifUploadSessionStore) Consume(sessionID, serial string) (GifUploadSession, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	serial = normalizeUploaderSerial(serial)
@@ -382,4 +403,50 @@ func fetchURLBytesLimited(ctx context.Context, url string, maxBytes int64) ([]by
 		return nil, fmt.Errorf("对象为空")
 	}
 	return body, nil
+}
+
+const maxUserGifCoverUploadBytes = 8 << 20
+
+func UploadGifSessionFile(
+	ctx context.Context,
+	store *GifUploadSessionStore,
+	gifSigner *COSSigner,
+	coverSigner *COSSigner,
+	serial string,
+	sessionID string,
+	kind string,
+	data []byte,
+) error {
+	if store == nil {
+		return fmt.Errorf("上传会话存储未配置")
+	}
+	if gifSigner == nil || coverSigner == nil {
+		return fmt.Errorf("GIF 存储未配置")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("上传文件为空")
+	}
+
+	session, err := store.Get(sessionID, serial)
+	if err != nil {
+		return err
+	}
+
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "gif":
+		if int64(len(data)) > MaxUserGifUploadBytes {
+			return fmt.Errorf("GIF 文件不能超过 %s", formatByteSize(int(MaxUserGifUploadBytes)))
+		}
+		if session.ExpectedSize > 0 && int64(len(data)) > session.ExpectedSize*11/10 {
+			return fmt.Errorf("GIF 文件大小与声明不一致")
+		}
+		return gifSigner.UploadObject(ctx, session.GifObjectKey, "image/gif", data)
+	case "cover":
+		if int64(len(data)) > maxUserGifCoverUploadBytes {
+			return fmt.Errorf("封面文件过大")
+		}
+		return coverSigner.UploadObject(ctx, session.CoverObjectKey, "image/jpeg", data)
+	default:
+		return fmt.Errorf("不支持的上传类型")
+	}
 }

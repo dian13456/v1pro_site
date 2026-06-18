@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -882,6 +883,7 @@ func main() {
 	}
 
 	router := gin.Default()
+	router.MaxMultipartMemory = 20 << 20
 	router.Use(corsMiddleware(corsAllowOrigin))
 	router.Use(apiSignVerifier.Middleware())
 	router.Use(abuseGuard.Middleware())
@@ -1603,6 +1605,74 @@ func main() {
 			"coverObjectKey": result.CoverObjectKey,
 			"maxBytes":       result.MaxBytes,
 		})
+	})
+
+	router.POST("/api/user-gif/upload", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if gifSigner == nil || gifCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "GIF 存储未配置"})
+			return
+		}
+
+		sessionID := strings.TrimSpace(c.PostForm("sessionId"))
+		kind := strings.TrimSpace(c.PostForm("kind"))
+		if sessionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
+			return
+		}
+
+		fileHeader, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少上传文件"})
+			return
+		}
+
+		maxSize := int64(service.MaxUserGifUploadBytes)
+		if strings.EqualFold(kind, "cover") {
+			maxSize = 8 << 20
+		}
+		if fileHeader.Size <= 0 || fileHeader.Size > maxSize {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "文件大小无效"})
+			return
+		}
+
+		file, err := fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法读取上传文件"})
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(io.LimitReader(file, maxSize+1))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法读取上传文件"})
+			return
+		}
+		if int64(len(data)) > maxSize {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "文件过大"})
+			return
+		}
+
+		if err := service.UploadGifSessionFile(
+			c.Request.Context(),
+			gifUploadSessionStore,
+			gifSigner,
+			gifCoverSigner,
+			serial,
+			sessionID,
+			kind,
+			data,
+		); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true})
 	})
 
 	router.POST("/api/user-gif/share", func(c *gin.Context) {

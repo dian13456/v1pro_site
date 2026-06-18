@@ -138,6 +138,9 @@ func (v *APISignVerifier) shouldVerify(path string) bool {
 	if strings.HasPrefix(path, "/api/admin/") {
 		return false
 	}
+	if path == "/api/user-gif/upload" {
+		return false
+	}
 	return true
 }
 

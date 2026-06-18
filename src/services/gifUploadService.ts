@@ -1,5 +1,5 @@
 import { getAuthState, hasValidLocalAuth } from "./authService";
-import { apiFetch } from "./httpClient";
+import { API_BASE, apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { ImageReviewPendingError } from "./aiImageService";
 
@@ -81,16 +81,40 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
   });
 }
 
-async function putBlob(url: string, blob: Blob, contentType: string): Promise<void> {
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": contentType,
-    },
-    body: blob,
-  });
-  if (!response.ok) {
-    throw new Error(`上传失败 (HTTP ${response.status})`);
+async function uploadSessionFile(
+  sessionId: string,
+  kind: "gif" | "cover",
+  blob: Blob,
+  fileName: string
+): Promise<void> {
+  const auth = getAuthState();
+  const form = new FormData();
+  form.append("sessionId", sessionId);
+  form.append("kind", kind);
+  form.append("file", blob, fileName);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/user-gif/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: form,
+    });
+  } catch {
+    throw new Error("上传失败，请检查网络连接后重试");
+  }
+
+  let payload: GifShareResponse | null = null;
+  try {
+    payload = (await response.json()) as GifShareResponse;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.message || `上传失败（HTTP ${response.status})`);
   }
 }
 
@@ -155,16 +179,16 @@ export async function shareGifToCatalog(
 
   options.onProgress?.("申请上传地址...");
   const session = await createGifUploadSession(file);
-  if (!session.success || !session.sessionId || !session.gifUploadUrl || !session.coverUploadUrl) {
+  if (!session.success || !session.sessionId) {
     throw new Error(session.message || "无法创建上传会话");
   }
 
   options.onProgress?.("上传 GIF...");
-  await putBlob(session.gifUploadUrl, file, "image/gif");
+  await uploadSessionFile(session.sessionId, "gif", file, file.name);
 
   options.onProgress?.("生成并上传封面...");
   const coverBlob = await extractGifCoverJpeg(file);
-  await putBlob(session.coverUploadUrl, coverBlob, "image/jpeg");
+  await uploadSessionFile(session.sessionId, "cover", coverBlob, "cover.jpg");
 
   options.onProgress?.("提交分享...");
   const payload = await apiFetch<GifShareResponse>("/api/user-gif/share", {
