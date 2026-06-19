@@ -5,6 +5,7 @@ import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
 import GifUploadPage from "./pages/GifUploadPage.tsx";
+import VideoUploadPage from "./pages/VideoUploadPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
 import ShopPage from "./pages/ShopPage.tsx";
@@ -88,6 +89,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <GifUploadPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload-video"
+          element={
+            <ProtectedRoute>
+              <VideoUploadPage />
             </ProtectedRoute>
           }
         />

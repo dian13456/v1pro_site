@@ -21,7 +21,8 @@ const (
 
 	ReviewActionShareAI     = "share_ai"
 	ReviewActionShareUser   = "share_user"
-	ReviewActionShareUserGif = "share_user_gif"
+	ReviewActionShareUserGif   = "share_user_gif"
+	ReviewActionShareUserVideo = "share_user_video"
 	ReviewActionTransfer    = "transfer"
 	ReviewActionGenerate    = "generate"
 )
@@ -256,6 +257,11 @@ func ApprovePendingReview(
 			return nil, fmt.Errorf("素材映射未配置")
 		}
 		result, err = approvePendingGifShare(deps, item, reviewID, note, store)
+	case ReviewActionShareUserVideo:
+		if strings.TrimSpace(deps.ResourceMapPath) == "" {
+			return nil, fmt.Errorf("素材映射未配置")
+		}
+		result, err = approvePendingVideoShare(deps, item, reviewID, note, store)
 	default:
 		return nil, fmt.Errorf("该类型记录不支持发布到素材库")
 	}
@@ -381,6 +387,64 @@ func approvePendingGifShare(
 	return result, nil
 }
 
+func approvePendingVideoShare(
+	deps CatalogPublishDeps,
+	item PendingImageReview,
+	reviewID string,
+	note string,
+	store *ImageReviewStore,
+) (*ShareAIImageResult, error) {
+	videoObjectKey := strings.TrimSpace(item.GifObjectKey)
+	coverObjectKey := strings.TrimSpace(item.CoverObjectKey)
+	if videoObjectKey == "" {
+		videoObjectKey = strings.TrimSpace(item.ImageObjectKey)
+	}
+	if coverObjectKey == "" {
+		coverObjectKey = strings.TrimSpace(item.ImageObjectKey)
+	}
+	if videoObjectKey == "" || coverObjectKey == "" {
+		return nil, fmt.Errorf("待审视频信息不完整")
+	}
+
+	title := item.Title
+	description := item.Description
+	if title == "" {
+		title = item.Description
+	}
+	if description == "" {
+		description = item.Title
+	}
+
+	result, err := ShareUserVideoToCatalog(
+		deps.ResourcesPath,
+		deps.ResourceMapPath,
+		deps.ImageMapPath,
+		ShareUserVideoInput{
+			Title:          title,
+			Description:    description,
+			Author:         item.Author,
+			UploaderSerial: item.Serial,
+			VideoObjectKey: videoObjectKey,
+			CoverObjectKey: coverObjectKey,
+			VideoSizeBytes: 0,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = store.Update(reviewID, func(entry *PendingImageReview) error {
+		entry.Status = ImageReviewStatusApproved
+		entry.ReviewNote = strings.TrimSpace(note)
+		entry.ReviewedAt = time.Now().Format(time.RFC3339)
+		return nil
+	})
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 func RejectPendingImageReview(store *ImageReviewStore, reviewID string, note string) (PendingImageReview, error) {
 	return store.Update(reviewID, func(entry *PendingImageReview) error {
 		if !strings.EqualFold(entry.Status, ImageReviewStatusPending) {
@@ -483,6 +547,67 @@ func ProcessGifShareModerationWithReview(
 
 	outcome := strictestModerationOutcome(coverOutcome, gifOutcome)
 	return applyGifModerationOutcome(store, input, outcome)
+}
+
+type EnqueueVideoReviewInput struct {
+	Serial         string
+	Author         string
+	Title          string
+	Description    string
+	VideoObjectKey string
+	CoverObjectKey string
+	Outcome        ImageModerationOutcome
+}
+
+func EnqueueVideoReview(store *ImageReviewStore, input EnqueueVideoReviewInput) PendingImageReview {
+	reviewID := fmt.Sprintf("rev-%d", time.Now().UnixNano())
+	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
+	return store.Enqueue(PendingImageReview{
+		ID:             reviewID,
+		Serial:         strings.TrimSpace(input.Serial),
+		Author:         strings.TrimSpace(input.Author),
+		Action:         ReviewActionShareUserVideo,
+		Title:          strings.TrimSpace(input.Title),
+		Description:    strings.TrimSpace(input.Description),
+		Source:         "upload",
+		ImageObjectKey: coverObjectKey,
+		GifObjectKey:   strings.TrimSpace(input.VideoObjectKey),
+		CoverObjectKey: coverObjectKey,
+		Label:          strings.TrimSpace(input.Outcome.Label),
+		SubLabel:       strings.TrimSpace(input.Outcome.SubLabel),
+		Score:          input.Outcome.Score,
+	})
+}
+
+func ProcessVideoShareModerationWithReview(
+	ctx context.Context,
+	imsClient *ImageModerationClient,
+	videoSigner *COSSigner,
+	coverSigner *COSSigner,
+	store *ImageReviewStore,
+	input EnqueueVideoReviewInput,
+	dataID string,
+) (PendingImageReview, bool, error) {
+	if imsClient == nil || !imsClient.Available() {
+		return PendingImageReview{}, false, nil
+	}
+
+	coverBytes, err := FetchObjectBytes(ctx, coverSigner, input.CoverObjectKey, maxIMSFileBytes)
+	if err != nil {
+		return PendingImageReview{}, false, fmt.Errorf("读取视频封面失败")
+	}
+	coverOutcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID+"-cover", "IMAGE")
+	if err != nil {
+		return PendingImageReview{}, false, err
+	}
+
+	videoOutcome, err := imsClient.ModerateVideoObjectDetailed(ctx, videoSigner, input.VideoObjectKey, dataID+"-video")
+	if err != nil {
+		return PendingImageReview{}, false, err
+	}
+
+	outcome := strictestModerationOutcome(coverOutcome, videoOutcome)
+	return applyVideoModerationOutcome(store, input, outcome)
 }
 
 func fetchURLAsBase64DataURL(ctx context.Context, url string) (string, error) {

@@ -628,7 +628,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
-  if (path === "/api/ai-image/share" || path === "/api/user-image/share" || path === "/api/user-gif/share") {
+  if (path === "/api/ai-image/share" || path === "/api/user-image/share" || path === "/api/user-gif/share" || path === "/api/user-video/share") {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
     }
@@ -653,6 +653,8 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     const titleSource =
       path === "/api/user-gif/share"
         ? String(body.title || body.description || "用户上传 GIF")
+        : path === "/api/user-video/share"
+        ? String(body.title || body.description || "用户上传视频")
         : path === "/api/user-image/share"
         ? String(body.title || body.description || "用户上传图片")
         : String(body.prompt || "AI 生成图片");
@@ -677,6 +679,19 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       gifUploadUrl: "https://www.jadot.cn/favicon.ico",
       coverUploadUrl: "https://www.jadot.cn/favicon.ico",
       maxBytes: 15 * 1024 * 1024,
+    };
+  }
+
+  if (path === "/api/user-video/upload-session") {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    return {
+      success: true,
+      sessionId: "dev-session",
+      videoUploadUrl: "https://www.jadot.cn/favicon.ico",
+      coverUploadUrl: "https://www.jadot.cn/favicon.ico",
+      maxBytes: 20 * 1024 * 1024,
     };
   }
 

@@ -105,6 +105,17 @@ type userGifShareRequest struct {
 	Description string `json:"description"`
 }
 
+type userVideoUploadSessionRequest struct {
+	FileName string `json:"fileName"`
+	FileSize int64  `json:"fileSize"`
+}
+
+type userVideoShareRequest struct {
+	SessionID   string `json:"sessionId"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
 type imageReviewActionRequest struct {
 	Note string `json:"note"`
 }
@@ -826,6 +837,7 @@ func main() {
 		log.Fatalf("load image review queue failed: %v", err)
 	}
 	gifUploadSessionStore := service.NewGifUploadSessionStore()
+	videoUploadSessionStore := service.NewVideoUploadSessionStore()
 	reviewAdminToken := strings.TrimSpace(os.Getenv("REVIEW_ADMIN_TOKEN"))
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
@@ -1826,6 +1838,253 @@ func main() {
 		})
 	})
 
+	router.POST("/api/user-video/upload-session", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if videoSigner == nil || videoCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "视频存储未配置"})
+			return
+		}
+
+		var req userVideoUploadSessionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		result, err := service.CreateVideoUploadSession(
+			c.Request.Context(),
+			videoUploadSessionStore,
+			service.CreateVideoUploadSessionInput{
+				Serial:      serial,
+				FileName:    req.FileName,
+				FileSize:    req.FileSize,
+				VideoSigner: videoSigner,
+				CoverSigner: videoCoverSigner,
+			},
+		)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"sessionId":      result.SessionID,
+			"videoUploadUrl": result.VideoUploadURL,
+			"coverUploadUrl": result.CoverUploadURL,
+			"videoObjectKey": result.VideoObjectKey,
+			"coverObjectKey": result.CoverObjectKey,
+			"maxBytes":       result.MaxBytes,
+		})
+	})
+
+	router.POST("/api/user-video/upload", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if videoSigner == nil || videoCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "视频存储未配置"})
+			return
+		}
+
+		sessionID := strings.TrimSpace(c.PostForm("sessionId"))
+		kind := strings.TrimSpace(c.PostForm("kind"))
+		if sessionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
+			return
+		}
+
+		fileHeader, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少上传文件"})
+			return
+		}
+
+		maxSize := int64(service.MaxUserVideoUploadBytes)
+		if strings.EqualFold(kind, "cover") {
+			maxSize = 8 << 20
+		}
+		if fileHeader.Size <= 0 || fileHeader.Size > maxSize {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "文件大小无效"})
+			return
+		}
+
+		file, err := fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法读取上传文件"})
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(io.LimitReader(file, maxSize+1))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法读取上传文件"})
+			return
+		}
+		if int64(len(data)) > maxSize {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "文件过大"})
+			return
+		}
+
+		if err := service.UploadVideoSessionFile(
+			c.Request.Context(),
+			videoUploadSessionStore,
+			videoSigner,
+			videoCoverSigner,
+			serial,
+			sessionID,
+			kind,
+			data,
+		); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	router.POST("/api/user-video/share", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if videoSigner == nil || videoCoverSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "视频存储未配置"})
+			return
+		}
+
+		var req userVideoShareRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.SessionID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
+			return
+		}
+
+		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
+		if limitMsg := aiShareQuota.ShareLimitMessage(serial, service.MaxAISharesPerDevice); limitMsg != "" {
+			shareCount := aiShareQuota.ShareCount(serial)
+			aiShareMu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"success":    false,
+				"message":    limitMsg,
+				"shareCount": shareCount,
+				"shareLimit": service.MaxAISharesPerDevice,
+			})
+			return
+		}
+		aiShareMu.Unlock()
+
+		session, err := videoUploadSessionStore.Consume(strings.TrimSpace(req.SessionID), serial)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		videoSize, err := service.VerifyUploadedVideoObjects(c.Request.Context(), videoSigner, videoCoverSigner, session)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		profilesMu.RLock()
+		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		profilesMu.RUnlock()
+
+		title := strings.TrimSpace(req.Title)
+		description := strings.TrimSpace(req.Description)
+		if title == "" {
+			title = strings.TrimSuffix(session.FileName, filepath.Ext(session.FileName))
+		}
+		if description == "" {
+			description = title
+		}
+
+		reviewInput := service.EnqueueVideoReviewInput{
+			Serial:         serial,
+			Author:         author,
+			Title:          title,
+			Description:    description,
+			VideoObjectKey: session.VideoObjectKey,
+			CoverObjectKey: session.CoverObjectKey,
+		}
+
+		imageReviewMu.Lock()
+		reviewItem, pending, modErr := service.ProcessVideoShareModerationWithReview(
+			c.Request.Context(),
+			imsClient,
+			videoSigner,
+			videoCoverSigner,
+			&imageReviewStore,
+			reviewInput,
+			serial+"-video-share",
+		)
+		if pending {
+			saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			imageReviewMu.Unlock()
+			if saveErr != nil {
+				log.Printf("warn: save image review queue failed: %v", saveErr)
+			}
+			writeImageReviewPending(c, reviewItem)
+			return
+		}
+		imageReviewMu.Unlock()
+		if modErr != nil {
+			writeImageModerationError(c, modErr)
+			return
+		}
+
+		result, err := service.ShareUserVideoToCatalog(
+			resourcesPath,
+			resourceMapPath,
+			imageMapPath,
+			service.ShareUserVideoInput{
+				Title:          title,
+				Description:    description,
+				Author:         author,
+				UploaderSerial: serial,
+				VideoObjectKey: session.VideoObjectKey,
+				CoverObjectKey: session.CoverObjectKey,
+				VideoSizeBytes: videoSize,
+			},
+		)
+		if err != nil {
+			log.Printf("warn: user video share failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		aiShareMu.Lock()
+		reloadAIShareQuotaLocked()
+		shareCount := aiShareQuota.RecordShare(serial)
+		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		aiShareMu.Unlock()
+		if saveErr != nil {
+			log.Printf("warn: save user video share counts failed: %v", saveErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享计数保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"resourceId":     result.ResourceID,
+			"downloadUrl":    result.DownloadURL,
+			"title":          result.Title,
+			"shareCount":     shareCount,
+			"shareLimit":     service.MaxAISharesPerDevice,
+			"shareRemaining": service.RemainingAIShares(shareCount, service.MaxAISharesPerDevice),
+		})
+	})
+
 	router.GET("/api/admin/image-reviews", func(c *gin.Context) {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
@@ -1889,6 +2148,16 @@ func main() {
 				previewObjectKey = coverKey
 			}
 		}
+		if item.Action == service.ReviewActionShareUserVideo {
+			if videoCoverSigner == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "视频封面存储未配置"})
+				return
+			}
+			previewSigner = videoCoverSigner
+			if coverKey := strings.TrimSpace(item.CoverObjectKey); coverKey != "" {
+				previewObjectKey = coverKey
+			}
+		}
 		if previewSigner == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "图片存储未配置"})
 			return
@@ -1925,7 +2194,8 @@ func main() {
 		}
 		if item.Action == service.ReviewActionShareAI ||
 			item.Action == service.ReviewActionShareUser ||
-			item.Action == service.ReviewActionShareUserGif {
+			item.Action == service.ReviewActionShareUserGif ||
+			item.Action == service.ReviewActionShareUserVideo {
 			aiShareMu.Lock()
 			reloadAIShareQuotaLocked()
 			if limitMsg := aiShareQuota.ShareLimitMessage(item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
@@ -1982,7 +2252,8 @@ func main() {
 		}
 		if item.Action == service.ReviewActionShareAI ||
 			item.Action == service.ReviewActionShareUser ||
-			item.Action == service.ReviewActionShareUserGif {
+			item.Action == service.ReviewActionShareUserGif ||
+			item.Action == service.ReviewActionShareUserVideo {
 			aiShareMu.Lock()
 			reloadAIShareQuotaLocked()
 			shareCount := aiShareQuota.RecordShare(item.Serial)
