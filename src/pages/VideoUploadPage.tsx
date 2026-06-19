@@ -198,7 +198,7 @@ export default function VideoUploadPage() {
         ) : null}
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-          内容需符合站点使用规范。封面与视频会经腾讯云内容安全抽帧检测，可疑内容将进入人工复核。也可在{" "}
+          内容需符合站点使用规范。封面经图片内容安全检测，视频经腾讯云点播视频内容安全审核，可疑内容将进入人工复核。也可在{" "}
           <Link to="/upload-gif" className="text-violet-600 underline dark:text-violet-300">
             GIF 上传页
           </Link>{" "}

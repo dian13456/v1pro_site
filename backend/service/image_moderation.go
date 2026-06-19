@@ -242,58 +242,6 @@ func (client *ImageModerationClient) ModerateGifObjectDetailed(
 	return client.callImageModeration(ctx, req)
 }
 
-func (client *ImageModerationClient) ModerateVideoObjectDetailed(
-	ctx context.Context,
-	videoSigner *COSSigner,
-	objectKey string,
-	dataID string,
-) (ImageModerationOutcome, error) {
-	outcome := ImageModerationOutcome{Suggestion: "PASS"}
-	if client == nil || !client.Available() {
-		return outcome, nil
-	}
-	if videoSigner == nil {
-		return outcome, fmt.Errorf("视频存储未配置")
-	}
-	objectKey = strings.TrimSpace(objectKey)
-	if objectKey == "" {
-		return outcome, fmt.Errorf("视频路径无效")
-	}
-
-	head, err := videoSigner.HeadObject(ctx, objectKey)
-	if err != nil {
-		return outcome, fmt.Errorf("读取视频文件信息失败")
-	}
-	if head.ContentLength <= 0 {
-		return outcome, fmt.Errorf("视频文件为空")
-	}
-	if head.ContentLength > MaxUserVideoUploadBytes {
-		return outcome, fmt.Errorf("视频文件超过大小限制")
-	}
-
-	req := imsModerationRequest{
-		dataID:         sanitizeIMSDataID(dataID),
-		moderationType: "IMAGE",
-		interval:       client.GifModeration.Interval,
-		maxFrames:      client.GifModeration.MaxFrames,
-	}
-	if head.ContentLength <= maxIMSFileBytes {
-		raw, fetchErr := FetchObjectBytes(ctx, videoSigner, objectKey, maxIMSFileBytes)
-		if fetchErr != nil {
-			return outcome, fmt.Errorf("读取视频文件失败")
-		}
-		req.fileContent = raw
-		return client.callImageModeration(ctx, req)
-	}
-
-	signedURL, urlErr := videoSigner.GenerateReadURL(ctx, objectKey, 10*time.Minute)
-	if urlErr != nil {
-		return outcome, fmt.Errorf("生成视频审核地址失败")
-	}
-	req.fileURL = signedURL
-	return client.callImageModeration(ctx, req)
-}
-
 type imsModerationRequest struct {
 	dataID         string
 	moderationType string

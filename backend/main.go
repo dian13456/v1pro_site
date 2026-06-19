@@ -752,6 +752,52 @@ func main() {
 	} else {
 		log.Printf("warn: IMS image moderation disabled or not configured")
 	}
+	vmSecretID := strings.TrimSpace(os.Getenv("VM_SECRET_ID"))
+	if vmSecretID == "" {
+		vmSecretID = imsSecretID
+	}
+	vmSecretKey := strings.TrimSpace(os.Getenv("VM_SECRET_KEY"))
+	if vmSecretKey == "" {
+		vmSecretKey = imsSecretKey
+	}
+	vmRegion := strings.TrimSpace(os.Getenv("VM_REGION"))
+	if vmRegion == "" {
+		vmRegion = imsRegion
+	}
+	vmBizType := strings.TrimSpace(os.Getenv("VM_BIZ_TYPE"))
+	if vmBizType == "" {
+		vmBizType = "video"
+	}
+	vmEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv("VM_ENABLED")), "false")
+	if vmSecretID == "" || vmSecretKey == "" {
+		vmEnabled = false
+	}
+	vmPollInterval, vmPollTimeout := service.ParseVideoModerationPollConfig(
+		os.Getenv("VM_POLL_INTERVAL_SEC"),
+		os.Getenv("VM_POLL_TIMEOUT_SEC"),
+	)
+	vmClient, err := service.NewVideoModerationClient(
+		vmSecretID,
+		vmSecretKey,
+		vmRegion,
+		vmBizType,
+		vmEnabled,
+		vmPollInterval,
+		vmPollTimeout,
+	)
+	if err != nil {
+		log.Fatalf("init video moderation failed: %v", err)
+	}
+	if vmClient.Available() {
+		log.Printf(
+			"info: Tencent VM video moderation enabled (bizType=%s pollInterval=%s pollTimeout=%s)",
+			vmBizType,
+			vmPollInterval,
+			vmPollTimeout,
+		)
+	} else {
+		log.Printf("warn: VM video moderation disabled or not configured")
+	}
 
 	resourceMapStore, err := newRuntimeResourceMap(resourceMapPath)
 	if err != nil {
@@ -2022,6 +2068,7 @@ func main() {
 		reviewItem, pending, modErr := service.ProcessVideoShareModerationWithReview(
 			c.Request.Context(),
 			imsClient,
+			vmClient,
 			videoSigner,
 			videoCoverSigner,
 			&imageReviewStore,

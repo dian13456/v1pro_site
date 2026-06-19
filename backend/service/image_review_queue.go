@@ -582,31 +582,43 @@ func EnqueueVideoReview(store *ImageReviewStore, input EnqueueVideoReviewInput) 
 func ProcessVideoShareModerationWithReview(
 	ctx context.Context,
 	imsClient *ImageModerationClient,
+	vmClient *VideoModerationClient,
 	videoSigner *COSSigner,
 	coverSigner *COSSigner,
 	store *ImageReviewStore,
 	input EnqueueVideoReviewInput,
 	dataID string,
 ) (PendingImageReview, bool, error) {
-	if imsClient == nil || !imsClient.Available() {
+	imsOn := imsClient != nil && imsClient.Available()
+	vmOn := vmClient != nil && vmClient.Available()
+	if !imsOn && !vmOn {
 		return PendingImageReview{}, false, nil
 	}
-
-	coverBytes, err := FetchObjectBytes(ctx, coverSigner, input.CoverObjectKey, maxIMSFileBytes)
-	if err != nil {
-		return PendingImageReview{}, false, fmt.Errorf("读取视频封面失败")
+	if !vmOn {
+		return PendingImageReview{}, false, fmt.Errorf("视频内容安全审核未配置")
 	}
-	coverOutcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID+"-cover", "IMAGE")
+
+	outcomes := make([]ImageModerationOutcome, 0, 2)
+
+	if imsOn {
+		coverBytes, err := FetchObjectBytes(ctx, coverSigner, input.CoverObjectKey, maxIMSFileBytes)
+		if err != nil {
+			return PendingImageReview{}, false, fmt.Errorf("读取视频封面失败")
+		}
+		coverOutcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID+"-cover", "IMAGE")
+		if err != nil {
+			return PendingImageReview{}, false, err
+		}
+		outcomes = append(outcomes, coverOutcome)
+	}
+
+	videoOutcome, err := vmClient.ModerateVideoObjectDetailed(ctx, videoSigner, input.VideoObjectKey, dataID+"-video")
 	if err != nil {
 		return PendingImageReview{}, false, err
 	}
+	outcomes = append(outcomes, videoOutcome)
 
-	videoOutcome, err := imsClient.ModerateVideoObjectDetailed(ctx, videoSigner, input.VideoObjectKey, dataID+"-video")
-	if err != nil {
-		return PendingImageReview{}, false, err
-	}
-
-	outcome := strictestModerationOutcome(coverOutcome, videoOutcome)
+	outcome := strictestModerationOutcome(outcomes...)
 	return applyVideoModerationOutcome(store, input, outcome)
 }
 
