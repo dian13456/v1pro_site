@@ -457,32 +457,32 @@ func EnqueueGifReview(store *ImageReviewStore, input EnqueueGifReviewInput) Pend
 func ProcessGifShareModerationWithReview(
 	ctx context.Context,
 	imsClient *ImageModerationClient,
+	gifSigner *COSSigner,
 	coverSigner *COSSigner,
 	store *ImageReviewStore,
 	input EnqueueGifReviewInput,
 	dataID string,
 ) (PendingImageReview, bool, error) {
+	if imsClient == nil || !imsClient.Available() {
+		return PendingImageReview{}, false, nil
+	}
+
 	coverBytes, err := FetchObjectBytes(ctx, coverSigner, input.CoverObjectKey, maxIMSFileBytes)
 	if err != nil {
 		return PendingImageReview{}, false, fmt.Errorf("读取 GIF 封面失败")
 	}
-	outcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID, "IMAGE")
+	coverOutcome, err := imsClient.ModerateImageBytesDetailed(ctx, coverBytes, dataID+"-cover", "IMAGE")
 	if err != nil {
 		return PendingImageReview{}, false, err
 	}
-	switch outcome.Suggestion {
-	case "PASS", "":
-		return PendingImageReview{}, false, nil
-	case "REVIEW":
-		if store == nil {
-			return PendingImageReview{}, false, fmt.Errorf("%w: %s", ErrImageModerationReview, formatModerationMessage(outcome, "GIF 需人工复核，暂无法上传"))
-		}
-		input.Outcome = outcome
-		item := EnqueueGifReview(store, input)
-		return item, true, nil
-	default:
-		return PendingImageReview{}, false, fmt.Errorf("%w: %s", ErrImageModerationBlocked, formatModerationMessage(outcome, "GIF 未通过内容安全审核"))
+
+	gifOutcome, err := imsClient.ModerateGifObjectDetailed(ctx, gifSigner, input.GifObjectKey, dataID+"-gif")
+	if err != nil {
+		return PendingImageReview{}, false, err
 	}
+
+	outcome := strictestModerationOutcome(coverOutcome, gifOutcome)
+	return applyGifModerationOutcome(store, input, outcome)
 }
 
 func fetchURLAsBase64DataURL(ctx context.Context, url string) (string, error) {

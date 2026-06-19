@@ -715,12 +715,29 @@ func main() {
 	if imsSecretID == "" || imsSecretKey == "" {
 		imsEnabled = false
 	}
-	imsClient, err := service.NewImageModerationClient(imsSecretID, imsSecretKey, imsRegion, imsBizType, imsEnabled)
+	gifModeration := service.ParseGifModerationConfig(
+		os.Getenv("IMS_GIF_INTERVAL"),
+		os.Getenv("IMS_GIF_MAX_FRAMES"),
+	)
+	imsClient, err := service.NewImageModerationClient(
+		imsSecretID,
+		imsSecretKey,
+		imsRegion,
+		imsBizType,
+		imsEnabled,
+		gifModeration,
+	)
 	if err != nil {
 		log.Fatalf("init image moderation failed: %v", err)
 	}
 	if imsClient.Available() {
-		log.Printf("info: Tencent IMS image moderation enabled (aigcType=%s bizType=%s)", imsAigcModerationType, imsBizType)
+		log.Printf(
+			"info: Tencent IMS image moderation enabled (aigcType=%s bizType=%s gifInterval=%d gifMaxFrames=%d)",
+			imsAigcModerationType,
+			imsBizType,
+			gifModeration.Interval,
+			gifModeration.MaxFrames,
+		)
 	} else {
 		log.Printf("warn: IMS image moderation disabled or not configured")
 	}
@@ -1746,6 +1763,7 @@ func main() {
 		reviewItem, pending, modErr := service.ProcessGifShareModerationWithReview(
 			c.Request.Context(),
 			imsClient,
+			gifSigner,
 			gifCoverSigner,
 			&imageReviewStore,
 			reviewInput,

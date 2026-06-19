@@ -192,7 +192,7 @@ export default function GifUploadPage() {
         ) : null}
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-          内容需符合站点使用规范。封面会经内容安全检测，可疑内容将进入人工复核。也可在{" "}
+          内容需符合站点使用规范。GIF 与封面会经腾讯云内容安全抽帧检测，可疑内容将进入人工复核。也可在{" "}
           <Link to="/ai-image" className="text-violet-600 underline dark:text-violet-300">
             AI 生图页
           </Link>{" "}
