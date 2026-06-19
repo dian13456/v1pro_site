@@ -250,7 +250,7 @@ function ResourceCardComponent({
               onClick={() => void onTransfer?.(resource)}
               className="min-w-0 flex-1 rounded-xl bg-cyan-600 px-2 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {transferring ? "传输中..." : "传输到设备"}
+              {transferring ? "传输中..." : "传输"}
             </button>
           ) : null}
           {hasPlay ? (
