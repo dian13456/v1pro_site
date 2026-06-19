@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
@@ -19,7 +19,6 @@ import {
   downloadGeneratedImage,
   generateAiImages,
   getStarterPrompts,
-  readLocalImageFile,
   shareAiImageToCatalog,
   transferAiImageToDevice,
 } from "../services/aiImageService";
@@ -51,14 +50,12 @@ export default function AiImagePage() {
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
-  const [uploadingPick, setUploadingPick] = useState(false);
   const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   const [transferNotice, setTransferNotice] = useState("");
   const [shareNotice, setShareNotice] = useState("");
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) return;
@@ -112,31 +109,6 @@ export default function AiImagePage() {
       }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleUploadPick = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    setErrorMessage("");
-    setUploadingPick(true);
-    try {
-      const uploaded = await readLocalImageFile(file);
-      setImages([uploaded]);
-      setSharedIds(new Set());
-      if (!prompt.trim()) {
-        setPrompt(uploaded.fileName || "用户上传图片");
-      }
-    } catch (err) {
-      setErrorMessage(formatClientError(err, "图片上传失败"));
-    } finally {
-      setUploadingPick(false);
     }
   };
 
@@ -215,7 +187,7 @@ export default function AiImagePage() {
 
   return (
     <SitePageLayout
-      subtitle="AI 生图 / 上传图片"
+      subtitle="AI 生图"
       theme={theme}
       onToggleTheme={toggleTheme}
       beforeContent={
@@ -227,30 +199,20 @@ export default function AiImagePage() {
     >
         <SitePanel accent>
           <SiteSectionTitle
-            title="AI 生图 / 上传图片"
+            title="AI 生图"
             action={
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  ref={uploadInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif"
-                  className="hidden"
-                  onChange={(event) => void handleUploadPick(event)}
-                />
-                <button
-                  type="button"
-                  disabled={loading || isBusy || uploadingPick}
-                  onClick={() => uploadInputRef.current?.click()}
-                  className={SITE_BTN_SECONDARY}
-                >
-                  {uploadingPick ? "处理图片中..." : "上传本地图片"}
-                </button>
-                <span className={`${SITE_BTN_SECONDARY} cursor-default hover:bg-white/50 dark:hover:bg-slate-900/45`}>
-                  剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
-                </span>
-              </div>
+              <span className={`${SITE_BTN_SECONDARY} cursor-default hover:bg-white/50 dark:hover:bg-slate-900/45`}>
+                剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
+              </span>
             }
           />
+          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+            上传本地图片、GIF 或视频请前往{" "}
+            <Link to="/share" className="text-violet-600 underline dark:text-violet-300">
+              分享页
+            </Link>
+            。
+          </p>
         </SitePanel>
 
         <section className="mb-4 flex flex-wrap gap-2">

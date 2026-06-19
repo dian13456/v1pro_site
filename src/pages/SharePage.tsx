@@ -10,13 +10,23 @@ import {
   SiteSectionTitle,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
-import { ImageReviewPendingError } from "../services/aiImageService";
+import {
+  ImageReviewPendingError,
+  readLocalImageFile,
+  shareAiImageToCatalog,
+} from "../services/aiImageService";
 import { hasValidLocalAuth } from "../services/authService";
 import { formatClientError } from "../services/httpClient";
 import {
   MAX_GIF_UPLOAD_BYTES,
   shareGifToCatalog,
 } from "../services/gifUploadService";
+import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  shareVideoToCatalog,
+} from "../services/videoUploadService";
+
+type ShareMediaKind = "image" | "gif" | "video";
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   const parts = [err.message];
@@ -29,11 +39,64 @@ function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   return parts.join(" · ");
 }
 
-export default function GifUploadPage() {
+function detectShareKind(file: File): ShareMediaKind | null {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".gif")) {
+    return "gif";
+  }
+  if (/\.(mp4|webm|mov|m4v)$/.test(lower)) {
+    return "video";
+  }
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+  return null;
+}
+
+function validateFile(file: File, kind: ShareMediaKind): string | null {
+  switch (kind) {
+    case "gif":
+      if (file.size > MAX_GIF_UPLOAD_BYTES) {
+        return `GIF 不能超过 ${Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024))}MB`;
+      }
+      break;
+    case "video":
+      if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+        return `视频不能超过 ${Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))}MB`;
+      }
+      break;
+    case "image":
+      if (file.size > 8 * 1024 * 1024) {
+        return "图片不能超过 8MB";
+      }
+      if (file.size < 16) {
+        return "图片文件过小";
+      }
+      break;
+  }
+  if (file.size <= 0) {
+    return "文件无效";
+  }
+  return null;
+}
+
+function kindLabel(kind: ShareMediaKind): string {
+  switch (kind) {
+    case "gif":
+      return "GIF";
+    case "video":
+      return "视频";
+    default:
+      return "图片";
+  }
+}
+
+export default function SharePage() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeMode();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mediaKind, setMediaKind] = useState<ShareMediaKind | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -63,22 +126,27 @@ export default function GifUploadPage() {
       navigate("/auth", { replace: true });
       return;
     }
-    if (!file.name.toLowerCase().endsWith(".gif")) {
-      setErrorMessage("请选择 .gif 文件");
+
+    const kind = detectShareKind(file);
+    if (!kind) {
+      setErrorMessage("请选择图片、GIF 或视频文件（.jpg/.png/.webp、.gif、.mp4/.webm/.mov/.m4v）");
       return;
     }
-    if (file.size > MAX_GIF_UPLOAD_BYTES) {
-      setErrorMessage(`GIF 不能超过 ${Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024))}MB`);
+    const validationError = validateFile(file, kind);
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
+
     setSelectedFile(file);
-    const baseName = file.name.replace(/\.gif$/i, "");
+    setMediaKind(kind);
+    const baseName = file.name.replace(/\.[^.]+$/i, "");
     setTitle(baseName);
     setDescription(baseName);
   };
 
   const handleShare = async () => {
-    if (!selectedFile || uploading) return;
+    if (!selectedFile || !mediaKind || uploading) return;
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -88,45 +156,82 @@ export default function GifUploadPage() {
     setErrorMessage("");
     setNotice("");
     setProgress("准备上传...");
+
     try {
-      const result = await shareGifToCatalog(selectedFile, {
-        title,
-        description,
-        onProgress: setProgress,
-      });
-      setNotice(`分享成功！素材编号 ${result.resourceId}，已发布到素材库。`);
-      if (typeof result.shareRemaining === "number") {
-        setShareRemaining(result.shareRemaining);
+      let resourceId: number | undefined;
+      let remaining: number | undefined;
+
+      switch (mediaKind) {
+        case "gif": {
+          const result = await shareGifToCatalog(selectedFile, {
+            title,
+            description,
+            onProgress: setProgress,
+          });
+          resourceId = result.resourceId;
+          remaining = result.shareRemaining;
+          break;
+        }
+        case "video": {
+          const result = await shareVideoToCatalog(selectedFile, {
+            title,
+            description,
+            onProgress: setProgress,
+          });
+          resourceId = result.resourceId;
+          remaining = result.shareRemaining;
+          break;
+        }
+        case "image": {
+          setProgress("处理图片...");
+          const uploaded = await readLocalImageFile(selectedFile);
+          setProgress("提交分享...");
+          const result = await shareAiImageToCatalog(
+            uploaded,
+            description.trim() || title.trim() || uploaded.fileName || "用户上传图片"
+          );
+          resourceId = result.resourceId;
+          remaining = result.shareRemaining;
+          break;
+        }
+      }
+
+      setNotice(`分享成功！素材编号 ${resourceId ?? ""}，已发布到素材库。`);
+      if (typeof remaining === "number") {
+        setShareRemaining(remaining);
       }
       setSelectedFile(null);
+      setMediaKind(null);
       setTitle("");
       setDescription("");
     } catch (err) {
       if (err instanceof ImageReviewPendingError) {
         setNotice(formatReviewPendingMessage(err));
         setSelectedFile(null);
+        setMediaKind(null);
         return;
       }
-      setErrorMessage(formatClientError(err, "GIF 分享失败"));
+      setErrorMessage(formatClientError(err, `${kindLabel(mediaKind)} 分享失败`));
     } finally {
       setUploading(false);
       setProgress("");
     }
   };
 
-  const maxMb = Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024));
+  const gifMb = Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024));
+  const videoMb = Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024));
 
   return (
     <SitePageLayout
-      subtitle="上传 GIF · 分享动图到素材库"
+      subtitle="分享素材到素材库"
       theme={theme}
       onToggleTheme={toggleTheme}
       contentClassName="mx-auto w-full max-w-3xl space-y-5"
     >
       <SitePanel>
         <SiteSectionTitle
-          title="上传 GIF 素材"
-          description={`支持 ${maxMb}MB 以内的 .gif 文件。他人点赞可为你的 SN 增加积分。${
+          title="分享素材"
+          description={`支持静态图片（8MB）、GIF（${gifMb}MB）、视频（${videoMb}MB）。他人点赞可为你的 SN 增加积分。${
             shareRemaining != null ? ` 当前剩余分享次数：${shareRemaining}` : ""
           }`}
         />
@@ -135,12 +240,12 @@ export default function GifUploadPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".gif,image/gif"
+            accept=".gif,.mp4,.webm,.mov,.m4v,image/png,image/jpeg,image/jpg,image/webp,image/bmp"
             className="hidden"
             onChange={handlePick}
           />
           <SiteButton type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-            选择 GIF 文件
+            选择文件
           </SiteButton>
           {selectedFile ? (
             <SiteButton
@@ -149,12 +254,12 @@ export default function GifUploadPage() {
               disabled={uploading}
               onClick={() => void handleShare()}
             >
-              {uploading ? progress || "上传中..." : "分享到素材库"}
+              {uploading ? progress || "分享中..." : "分享到素材库"}
             </SiteButton>
           ) : null}
         </div>
 
-        {selectedFile ? (
+        {selectedFile && mediaKind ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <SiteLabel>标题</SiteLabel>
@@ -169,14 +274,28 @@ export default function GifUploadPage() {
               />
             </div>
             <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
-              已选：{selectedFile.name}（{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB）
+              已选：{kindLabel(mediaKind)} · {selectedFile.name}（
+              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB）
             </div>
           </div>
         ) : null}
 
-        {previewUrl ? (
+        {previewUrl && mediaKind ? (
           <div className="mt-6 overflow-hidden rounded-2xl border border-white/30 bg-white/70 dark:border-white/10 dark:bg-slate-950/50">
-            <img src={previewUrl} alt="GIF 预览" className="mx-auto max-h-72 object-contain" />
+            {mediaKind === "video" ? (
+              <video
+                src={previewUrl}
+                controls
+                playsInline
+                className="mx-auto max-h-72 w-full object-contain"
+              />
+            ) : (
+              <img
+                src={previewUrl}
+                alt={`${kindLabel(mediaKind)} 预览`}
+                className="mx-auto max-h-72 object-contain"
+              />
+            )}
           </div>
         ) : null}
 
@@ -192,11 +311,11 @@ export default function GifUploadPage() {
         ) : null}
 
         <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-          内容需符合站点使用规范。GIF 与封面会经腾讯云内容安全抽帧检测，可疑内容将进入人工复核。也可在{" "}
+          内容需符合站点使用规范，上传后将经腾讯云内容安全审核。AI 生成的图片可在{" "}
           <Link to="/ai-image" className="text-violet-600 underline dark:text-violet-300">
             AI 生图页
           </Link>{" "}
-          上传静态图片。
+          生成并分享。
         </p>
       </SitePanel>
     </SitePageLayout>

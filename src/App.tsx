@@ -4,8 +4,7 @@ import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
-import GifUploadPage from "./pages/GifUploadPage.tsx";
-import VideoUploadPage from "./pages/VideoUploadPage.tsx";
+import SharePage from "./pages/SharePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
 import ShopPage from "./pages/ShopPage.tsx";
@@ -85,21 +84,15 @@ export default function App() {
           }
         />
         <Route
-          path="/upload-gif"
+          path="/share"
           element={
             <ProtectedRoute>
-              <GifUploadPage />
+              <SharePage />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/upload-video"
-          element={
-            <ProtectedRoute>
-              <VideoUploadPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/upload-gif" element={<Navigate to="/share" replace />} />
+        <Route path="/upload-video" element={<Navigate to="/share" replace />} />
         <Route
           path="/shop"
           element={

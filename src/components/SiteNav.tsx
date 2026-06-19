@@ -2,8 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 
 const NAV_ITEMS = [
   { to: "/guide", label: "AI 助手", highlight: true },
-  { to: "/upload-gif", label: "上传 GIF", highlight: true },
-  { to: "/upload-video", label: "上传视频", highlight: true },
+  { to: "/share", label: "分享", highlight: true },
   { to: "/ai-image", label: "AI 生图", highlight: true },
   { to: "/", label: "素材中心", highlight: false },
   { to: "/favorites", label: "我的收藏", highlight: false },
