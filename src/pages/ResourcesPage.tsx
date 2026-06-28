@@ -450,6 +450,7 @@ export default function ResourcesPage() {
         <section className="mb-6 flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-500 dark:text-slate-300">排序</span>
           {[
+            { value: "earliest", label: "最早优先" },
             { value: "latest", label: "最新优先" },
             { value: "hot", label: "热门排行" },
             { value: "weeklyTop", label: "周下载TOP20" },

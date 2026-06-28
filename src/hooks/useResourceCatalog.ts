@@ -4,7 +4,7 @@ import { fetchResources } from "../services/resourceService";
 import { useColumnTags } from "./useColumnTags";
 import { resourceMatchesColumn } from "../utils/columnMatch";
 
-export type ResourceSortMode = "latest" | "hot" | "weeklyTop";
+export type ResourceSortMode = "earliest" | "latest" | "hot" | "weeklyTop";
 
 export function useResourceCatalog() {
   const { columnTagOptions, columnTagFilterOptions, columnTagsLoading } = useColumnTags();
@@ -15,7 +15,7 @@ export function useResourceCatalog() {
   const [category, setCategory] = useState<ResourceCategory>("all");
   const [materialType, setMaterialType] = useState<MaterialTypeFilter>("all");
   const [columnTag, setColumnTag] = useState<ColumnTagFilter>("all");
-  const [sortMode, setSortMode] = useState<ResourceSortMode>("latest");
+  const [sortMode, setSortMode] = useState<ResourceSortMode>("earliest");
 
   useEffect(() => {
     let active = true;
@@ -56,9 +56,10 @@ export function useResourceCatalog() {
       );
     });
     result.sort((a, b) => {
-      if (sortMode === "hot") return 0;
+      if (sortMode === "hot" || sortMode === "weeklyTop") return 0;
       const aTime = new Date(a.updatedAt).getTime();
       const bTime = new Date(b.updatedAt).getTime();
+      if (sortMode === "earliest") return aTime - bTime;
       return bTime - aTime;
     });
     return result;
