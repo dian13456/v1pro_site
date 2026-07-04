@@ -223,6 +223,7 @@ func ApprovePendingImageReview(
 
 type CatalogPublishDeps struct {
 	ImageSigner     *COSSigner
+	VideoSigner     *COSSigner
 	ImagePublicBase string
 	ResourcesPath   string
 	ImageMapPath    string
@@ -262,7 +263,7 @@ func ApprovePendingReview(
 		if strings.TrimSpace(deps.ResourceMapPath) == "" {
 			return nil, fmt.Errorf("素材映射未配置")
 		}
-		result, err = approvePendingVideoShare(deps, item, reviewID, note, store)
+		result, err = approvePendingVideoShare(ctx, deps, item, reviewID, note, store)
 	default:
 		return nil, fmt.Errorf("该类型记录不支持发布到素材库")
 	}
@@ -389,6 +390,7 @@ func approvePendingGifShare(
 }
 
 func approvePendingVideoShare(
+	ctx context.Context,
 	deps CatalogPublishDeps,
 	item PendingImageReview,
 	reviewID string,
@@ -405,6 +407,18 @@ func approvePendingVideoShare(
 	}
 	if videoObjectKey == "" || coverObjectKey == "" {
 		return nil, fmt.Errorf("待审视频信息不完整")
+	}
+
+	var videoSize int64
+	if deps.VideoSigner != nil {
+		normalizedKey, normalizedSize, normErr := NormalizeVideoObjectForWebPlayback(ctx, deps.VideoSigner, videoObjectKey)
+		if normErr != nil {
+			return nil, normErr
+		}
+		if strings.TrimSpace(normalizedKey) != "" {
+			videoObjectKey = normalizedKey
+		}
+		videoSize = normalizedSize
 	}
 
 	title := item.Title
@@ -428,7 +442,7 @@ func approvePendingVideoShare(
 			UploaderSerial: item.Serial,
 			VideoObjectKey: videoObjectKey,
 			CoverObjectKey: coverObjectKey,
-			VideoSizeBytes: 0,
+			VideoSizeBytes: videoSize,
 		},
 	)
 	if err != nil {

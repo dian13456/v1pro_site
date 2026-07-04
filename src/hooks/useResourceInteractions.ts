@@ -4,7 +4,7 @@ import { hasValidLocalAuth } from "../services/authService";
 import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
-import { addResourceFavorite, toggleResourceFavorite } from "../services/favoriteService";
+import { toggleResourceFavorite } from "../services/favoriteService";
 import { likeResource } from "../services/likeService";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -119,9 +119,6 @@ export function useResourceInteractions() {
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
           window.setTimeout(() => setTransferNotice(""), 5000);
-          void addResourceFavorite(resource.id)
-            .then((state) => setFavoriteIds(state.favoriteIds))
-            .catch(() => undefined);
         },
         onError: (message) => {
           setErrorMessage(message);

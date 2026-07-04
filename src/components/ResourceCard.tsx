@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import type { ResourceItem } from "../types/resource";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
@@ -82,7 +82,7 @@ function ResourceCardComponent({
       ? "object-cover"
       : "object-contain";
   const [previewUrl, setPreviewUrl] = useState<string>("");
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playError, setPlayError] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const transferPrefetchedRef = useRef(false);
 
@@ -135,19 +135,14 @@ function ResourceCardComponent({
     return () => observer.disconnect();
   }, [resource, showTransfer, onTransferPrepare]);
 
+  const showVideoPlayer = isPlaying && Boolean(playUrl);
+
   useEffect(() => {
-    if (resource.materialType !== "video" || !isPlaying || !playUrl) return;
-    const video = videoRef.current;
-    if (!video) return;
-    video.load();
-    void video.play().catch(() => {
-      // 自动播放被策略拦截时保留控件，用户可手动点播放
-    });
-  }, [resource.materialType, isPlaying, playUrl]);
+    setPlayError(false);
+  }, [playUrl, isPlaying]);
 
   const handlePlayClick = async () => {
     if (isPlaying) {
-      videoRef.current?.pause();
       onStopPlay();
       return;
     }
@@ -158,6 +153,12 @@ function ResourceCardComponent({
     } catch {
       // 错误信息由页面层 handlePlay 写入
     }
+  };
+
+  const handleVideoCanPlay = (event: SyntheticEvent<HTMLVideoElement>) => {
+    void event.currentTarget.play().catch(() => {
+      // 自动播放被策略拦截时保留控件，用户可手动点播放
+    });
   };
 
   return (
@@ -181,17 +182,28 @@ function ResourceCardComponent({
       </div>
       <DevicePreviewFrame hoverGlow>
           {resource.materialType === "video" ? (
-            <>
-              <video
-                ref={videoRef}
-                src={isPlaying && playUrl ? playUrl : undefined}
-                controls
-                playsInline
-                preload="metadata"
-                className={`h-full w-full ${previewFitClass} ${isPlaying && playUrl ? "" : "hidden"}`}
-                onEnded={onStopPlay}
-              />
-              {!(isPlaying && playUrl) && previewUrl ? (
+            <div className="relative h-full w-full">
+              {showVideoPlayer ? (
+                <>
+                  <video
+                    key={playUrl}
+                    src={playUrl}
+                    controls
+                    playsInline
+                    preload="auto"
+                    className="h-full w-full object-contain"
+                    onCanPlay={handleVideoCanPlay}
+                    onError={() => setPlayError(true)}
+                    onEnded={onStopPlay}
+                  />
+                  {playError ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-3 text-center text-[11px] leading-relaxed text-slate-200">
+                      当前浏览器无法解码该视频（常见于 H.264 10-bit 或 HEVC 编码）。请改用 Chrome
+                      播放，或下载后使用本地播放器。
+                    </div>
+                  ) : null}
+                </>
+              ) : previewUrl ? (
                 <img
                   src={previewUrl}
                   alt={resource.title}
@@ -199,12 +211,12 @@ function ResourceCardComponent({
                   decoding="async"
                   className={`h-full w-full ${previewFitClass}`}
                 />
-              ) : !(isPlaying && playUrl) ? (
+              ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
                   视频预览加载中...
                 </div>
-              ) : null}
-            </>
+              )}
+            </div>
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
             <img
               src={playUrl}

@@ -2192,6 +2192,23 @@ func main() {
 			return
 		}
 
+		videoObjectKey := session.VideoObjectKey
+		normalizedKey, normalizedSize, normErr := service.NormalizeVideoObjectForWebPlayback(
+			c.Request.Context(),
+			videoSigner,
+			videoObjectKey,
+		)
+		if normErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": normErr.Error()})
+			return
+		}
+		if strings.TrimSpace(normalizedKey) != "" {
+			videoObjectKey = normalizedKey
+		}
+		if normalizedSize > 0 {
+			videoSize = normalizedSize
+		}
+
 		profilesMu.RLock()
 		author := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
@@ -2213,7 +2230,7 @@ func main() {
 			Title:          title,
 			Description:    description,
 			ColumnTag:      columnTag,
-			VideoObjectKey: session.VideoObjectKey,
+			VideoObjectKey: videoObjectKey,
 			CoverObjectKey: session.CoverObjectKey,
 		}
 
@@ -2253,7 +2270,7 @@ func main() {
 				ColumnTag:      columnTag,
 				Author:         author,
 				UploaderSerial: serial,
-				VideoObjectKey: session.VideoObjectKey,
+				VideoObjectKey: videoObjectKey,
 				CoverObjectKey: session.CoverObjectKey,
 				VideoSizeBytes: videoSize,
 			},
@@ -2418,6 +2435,7 @@ func main() {
 			c.Request.Context(),
 			service.CatalogPublishDeps{
 				ImageSigner:     imageSigner,
+				VideoSigner:     videoSigner,
 				ImagePublicBase: imagePublicBase,
 				ResourcesPath:   resourcesPath,
 				ImageMapPath:    imageMapPath,

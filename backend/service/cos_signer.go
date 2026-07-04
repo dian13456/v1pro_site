@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -53,7 +54,7 @@ func (s *COSSigner) UploadObject(ctx context.Context, objectKey, contentType str
 	}
 	_, err := s.client.Object.Put(ctx, objectKey, bytes.NewReader(data), &cos.ObjectPutOptions{
 		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{
-			ContentType: contentType,
+			ContentType:   contentType,
 			ContentLength: int64(len(data)),
 		},
 	})
@@ -67,6 +68,22 @@ func (s *COSSigner) DeleteObject(ctx context.Context, objectKey string) error {
 	}
 	_, err := s.client.Object.Delete(ctx, objectKey, nil)
 	return err
+}
+
+func (s *COSSigner) GetObject(ctx context.Context, objectKey string) ([]byte, error) {
+	objectKey = strings.TrimLeft(strings.TrimSpace(objectKey), "/")
+	if objectKey == "" {
+		return nil, fmt.Errorf("empty object key")
+	}
+	resp, err := s.client.Object.Get(ctx, objectKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Body == nil {
+		return nil, fmt.Errorf("empty get response")
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 func (s *COSSigner) GenerateReadURL(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {

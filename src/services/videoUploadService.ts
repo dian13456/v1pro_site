@@ -1,3 +1,4 @@
+import { probeVideoBrowserCompatibility } from "../utils/videoCodecProbe";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
@@ -146,6 +147,11 @@ export async function createVideoUploadSession(file: File): Promise<VideoUploadS
   }
   if (file.size <= 0 || file.size > MAX_VIDEO_UPLOAD_BYTES) {
     throw new Error(`视频文件不能超过 ${Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))}MB`);
+  }
+
+  const codecProbe = await probeVideoBrowserCompatibility(file);
+  if (!codecProbe.compatible) {
+    throw new Error(codecProbe.reason || "视频编码不受支持，请上传 H.264 8-bit 的 MP4");
   }
 
   const auth = getAuthState();

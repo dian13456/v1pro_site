@@ -15,7 +15,7 @@ import { fetchResourceDownloads, displayDownloadCount } from "../services/downlo
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
-import { addResourceFavorite, fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
+import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import { pickRandomItems } from "../utils/randomPick";
@@ -282,9 +282,6 @@ export default function ResourcesPage() {
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
           window.setTimeout(() => setTransferNotice(""), 5000);
-          void addResourceFavorite(resource.id)
-            .then((state) => setFavoriteIds(state.favoriteIds))
-            .catch(() => undefined);
         },
         onError: (message) => {
           setErrorMessage(message);

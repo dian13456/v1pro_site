@@ -87,7 +87,7 @@ export default function FavoritesPage() {
 
   return (
     <SitePageLayout
-      subtitle="我的收藏 · 按 SN 码保存的素材列表；传输到设备成功后会自动加入收藏"
+      subtitle="我的收藏 · 按 SN 码保存的素材列表"
       theme={theme}
       onToggleTheme={toggleTheme}
       beforeContent={
@@ -112,7 +112,7 @@ export default function FavoritesPage() {
             >
               素材中心
             </button>
-            点星标收藏，或传输到设备后自动加入。
+            点星标收藏。
           </SiteEmptyBlock>
         ) : null}
 
