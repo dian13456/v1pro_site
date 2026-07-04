@@ -60,6 +60,15 @@ func (s *COSSigner) UploadObject(ctx context.Context, objectKey, contentType str
 	return err
 }
 
+func (s *COSSigner) DeleteObject(ctx context.Context, objectKey string) error {
+	objectKey = strings.TrimLeft(strings.TrimSpace(objectKey), "/")
+	if objectKey == "" {
+		return nil
+	}
+	_, err := s.client.Object.Delete(ctx, objectKey, nil)
+	return err
+}
+
 func (s *COSSigner) GenerateReadURL(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
 	signedURL, err := s.client.Object.GetPresignedURL(
 		ctx,

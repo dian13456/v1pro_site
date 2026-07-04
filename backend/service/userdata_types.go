@@ -114,6 +114,16 @@ func FavoriteResourceIDsForSerial(store FavoritesStore, serial string) []string 
 	return ids
 }
 
+func RemoveResourceFromAllFavorites(store *FavoritesStore, resourceID string) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || store == nil || store.DeviceFavorites == nil {
+		return
+	}
+	for serial := range store.DeviceFavorites {
+		delete(store.DeviceFavorites[serial], resourceID)
+	}
+}
+
 func (store *DownloadsStore) EnsureDeviceWindow(serial string, now time.Time) {
 	if store.DeviceWindows == nil {
 		store.DeviceWindows = map[string]DeviceDownloadWindow{}

@@ -521,6 +521,24 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/profile/uploads/delete")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    return { success: true, message: "素材已删除" };
+  }
+
+  if (path.startsWith("/api/profile/uploads")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    return {
+      success: true,
+      published: [],
+      reviews: [],
+    };
+  }
+
   if (path.startsWith("/api/profile")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };

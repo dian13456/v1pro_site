@@ -24,6 +24,7 @@ import {
   saveDisplayName,
   syncDisplayNameFromServer,
 } from "../services/welcomeService";
+import { MyUploadsPanel } from "../components/MyUploadsPanel";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -115,7 +116,7 @@ export default function ProfilePage() {
 
   return (
     <SitePageLayout
-      subtitle="个人中心 · 昵称与 AI 积分"
+      subtitle="个人中心 · 昵称、积分与我的上传"
       theme={theme}
       onToggleTheme={toggleTheme}
       contentClassName="mx-auto w-full max-w-3xl"
@@ -208,6 +209,8 @@ export default function ProfilePage() {
           {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
           {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
         </SitePanel>
+
+        <MyUploadsPanel />
     </SitePageLayout>
   );
 }

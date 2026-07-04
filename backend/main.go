@@ -60,6 +60,12 @@ type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+type profileUploadDeleteRequest struct {
+	Kind       string `json:"kind"`
+	ResourceID string `json:"resourceId"`
+	ReviewID   string `json:"reviewId"`
+}
+
 type messagePostRequest struct {
 	Content     string `json:"content"`
 	DisplayName string `json:"displayName"`
@@ -1089,6 +1095,149 @@ func main() {
 			"creditCost":        service.AICreditCostPerGeneration,
 			"likeRewardCredits": service.LikeCreditRewardAmount,
 		})
+	})
+
+	router.GET("/api/profile/uploads", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		items, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+
+		published := service.FilterCatalogByUploaderSerial(items, serial)
+		service.SortCatalogByUpdatedAtDesc(published)
+		published = service.SanitizePublicResourceCatalog(published)
+
+		imageReviewMu.RLock()
+		reviews := service.ListDeviceUploadReviews(&imageReviewStore, serial)
+		service.AttachReviewPreviewURLs(
+			c.Request.Context(),
+			reviews,
+			&imageReviewStore,
+			serial,
+			service.ReviewPreviewSigners{
+				Image:      imageSigner,
+				GifCover:   gifCoverSigner,
+				VideoCover: videoCoverSigner,
+			},
+		)
+		imageReviewMu.RUnlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"published": published,
+			"reviews":   reviews,
+		})
+	})
+
+	router.POST("/api/profile/uploads/delete", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req profileUploadDeleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+
+		kind := strings.TrimSpace(strings.ToLower(req.Kind))
+		deleteSigners := service.UploadDeleteSigners{
+			Image:      imageSigner,
+			Gif:        gifSigner,
+			Video:      videoSigner,
+			GifCover:   gifCoverSigner,
+			VideoCover: videoCoverSigner,
+		}
+
+		switch kind {
+		case "published":
+			resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(req.ResourceID), 10, 64)
+			if parseErr != nil || resourceID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+				return
+			}
+			if err := service.DeleteOwnPublishedUpload(c.Request.Context(), service.DeleteOwnPublishedUploadInput{
+				Serial:          serial,
+				ResourceID:      resourceID,
+				ResourcesPath:   resourcesPath,
+				ResourceMapPath: resourceMapPath,
+				ImageMapPath:    imageMapPath,
+				Signers:         deleteSigners,
+			}); err != nil {
+				status := http.StatusBadRequest
+				if strings.Contains(err.Error(), "不存在") {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"success": false, "message": err.Error()})
+				return
+			}
+
+			idKey := strconv.FormatInt(resourceID, 10)
+			favoritesMu.Lock()
+			service.RemoveResourceFromAllFavorites(&favorites, idKey)
+			if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
+				favoritesMu.Unlock()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "收藏数据更新失败"})
+				return
+			}
+			favoritesMu.Unlock()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "素材已删除",
+				"kind":    kind,
+				"resourceId": resourceID,
+			})
+		case "review":
+			reviewID := strings.TrimSpace(req.ReviewID)
+			if reviewID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "复核编号无效"})
+				return
+			}
+			imageReviewMu.Lock()
+			deleteErr := service.DeleteOwnReviewUpload(
+				c.Request.Context(),
+				&imageReviewStore,
+				reviewID,
+				serial,
+				deleteSigners,
+			)
+			if deleteErr != nil {
+				imageReviewMu.Unlock()
+				status := http.StatusBadRequest
+				if strings.Contains(deleteErr.Error(), "不存在") {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"success": false, "message": deleteErr.Error()})
+				return
+			}
+			if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+				imageReviewMu.Unlock()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "复核队列保存失败"})
+				return
+			}
+			imageReviewMu.Unlock()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success":  true,
+				"message":  "上传记录已删除",
+				"kind":     kind,
+				"reviewId": reviewID,
+			})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "kind 无效"})
+		}
 	})
 
 	router.GET("/api/shop/items", func(c *gin.Context) {

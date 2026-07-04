@@ -80,6 +80,10 @@ function parseResourcePayload(payload: unknown): ResourceItem[] {
     .filter((item): item is ResourceItem => item !== null);
 }
 
+export function parseResourceList(payload: unknown): ResourceItem[] {
+  return parseResourcePayload(payload);
+}
+
 async function fetchFromCosManifest(): Promise<ResourceItem[]> {
   if (!COS_MANIFEST_URL) return [];
 
