@@ -11,7 +11,7 @@ const THEME_ICONS: Record<ThemeMode, string> = {
   light: "☀️",
   dark: "🌙",
   cat: "🐱",
-  doro: "🍊",
+  doro: "🎀",
 };
 
 export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
