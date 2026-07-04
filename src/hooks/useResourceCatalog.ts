@@ -15,7 +15,7 @@ export function useResourceCatalog() {
   const [category, setCategory] = useState<ResourceCategory>("all");
   const [materialType, setMaterialType] = useState<MaterialTypeFilter>("all");
   const [columnTag, setColumnTag] = useState<ColumnTagFilter>("all");
-  const [sortMode, setSortMode] = useState<ResourceSortMode>("earliest");
+  const [sortMode, setSortMode] = useState<ResourceSortMode>("latest");
 
   useEffect(() => {
     let active = true;
