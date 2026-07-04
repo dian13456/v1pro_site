@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { ThemeMode } from "../types/theme";
+import { isThemeMode, type ThemeMode } from "../types/theme";
 
 const STORAGE_KEY = "jiadian_hub_theme";
 
 export function getInitialTheme(): ThemeMode {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved === "light" || saved === "dark" || saved === "cat") return saved;
+  if (isThemeMode(saved)) return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -14,6 +14,7 @@ export function applyThemeToDocument(theme: ThemeMode): void {
   root.dataset.theme = theme;
   root.classList.toggle("dark", theme === "dark");
   root.classList.toggle("theme-cat", theme === "cat");
+  root.classList.toggle("theme-doro", theme === "doro");
 }
 
 export function useThemeMode() {

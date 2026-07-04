@@ -51,6 +51,35 @@ html[data-theme="cat"] :is(input, textarea):not([type="button"]):not([type="subm
   cursor: text;
 }
 
+html[data-theme="doro"] {
+  color-scheme: light;
+  --site-shell-bg:
+    radial-gradient(circle at 12% 18%, rgba(253, 186, 116, 0.55), transparent 42%),
+    radial-gradient(circle at 86% 14%, rgba(251, 146, 60, 0.38), transparent 38%),
+    radial-gradient(circle at 50% 100%, rgba(255, 237, 213, 0.9), transparent 55%),
+    linear-gradient(180deg, #fff7ed 0%, #ffedd5 48%, #fed7aa 100%);
+  --site-accent: #ea580c;
+  --site-scrollbar-top: rgba(253, 186, 116, 0.9);
+  --site-scrollbar-bottom: rgba(234, 88, 12, 0.85);
+  --doro-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='17' r='11' fill='%23f97316'/%3E%3Ccircle cx='12' cy='15' r='2.2' fill='%23fff7ed'/%3E%3Ccircle cx='20' cy='15' r='2.2' fill='%23fff7ed'/%3E%3Cellipse cx='16' cy='20.5' rx='3.2' ry='2.2' fill='%23fff7ed'/%3E%3C/svg%3E")
+    16 16,
+    auto;
+}
+
+html[data-theme="doro"],
+html[data-theme="doro"] body {
+  cursor: var(--doro-cursor);
+}
+
+html[data-theme="doro"] :is(a, button, select, label, summary, [role="button"], .cursor-pointer) {
+  cursor: var(--doro-cursor);
+}
+
+html[data-theme="doro"] :is(input, textarea):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]) {
+  cursor: text;
+}
+
 .site-page-shell {
   background: var(--site-shell-bg);
 }
@@ -95,6 +124,44 @@ html[data-theme="cat"] .site-btn-primary {
 
 html[data-theme="cat"] .site-btn-primary:hover {
   background: #db2777;
+}
+
+html[data-theme="doro"] .site-page-shell {
+  color: #9a3412;
+}
+
+html[data-theme="doro"] .site-page-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Ctext x='18' y='58' font-size='34'%3E%F0%9F%8D%8A%3C/text%3E%3C/svg%3E");
+  background-size: 96px 96px;
+  z-index: 0;
+}
+
+html[data-theme="doro"] .site-page-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="doro"] .site-header-panel {
+  border-color: rgba(251, 146, 60, 0.38);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme="doro"] .site-panel-surface {
+  border-color: rgba(251, 146, 60, 0.3);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+html[data-theme="doro"] .site-btn-primary {
+  background: #f97316;
+}
+
+html[data-theme="doro"] .site-btn-primary:hover {
+  background: #ea580c;
 }
 
 ::-webkit-scrollbar {
