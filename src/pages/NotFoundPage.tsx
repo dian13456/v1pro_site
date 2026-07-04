@@ -4,13 +4,13 @@ import { SiteButton, SitePanel } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 
 export default function NotFoundPage() {
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
 
   return (
     <SitePageLayout
       subtitle="页面不存在"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       toolbarMode="theme-only"
       contentClassName="flex min-h-[60vh] items-center justify-center"
     >

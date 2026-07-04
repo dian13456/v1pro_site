@@ -52,7 +52,7 @@ export default function ResourcesPage() {
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const {
     resources,
     filtered,
@@ -394,7 +394,7 @@ export default function ResourcesPage() {
     <SitePageLayout
       subtitle="素材中心 · 浏览、下载与传输到 V1PRO 设备"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       beforeContent={
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       }

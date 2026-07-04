@@ -1,15 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import { SiteNav } from "./SiteNav";
-import { ThemeToggle } from "./ThemeToggle";
+import { ThemeSelector } from "./ThemeSelector";
 import { clearAuthState } from "../services/authService";
+import type { ThemeMode } from "../types/theme";
 
 interface SitePageToolbarProps {
-  theme: "light" | "dark";
-  onToggleTheme: () => void;
+  theme: ThemeMode;
+  onSetTheme: (theme: ThemeMode) => void;
   mode?: "app" | "theme-only";
 }
 
-export function SitePageToolbar({ theme, onToggleTheme, mode = "app" }: SitePageToolbarProps) {
+export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToolbarProps) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -20,7 +21,7 @@ export function SitePageToolbar({ theme, onToggleTheme, mode = "app" }: SitePage
   if (mode === "theme-only") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <ThemeToggle dark={theme === "dark"} onToggle={onToggleTheme} />
+        <ThemeSelector theme={theme} onChange={onSetTheme} />
       </div>
     );
   }
@@ -28,7 +29,7 @@ export function SitePageToolbar({ theme, onToggleTheme, mode = "app" }: SitePage
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SiteNav />
-      <ThemeToggle dark={theme === "dark"} onToggle={onToggleTheme} />
+      <ThemeSelector theme={theme} onChange={onSetTheme} />
       <button
         type="button"
         onClick={handleLogout}

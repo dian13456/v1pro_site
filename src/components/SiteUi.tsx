@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { SITE_PAGE_CONTAINER_CLASS, SITE_PAGE_SHELL_CLASS } from "./SitePageShell";
+import { SITE_PAGE_CONTAINER_CLASS } from "./SitePageShell";
 
 export const SITE_CONTENT_DEFAULT = "space-y-5";
 export const SITE_CONTENT_NARROW = "mx-auto w-full max-w-3xl space-y-5";
@@ -12,7 +12,7 @@ export const SITE_CHAT_ASSISTANT_CLASS =
   "max-w-[760px] rounded-2xl border border-white/20 bg-white/80 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200";
 
 export const SITE_PANEL_CLASS =
-  "rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45";
+  "site-panel-surface rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45";
 
 export const SITE_PANEL_ACCENT_CLASS =
   "rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20";
@@ -26,7 +26,7 @@ export const SITE_INPUT_CLASS =
 export const SITE_TEXTAREA_CLASS = `${SITE_INPUT_CLASS} resize-y`;
 
 export const SITE_BTN_PRIMARY =
-  "rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60";
+  "site-btn-primary rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60";
 
 export const SITE_BTN_SECONDARY =
   "rounded-full border border-white/30 bg-white/50 px-5 py-2.5 text-sm text-slate-700 backdrop-blur transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100 dark:hover:bg-slate-900/70";
@@ -159,7 +159,7 @@ export function SiteCard({
 
 export function SiteLoadingScreen({ message = "正在加载…" }: { message?: string }) {
   return (
-    <div className={SITE_PAGE_SHELL_CLASS}>
+    <div className="site-page-shell min-h-screen text-slate-900 dark:text-slate-100">
       <div className={`${SITE_PAGE_CONTAINER_CLASS} flex min-h-screen items-center justify-center pb-8`}>
         <SiteLoadingBlock>{message}</SiteLoadingBlock>
       </div>

@@ -18,7 +18,7 @@ import type { ShopItem } from "../types/shop";
 
 export default function ShopPage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(true);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
@@ -78,7 +78,7 @@ export default function ShopPage() {
     <SitePageLayout
       subtitle="积分商城 · 点赞得积分，积分换权益"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
     >
         <SitePanel>

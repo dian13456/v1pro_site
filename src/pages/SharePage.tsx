@@ -98,7 +98,7 @@ function kindLabel(kind: ShareMediaKind): string {
 
 export default function SharePage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const { columnTagOptions } = useColumnTags();
   const shareColumnOptions = useMemo(
     () => buildShareColumnTagOptions(columnTagOptions),
@@ -239,7 +239,7 @@ export default function SharePage() {
     <SitePageLayout
       subtitle="分享素材到素材库"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
       <SitePanel>

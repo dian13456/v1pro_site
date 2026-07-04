@@ -46,7 +46,7 @@ function formatReviewPendingMessage(err: ImageReviewPendingError): string {
 
 export default function AiImagePage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
@@ -190,7 +190,7 @@ export default function AiImagePage() {
     <SitePageLayout
       subtitle="AI 生图"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       beforeContent={
         <>
           <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />

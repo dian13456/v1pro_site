@@ -34,7 +34,7 @@ function formatMessageTime(timestamp: number): string {
 
 export default function MessageBoardPage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const [messages, setMessages] = useState<BoardMessage[]>([]);
   const [total, setTotal] = useState(0);
   const [content, setContent] = useState("");
@@ -94,7 +94,7 @@ export default function MessageBoardPage() {
     <SitePageLayout
       subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
         <SitePanel>

@@ -14,7 +14,7 @@ import { fetchResourceLikes } from "../services/likeService";
 
 export default function FavoritesPage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const { resources, loading, error } = useResourceCatalog();
   const {
     downloadingId,
@@ -89,7 +89,7 @@ export default function FavoritesPage() {
     <SitePageLayout
       subtitle="我的收藏 · 按 SN 码保存的素材列表"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       beforeContent={
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       }

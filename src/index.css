@@ -18,5 +18,5 @@ body {
   font-family: Inter, "SF Pro Display", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  background: #020617;
+  background: transparent;
 }

@@ -5,13 +5,13 @@ import { TERMS_SECTIONS, TERMS_TITLE } from "../content/termsOfUse";
 import { useThemeMode } from "../hooks/useThemeMode";
 
 export default function TermsPage() {
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
 
   return (
     <SitePageLayout
       subtitle="使用条款"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       toolbarMode="theme-only"
       contentClassName={SITE_CONTENT_NARROW}
     >

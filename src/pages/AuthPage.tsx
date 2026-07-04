@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { SitePageShell } from "../components/SitePageShell";
 import { SiteAlert, SiteButton, SitePanel } from "../components/SiteUi";
-import { ThemeToggle } from "../components/ThemeToggle";
+import { ThemeSelector } from "../components/ThemeSelector";
 import { TERMS_TITLE } from "../content/termsOfUse";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
@@ -15,7 +15,7 @@ import {
 import { acceptTerms } from "../services/termsService";
 
 export default function AuthPage() {
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(false);
   const [autoConnecting, setAutoConnecting] = useState(true);
   const [canSilentConnect, setCanSilentConnect] = useState(false);
@@ -127,11 +127,11 @@ export default function AuthPage() {
   return (
     <SitePageShell>
       <div className="mb-4 flex justify-end">
-        <ThemeToggle dark={theme === "dark"} onToggle={toggleTheme} />
+        <ThemeSelector theme={theme} onChange={setTheme} />
       </div>
       <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center py-4">
         <SitePanel className="w-full max-w-lg text-center sm:p-8">
-          <p className="text-xs uppercase tracking-[0.24em] text-cyan-500">USB Authentication</p>
+          <p className="site-accent-text text-xs uppercase tracking-[0.24em]">USB Authentication</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-50">请连接设备</h1>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
             请使用 Edge 或 Chrome。系统会自动识别佳点授权设备；已授权过的设备无需手动选择，插入即可进入。

@@ -29,7 +29,7 @@ import { MyUploadsPanel } from "../components/MyUploadsPanel";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useThemeMode();
+  const { theme, setTheme } = useThemeMode();
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [displayName, setDisplayName] = useState(() => getDisplayName(serial));
@@ -119,7 +119,7 @@ export default function ProfilePage() {
     <SitePageLayout
       subtitle="个人中心 · 昵称、积分与我的上传"
       theme={theme}
-      onToggleTheme={toggleTheme}
+      onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
         <SitePanel className="space-y-5">

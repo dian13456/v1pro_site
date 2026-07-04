@@ -1,24 +1,35 @@
 import { useEffect, useState } from "react";
+import type { ThemeMode } from "../types/theme";
 
-type ThemeMode = "light" | "dark";
 const STORAGE_KEY = "jiadian_hub_theme";
 
-function getInitialTheme(): ThemeMode {
+export function getInitialTheme(): ThemeMode {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved === "light" || saved === "dark") return saved;
+  if (saved === "light" || saved === "dark" || saved === "cat") return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+export function applyThemeToDocument(theme: ThemeMode): void {
+  const root = document.documentElement;
+  root.dataset.theme = theme;
+  root.classList.toggle("dark", theme === "dark");
+  root.classList.toggle("theme-cat", theme === "cat");
+}
+
 export function useThemeMode() {
-  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    applyThemeToDocument(theme);
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
+  const setTheme = (next: ThemeMode) => {
+    setThemeState(next);
+  };
+
   return {
     theme,
-    toggleTheme: () => setTheme((prev) => (prev === "dark" ? "light" : "dark")),
+    setTheme,
   };
 }

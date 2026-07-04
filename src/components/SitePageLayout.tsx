@@ -4,11 +4,12 @@ import { SiteHeader } from "./SiteHeader";
 import { SitePageShell } from "./SitePageShell";
 import { SitePageToolbar } from "./SitePageToolbar";
 import { SITE_CONTENT_DEFAULT } from "./SiteUi";
+import type { ThemeMode } from "../types/theme";
 
 interface SitePageLayoutProps {
   subtitle?: string;
-  theme: "light" | "dark";
-  onToggleTheme: () => void;
+  theme: ThemeMode;
+  onSetTheme: (theme: ThemeMode) => void;
   beforeContent?: ReactNode;
   children: ReactNode;
   contentClassName?: string;
@@ -19,7 +20,7 @@ interface SitePageLayoutProps {
 export function SitePageLayout({
   subtitle,
   theme,
-  onToggleTheme,
+  onSetTheme,
   beforeContent,
   children,
   contentClassName = SITE_CONTENT_DEFAULT,
@@ -32,7 +33,7 @@ export function SitePageLayout({
         title="佳点电子资源中心"
         subtitle={subtitle}
         rightSlot={
-          <SitePageToolbar theme={theme} onToggleTheme={onToggleTheme} mode={toolbarMode} />
+          <SitePageToolbar theme={theme} onSetTheme={onSetTheme} mode={toolbarMode} />
         }
       />
       <div className={contentClassName}>{children}</div>
