@@ -5,9 +5,7 @@ import { createDownloadUrl } from "../services/downloadService";
 import {
   dismissSoftwarePrompt,
   hasDismissedSoftwarePrompt,
-  hasDismissedWelcome,
 } from "../services/firstVisitPromptService";
-import { createImageUrl } from "../services/imageService";
 import { fetchResources } from "../services/resourceService";
 import type { ResourceItem } from "../types/resource";
 import { findLatestSoftware } from "../utils/latestSoftware";
@@ -17,12 +15,10 @@ export function LatestSoftwareModal() {
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [software, setSoftware] = useState<ResourceItem | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(() => Boolean(serial) && !hasDismissedSoftwarePrompt(serial));
-  const [welcomeBlocking, setWelcomeBlocking] = useState(() => Boolean(serial) && !hasDismissedWelcome(serial));
 
   useEffect(() => {
     if (!serial || !open) {
@@ -55,41 +51,7 @@ export function LatestSoftwareModal() {
     };
   }, [serial, open]);
 
-  useEffect(() => {
-    if (!software || !open) {
-      setPreviewUrl("");
-      return;
-    }
-
-    let active = true;
-    void createImageUrl(software.id, software.image)
-      .then((result) => {
-        if (active && result.url) {
-          setPreviewUrl(result.url);
-        }
-      })
-      .catch(() => {
-        if (active) setPreviewUrl("");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [software, open]);
-
-  useEffect(() => {
-    if (!serial || !open || !welcomeBlocking) return;
-
-    const timer = window.setInterval(() => {
-      if (hasDismissedWelcome(serial)) {
-        setWelcomeBlocking(false);
-      }
-    }, 250);
-
-    return () => window.clearInterval(timer);
-  }, [serial, open, welcomeBlocking]);
-
-  if (!serial || !open || !software || welcomeBlocking) {
+  if (!serial || !open || !software) {
     return null;
   }
 
@@ -121,7 +83,7 @@ export function LatestSoftwareModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[89] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
@@ -147,19 +109,12 @@ export function LatestSoftwareModal() {
           首次进入已为你匹配最新版桌面软件，可直接下载安装。
         </p>
 
-        <div className="mt-5 overflow-hidden rounded-2xl border border-violet-100/80 bg-white/70 dark:border-violet-500/15 dark:bg-slate-950/40">
-          {previewUrl ? (
-            <img src={previewUrl} alt={software.title} className="mx-auto max-h-40 w-full object-contain p-4" />
-          ) : (
-            <div className="flex h-40 items-center justify-center text-sm text-slate-400">封面加载中...</div>
-          )}
-          <div className="border-t border-violet-100/80 px-4 py-3 dark:border-violet-500/15">
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{software.title}</p>
-            <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-300">{software.description}</p>
-            {software.size && software.size !== "未知" ? (
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">大小：{software.size}</p>
-            ) : null}
-          </div>
+        <div className="mt-5 rounded-2xl border border-violet-100/80 bg-white/70 px-4 py-3 dark:border-violet-500/15 dark:bg-slate-950/40">
+          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{software.title}</p>
+          <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-300">{software.description}</p>
+          {software.size && software.size !== "未知" ? (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">大小：{software.size}</p>
+          ) : null}
         </div>
 
         {loading ? (

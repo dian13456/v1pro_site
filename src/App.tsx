@@ -1,6 +1,5 @@
 import { type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { WelcomeModal } from "./components/WelcomeModal";
 import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
@@ -36,12 +35,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   const location = useLocation();
-  const showWelcomeModal = location.pathname !== "/auth" && location.pathname !== "/terms";
+  const showFirstVisitPrompts = location.pathname !== "/auth" && location.pathname !== "/terms";
 
   return (
     <>
-      {showWelcomeModal ? <WelcomeModal /> : null}
-      {showWelcomeModal ? <LatestSoftwareModal /> : null}
+      {showFirstVisitPrompts ? <LatestSoftwareModal /> : null}
       <Routes>
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/auth" element={<AuthPage />} />
