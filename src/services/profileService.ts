@@ -15,6 +15,7 @@ export interface ProfilePayload {
   creditsDefault?: number;
   creditCost?: number;
   likeRewardCredits?: number;
+  softwarePromptDismissedId?: number;
   message?: string;
 }
 

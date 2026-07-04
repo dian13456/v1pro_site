@@ -60,6 +60,10 @@ type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+type softwarePromptDismissRequest struct {
+	ResourceID int64 `json:"resourceId"`
+}
+
 type profileUploadDeleteRequest struct {
 	Kind       string `json:"kind"`
 	ResourceID string `json:"resourceId"`
@@ -676,6 +680,10 @@ func main() {
 	if userProfilesPath == "" {
 		userProfilesPath = filepath.Join("config", "user_profiles.json")
 	}
+	userPromptPrefsPath := os.Getenv("USER_PROMPT_PREFS_PATH")
+	if userPromptPrefsPath == "" {
+		userPromptPrefsPath = filepath.Join("config", "user_prompt_prefs.json")
+	}
 	aiImageSharesPath := os.Getenv("AI_IMAGE_SHARES_PATH")
 	if aiImageSharesPath == "" {
 		aiImageSharesPath = filepath.Join("config", "ai_image_share_counts.json")
@@ -815,13 +823,14 @@ func main() {
 		log.Fatalf("load image map failed: %v", err)
 	}
 	userDataRepo, err := service.NewUserDataRepo(service.UserDataPaths{
-		LikesPath:     resourceLikesPath,
-		FavoritesPath: resourceFavoritesPath,
-		DownloadsPath: resourceDownloadsPath,
-		MessagesPath:  messageBoardPath,
-		ProfilesPath:  userProfilesPath,
-		CreditsPath:   aiImageCreditsPath,
-		SharesPath:    aiImageSharesPath,
+		LikesPath:       resourceLikesPath,
+		FavoritesPath:   resourceFavoritesPath,
+		DownloadsPath:   resourceDownloadsPath,
+		MessagesPath:    messageBoardPath,
+		ProfilesPath:    userProfilesPath,
+		PromptPrefsPath: userPromptPrefsPath,
+		CreditsPath:     aiImageCreditsPath,
+		SharesPath:      aiImageSharesPath,
 	})
 	if err != nil {
 		log.Fatalf("init user data storage failed: %v", err)
@@ -858,6 +867,10 @@ func main() {
 	userProfiles, err := userDataRepo.LoadUserProfiles()
 	if err != nil {
 		log.Fatalf("load user profiles failed: %v", err)
+	}
+	userPromptPrefs, err := userDataRepo.LoadUserPromptPrefs()
+	if err != nil {
+		log.Fatalf("load user prompt prefs failed: %v", err)
 	}
 	aiShareQuota, err := userDataRepo.LoadAIShareQuota()
 	if err != nil {
@@ -953,6 +966,7 @@ func main() {
 	var downloadsMu sync.Mutex
 	var messagesMu sync.RWMutex
 	var profilesMu sync.RWMutex
+	var promptPrefsMu sync.RWMutex
 	var aiShareMu sync.Mutex
 	var aiCreditsMu sync.Mutex
 	var imageReviewMu sync.RWMutex
@@ -1081,19 +1095,53 @@ func main() {
 		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
 		profilesMu.RUnlock()
 
+		promptPrefsMu.RLock()
+		softwarePromptDismissedID := service.GetSoftwarePromptDismissedID(userPromptPrefs, serial)
+		promptPrefsMu.RUnlock()
+
 		aiCreditsMu.Lock()
 		reloadAICreditsLocked()
 		credits := aiCredits.Balance(serial)
 		aiCreditsMu.Unlock()
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":        true,
-			"serial":         serial,
-			"displayName":    displayName,
-			"credits":           credits,
-			"creditsDefault":    service.DefaultAICredits,
-			"creditCost":        service.AICreditCostPerGeneration,
-			"likeRewardCredits": service.LikeCreditRewardAmount,
+			"success":                   true,
+			"serial":                    serial,
+			"displayName":               displayName,
+			"credits":                   credits,
+			"creditsDefault":            service.DefaultAICredits,
+			"creditCost":                service.AICreditCostPerGeneration,
+			"likeRewardCredits":         service.LikeCreditRewardAmount,
+			"softwarePromptDismissedId": softwarePromptDismissedID,
+		})
+	})
+
+	router.POST("/api/profile/software-prompt/dismiss", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req softwarePromptDismissRequest
+		if err := c.ShouldBindJSON(&req); err != nil || req.ResourceID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 无效"})
+			return
+		}
+
+		promptPrefsMu.Lock()
+		dismissedID := service.SetSoftwarePromptDismissedID(&userPromptPrefs, serial, req.ResourceID)
+		saveErr := userDataRepo.SaveUserPromptPrefs(userPromptPrefs)
+		promptPrefsMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":                   true,
+			"softwarePromptDismissedId": dismissedID,
 		})
 	})
 

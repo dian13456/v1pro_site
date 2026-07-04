@@ -404,6 +404,50 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 	return tx.Commit()
 }
 
+func (m *mysqlStore) loadUserPromptPrefs(ctx context.Context) (UserPromptPrefsStore, error) {
+	store := UserPromptPrefsStore{SoftwareDismissed: map[string]int64{}}
+	rows, err := m.db.QueryContext(ctx, `SELECT serial, software_dismissed_id FROM user_prompt_prefs`)
+	if err != nil {
+		return store, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var serial string
+		var resourceID int64
+		if err := rows.Scan(&serial, &resourceID); err != nil {
+			return store, err
+		}
+		if resourceID > 0 {
+			store.SoftwareDismissed[serial] = resourceID
+		}
+	}
+	return store, rows.Err()
+}
+
+func (m *mysqlStore) saveUserPromptPrefs(ctx context.Context, store UserPromptPrefsStore) error {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_prompt_prefs`); err != nil {
+		return err
+	}
+	for serial, resourceID := range store.SoftwareDismissed {
+		if resourceID <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO user_prompt_prefs (serial, software_dismissed_id) VALUES (?, ?)`,
+			serial, resourceID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (m *mysqlStore) loadAICredits(ctx context.Context) (AICreditsStore, error) {
 	store := AICreditsStore{Balances: map[string]int{}}
 	rows, err := m.db.QueryContext(ctx, `SELECT serial, balance FROM ai_credits`)

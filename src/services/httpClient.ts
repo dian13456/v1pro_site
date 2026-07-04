@@ -14,6 +14,7 @@ const DEV_PROFILES_KEY = "jiadian_dev_profiles";
 const DEV_AI_SHARE_COUNTS_KEY = "jiadian_dev_ai_share_counts";
 const DEV_AI_SHARE_LIMIT = 50;
 const DEV_AI_CREDITS_KEY = "jiadian_dev_ai_credits";
+const DEV_SOFTWARE_PROMPT_KEY = "jiadian_dev_software_prompt_dismissed";
 const DEV_AI_CREDITS_DEFAULT = 100;
 const DEV_AI_CREDIT_COST = 1;
 const DEV_MAX_DOWNLOADS_PER_HOUR = 50;
@@ -75,6 +76,26 @@ function devAiCreditsBalance(serial: string): number {
     // ignore
   }
   return DEV_AI_CREDITS_DEFAULT;
+}
+
+function readDevSoftwarePromptDismissedId(serial: string): number {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_SOFTWARE_PROMPT_KEY) || "{}") as Record<string, number>;
+    const value = map[serial];
+    return typeof value === "number" && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeDevSoftwarePromptDismissedId(serial: string, resourceId: number): void {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_SOFTWARE_PROMPT_KEY) || "{}") as Record<string, number>;
+    map[serial] = resourceId;
+    localStorage.setItem(DEV_SOFTWARE_PROMPT_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
 }
 
 function devAiCreditsProfileFields(serial: string) {
@@ -539,6 +560,21 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     };
   }
 
+  if (path.startsWith("/api/profile/software-prompt/dismiss")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const resourceId = Number(body.resourceId || 0);
+    if (!Number.isFinite(resourceId) || resourceId <= 0) {
+      return { success: false, message: "resourceId 无效" };
+    }
+    writeDevSoftwarePromptDismissedId(serial, resourceId);
+    return {
+      success: true,
+      softwarePromptDismissedId: resourceId,
+    };
+  }
+
   if (path.startsWith("/api/profile")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
@@ -567,6 +603,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
       success: true,
       serial,
       displayName: profiles[serial] || displayUsernameFromSerial(serial),
+      softwarePromptDismissedId: readDevSoftwarePromptDismissedId(serial),
       ...devAiCreditsProfileFields(serial),
     };
   }

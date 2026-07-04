@@ -9,13 +9,14 @@ import (
 )
 
 type UserDataPaths struct {
-	LikesPath     string
-	FavoritesPath string
-	DownloadsPath string
-	MessagesPath  string
-	ProfilesPath  string
-	CreditsPath   string
-	SharesPath    string
+	LikesPath       string
+	FavoritesPath   string
+	DownloadsPath   string
+	MessagesPath    string
+	ProfilesPath    string
+	PromptPrefsPath string
+	CreditsPath     string
+	SharesPath      string
 }
 
 type UserDataRepo struct {
@@ -146,6 +147,24 @@ func (r *UserDataRepo) SaveUserProfiles(store UserProfilesStore) error {
 		return r.mysql.saveUserProfiles(ctx, store)
 	}
 	return SaveUserProfiles(r.paths.ProfilesPath, store)
+}
+
+func (r *UserDataRepo) LoadUserPromptPrefs() (UserPromptPrefsStore, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.loadUserPromptPrefs(ctx)
+	}
+	return LoadUserPromptPrefs(r.paths.PromptPrefsPath)
+}
+
+func (r *UserDataRepo) SaveUserPromptPrefs(store UserPromptPrefsStore) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.saveUserPromptPrefs(ctx, store)
+	}
+	return SaveUserPromptPrefs(r.paths.PromptPrefsPath, store)
 }
 
 func (r *UserDataRepo) LoadAICredits() (AICreditsStore, error) {

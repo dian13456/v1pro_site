@@ -4,7 +4,8 @@ import { getAuthState } from "../services/authService";
 import { createDownloadUrl } from "../services/downloadService";
 import {
   dismissSoftwarePrompt,
-  hasDismissedSoftwarePrompt,
+  fetchSoftwarePromptDismissedId,
+  shouldShowSoftwarePrompt,
 } from "../services/firstVisitPromptService";
 import { fetchResources } from "../services/resourceService";
 import type { ResourceItem } from "../types/resource";
@@ -18,45 +19,48 @@ export function LatestSoftwareModal() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(() => Boolean(serial) && !hasDismissedSoftwarePrompt(serial));
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!serial || !open) {
+    if (!serial) {
       setLoading(false);
+      setOpen(false);
       return;
     }
 
     let active = true;
-    void fetchResources()
-      .then((resources) => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const [resources, dismissedId] = await Promise.all([
+          fetchResources(),
+          fetchSoftwarePromptDismissedId(serial),
+        ]);
         if (!active) return;
+
         const latest = findLatestSoftware(resources);
         setSoftware(latest);
-        if (!latest) {
-          dismissSoftwarePrompt(serial);
-          setOpen(false);
-        }
-      })
-      .catch(() => {
+        setOpen(Boolean(latest) && shouldShowSoftwarePrompt(serial, latest?.id ?? 0, dismissedId));
+      } catch {
         if (!active) return;
         setSoftware(null);
         setOpen(false);
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       active = false;
     };
-  }, [serial, open]);
+  }, [serial]);
 
   if (!serial || !open || !software) {
     return null;
   }
 
   const handleDismiss = () => {
-    dismissSoftwarePrompt(serial);
+    void dismissSoftwarePrompt(serial, software.id);
     setOpen(false);
   };
 
@@ -69,7 +73,7 @@ export function LatestSoftwareModal() {
         throw new Error("下载链接生成失败");
       }
       window.open(result.url, "_blank", "noopener,noreferrer");
-      dismissSoftwarePrompt(serial);
+      await dismissSoftwarePrompt(serial, software.id);
       setOpen(false);
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
@@ -106,7 +110,7 @@ export function LatestSoftwareModal() {
           最新软件下载
         </h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          首次进入已为你匹配最新版桌面软件，可直接下载安装。
+          检测到有新版桌面软件，可直接下载安装；关闭后将按 SN 记住，不再重复提示同一版本。
         </p>
 
         <div className="mt-5 rounded-2xl border border-violet-100/80 bg-white/70 px-4 py-3 dark:border-violet-500/15 dark:bg-slate-950/40">
