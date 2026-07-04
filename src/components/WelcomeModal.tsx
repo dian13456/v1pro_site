@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { getAuthState } from "../services/authService";
 import {
+  dismissWelcome,
+  hasDismissedWelcome,
+} from "../services/firstVisitPromptService";
+import {
   MAX_DISPLAY_NAME_LENGTH,
   fetchWelcomeMessage,
   getDefaultDisplayName,
@@ -10,25 +14,12 @@ import {
 } from "../services/welcomeService";
 import type { WelcomePayload } from "../types/welcome";
 
-function welcomeDismissKey(serial: string): string {
-  return `jiadian_hub_welcome_dismissed_${serial}`;
-}
-
-function hasDismissedWelcome(serial: string): boolean {
-  if (!serial) return true;
-  try {
-    return localStorage.getItem(welcomeDismissKey(serial)) === "1";
-  } catch {
-    return false;
-  }
-}
-
 export function WelcomeModal() {
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [welcome, setWelcome] = useState<WelcomePayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(() => !hasDismissedWelcome(serial));
+  const [open, setOpen] = useState(() => Boolean(serial) && !hasDismissedWelcome(serial));
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [displayName, setDisplayNameState] = useState(() => getDisplayName(serial));
@@ -63,7 +54,7 @@ export function WelcomeModal() {
   }
 
   const handleDismiss = () => {
-    localStorage.setItem(welcomeDismissKey(serial), "1");
+    dismissWelcome(serial);
     setOpen(false);
   };
 

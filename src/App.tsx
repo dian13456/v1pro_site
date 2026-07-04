@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { WelcomeModal } from "./components/WelcomeModal";
+import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
@@ -40,6 +41,7 @@ export default function App() {
   return (
     <>
       {showWelcomeModal ? <WelcomeModal /> : null}
+      {showWelcomeModal ? <LatestSoftwareModal /> : null}
       <Routes>
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/auth" element={<AuthPage />} />
