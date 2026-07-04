@@ -35,6 +35,7 @@ type PendingImageReview struct {
 	Title          string `json:"title,omitempty"`
 	Prompt         string `json:"prompt,omitempty"`
 	Description    string `json:"description,omitempty"`
+	ColumnTag      string `json:"columnTag,omitempty"`
 	Source         string `json:"source,omitempty"`
 	ImageObjectKey string `json:"imageObjectKey"`
 	GifObjectKey   string `json:"gifObjectKey,omitempty"`
@@ -422,6 +423,7 @@ func approvePendingVideoShare(
 		ShareUserVideoInput{
 			Title:          title,
 			Description:    description,
+			ColumnTag:      item.ColumnTag,
 			Author:         item.Author,
 			UploaderSerial: item.Serial,
 			VideoObjectKey: videoObjectKey,
@@ -554,6 +556,7 @@ type EnqueueVideoReviewInput struct {
 	Author         string
 	Title          string
 	Description    string
+	ColumnTag      string
 	VideoObjectKey string
 	CoverObjectKey string
 	Outcome        ImageModerationOutcome
@@ -569,6 +572,7 @@ func EnqueueVideoReview(store *ImageReviewStore, input EnqueueVideoReviewInput) 
 		Action:         ReviewActionShareUserVideo,
 		Title:          strings.TrimSpace(input.Title),
 		Description:    strings.TrimSpace(input.Description),
+		ColumnTag:      strings.TrimSpace(input.ColumnTag),
 		Source:         "upload",
 		ImageObjectKey: coverObjectKey,
 		GifObjectKey:   strings.TrimSpace(input.VideoObjectKey),

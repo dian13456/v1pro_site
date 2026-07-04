@@ -163,7 +163,7 @@ export async function createVideoUploadSession(file: File): Promise<VideoUploadS
 
 export async function shareVideoToCatalog(
   file: File,
-  options: { title?: string; description?: string; onProgress?: (stage: string) => void } = {}
+  options: { title?: string; description?: string; columnTag?: string; onProgress?: (stage: string) => void } = {}
 ): Promise<VideoShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -172,6 +172,7 @@ export async function shareVideoToCatalog(
   const baseName = file.name.replace(/\.[^.]+$/i, "");
   const title = (options.title || "").trim() || baseName;
   const description = (options.description || "").trim() || title;
+  const columnTag = (options.columnTag || "").trim();
   const auth = getAuthState();
 
   if (isStaticMode()) {
@@ -185,6 +186,7 @@ export async function shareVideoToCatalog(
         sessionId: "dev-session",
         title,
         description,
+        columnTag,
       }),
     });
     throwIfPendingReview(payload);
@@ -217,6 +219,7 @@ export async function shareVideoToCatalog(
       sessionId: session.sessionId,
       title,
       description,
+      columnTag,
     }),
   });
 

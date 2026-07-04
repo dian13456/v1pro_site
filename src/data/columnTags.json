@@ -27,5 +27,26 @@
     "keywords": [
       "孤独摇滚"
     ]
+  },
+  {
+    "id": "col-4af1f1a737",
+    "label": "神龙斗士",
+    "keywords": [
+      "神龙斗士"
+    ]
+  },
+  {
+    "id": "col-c5c63ed3dd",
+    "label": "星游记",
+    "keywords": [
+      "星游记"
+    ]
+  },
+  {
+    "id": "other",
+    "label": "其他",
+    "keywords": [
+      "其他"
+    ]
   }
 ]

@@ -114,6 +114,7 @@ type userVideoShareRequest struct {
 	SessionID   string `json:"sessionId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	ColumnTag   string `json:"columnTag"`
 }
 
 type imageReviewActionRequest struct {
@@ -2055,11 +2056,14 @@ func main() {
 			description = title
 		}
 
+		columnTag := strings.TrimSpace(req.ColumnTag)
+
 		reviewInput := service.EnqueueVideoReviewInput{
 			Serial:         serial,
 			Author:         author,
 			Title:          title,
 			Description:    description,
+			ColumnTag:      columnTag,
 			VideoObjectKey: session.VideoObjectKey,
 			CoverObjectKey: session.CoverObjectKey,
 		}
@@ -2097,6 +2101,7 @@ func main() {
 			service.ShareUserVideoInput{
 				Title:          title,
 				Description:    description,
+				ColumnTag:      columnTag,
 				Author:         author,
 				UploaderSerial: serial,
 				VideoObjectKey: session.VideoObjectKey,

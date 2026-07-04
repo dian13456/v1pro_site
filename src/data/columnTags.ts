@@ -18,3 +18,16 @@ export function buildColumnTagFilterOptions(
     ...options.map((item) => ({ value: item.id, label: item.label })),
   ];
 }
+
+export function buildShareColumnTagOptions(
+  options: ColumnTagOption[]
+): Array<{ value: string; label: string }> {
+  const merged = [...options];
+  if (!merged.some((item) => item.id === "other")) {
+    merged.push({ id: "other", label: "其他", keywords: ["其他"] });
+  }
+  return [
+    { value: "", label: "不选择专栏" },
+    ...merged.map((item) => ({ value: item.id, label: item.label })),
+  ];
+}

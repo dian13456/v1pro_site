@@ -191,6 +191,7 @@ func (store *VideoUploadSessionStore) Consume(sessionID, serial string) (VideoUp
 type ShareUserVideoInput struct {
 	Title          string
 	Description    string
+	ColumnTag      string
 	Author         string
 	UploaderSerial string
 	VideoObjectKey string
@@ -299,6 +300,9 @@ func ShareUserVideoToCatalog(
 	}
 	if author := strings.TrimSpace(input.Author); author != "" {
 		entry["author"] = author
+	}
+	if columnTag := strings.TrimSpace(input.ColumnTag); columnTag != "" {
+		entry["columnTag"] = columnTag
 	}
 	uploaderSerial := normalizeUploaderSerial(input.UploaderSerial)
 	if uploaderSerial != "" {

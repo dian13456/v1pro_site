@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
@@ -10,6 +10,8 @@ import {
   SiteSectionTitle,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
+import { useColumnTags } from "../hooks/useColumnTags";
+import { buildShareColumnTagOptions } from "../data/columnTags";
 import {
   ImageReviewPendingError,
   readLocalImageFile,
@@ -94,12 +96,18 @@ function kindLabel(kind: ShareMediaKind): string {
 export default function SharePage() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeMode();
+  const { columnTagOptions } = useColumnTags();
+  const shareColumnOptions = useMemo(
+    () => buildShareColumnTagOptions(columnTagOptions),
+    [columnTagOptions]
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mediaKind, setMediaKind] = useState<ShareMediaKind | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [columnTag, setColumnTag] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
   const [notice, setNotice] = useState("");
@@ -143,6 +151,7 @@ export default function SharePage() {
     const baseName = file.name.replace(/\.[^.]+$/i, "");
     setTitle(baseName);
     setDescription(baseName);
+    setColumnTag("");
   };
 
   const handleShare = async () => {
@@ -176,6 +185,7 @@ export default function SharePage() {
           const result = await shareVideoToCatalog(selectedFile, {
             title,
             description,
+            columnTag,
             onProgress: setProgress,
           });
           resourceId = result.resourceId;
@@ -204,6 +214,7 @@ export default function SharePage() {
       setMediaKind(null);
       setTitle("");
       setDescription("");
+      setColumnTag("");
     } catch (err) {
       if (err instanceof ImageReviewPendingError) {
         setNotice(formatReviewPendingMessage(err));
@@ -273,6 +284,22 @@ export default function SharePage() {
                 maxLength={500}
               />
             </div>
+            {mediaKind === "video" ? (
+              <div className="space-y-2">
+                <SiteLabel>专栏</SiteLabel>
+                <select
+                  value={columnTag}
+                  onChange={(event) => setColumnTag(event.target.value)}
+                  className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
+                >
+                  {shareColumnOptions.map((item) => (
+                    <option key={item.value || "none"} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
               已选：{kindLabel(mediaKind)} · {selectedFile.name}（
               {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB）
