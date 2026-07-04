@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
-import { SitePageTransition } from "./components/SitePageTransition";
 import { SiteLoadingScreen } from "./components/SiteUi";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
@@ -38,8 +37,7 @@ export default function App() {
   return (
     <>
       {showFirstVisitPrompts ? <LatestSoftwareModal /> : null}
-      <SitePageTransition routeKey={location.pathname}>
-        <Routes location={location}>
+      <Routes location={location}>
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route
@@ -109,8 +107,7 @@ export default function App() {
             }
           />
           <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </SitePageTransition>
+      </Routes>
     </>
   );
 }
