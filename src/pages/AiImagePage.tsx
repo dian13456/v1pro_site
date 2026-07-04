@@ -5,6 +5,7 @@ import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
+  SiteCard,
   SiteChipButton,
   SitePanel,
   SiteSectionTitle,
@@ -255,10 +256,7 @@ export default function AiImagePage() {
           {images.length > 0 ? (
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
               {images.map((image, index) => (
-                <article
-                  key={image.id}
-                  className="group rounded-3xl border border-white/25 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-950/40"
-                >
+                <SiteCard key={image.id} className="group p-4">
                   <div className="mb-3 inline-flex rounded-full bg-violet-600 px-3 py-1 text-xs text-white">
                     {image.source === "upload" ? "本地上传 · 1.9 寸预览" : "AI 生成 · 1.9 寸预览"}
                   </div>
@@ -270,36 +268,37 @@ export default function AiImagePage() {
                     />
                   </DevicePreviewFrame>
                   <div className="mt-4 grid grid-cols-3 gap-2">
-                    <button
+                    <SiteButton
                       type="button"
+                      variant="secondary"
                       disabled={isBusy}
+                      className="rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm"
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}
-                      className="rounded-xl border border-slate-200/80 bg-white px-2 py-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 sm:px-4 sm:text-sm"
                     >
                       下载
-                    </button>
-                    <button
+                    </SiteButton>
+                    <SiteButton
                       type="button"
                       disabled={isBusy}
+                      className="rounded-xl bg-cyan-600 px-2 py-2.5 text-xs hover:bg-cyan-500 sm:px-4 sm:text-sm"
                       onClick={() => void handleTransfer(image, index)}
-                      className="rounded-xl bg-cyan-600 px-2 py-2.5 text-xs font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
                     >
                       {transferringId === image.id ? "准备传输..." : "传输到设备"}
-                    </button>
-                    <button
+                    </SiteButton>
+                    <SiteButton
                       type="button"
                       disabled={isBusy || sharedIds.has(image.id)}
+                      className="rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm"
                       onClick={() => void handleShare(image)}
-                      className="rounded-xl bg-violet-600 px-2 py-2.5 text-xs font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
                     >
                       {sharingId === image.id
                         ? "分享中..."
                         : sharedIds.has(image.id)
                           ? "已分享"
                           : "一键分享"}
-                    </button>
+                    </SiteButton>
                   </div>
-                </article>
+                </SiteCard>
               ))}
             </div>
           ) : null}

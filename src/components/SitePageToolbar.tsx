@@ -6,15 +6,24 @@ import { clearAuthState } from "../services/authService";
 interface SitePageToolbarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  mode?: "app" | "theme-only";
 }
 
-export function SitePageToolbar({ theme, onToggleTheme }: SitePageToolbarProps) {
+export function SitePageToolbar({ theme, onToggleTheme, mode = "app" }: SitePageToolbarProps) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
     clearAuthState();
     navigate("/auth", { replace: true });
   };
+
+  if (mode === "theme-only") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <ThemeToggle dark={theme === "dark"} onToggle={onToggleTheme} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">

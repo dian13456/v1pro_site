@@ -4,10 +4,13 @@ import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
+  SiteCard,
   SiteEmptyBlock,
   SiteLoadingBlock,
   SitePanel,
+  SiteSectionTitle,
   SiteTextarea,
+  SITE_CONTENT_NARROW,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { getAuthState, hasValidLocalAuth } from "../services/authService";
@@ -92,15 +95,13 @@ export default function MessageBoardPage() {
       subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
       theme={theme}
       onToggleTheme={toggleTheme}
-      contentClassName="mx-auto w-full max-w-3xl space-y-5"
+      contentClassName={SITE_CONTENT_NARROW}
     >
         <SitePanel>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              当前昵称：<span className="font-medium text-violet-600 dark:text-violet-300">{myUsername || "—"}</span>
-            </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">最多 {MAX_MESSAGE_LENGTH} 字</p>
-          </div>
+          <SiteSectionTitle
+            title="发布留言"
+            description={`当前昵称：${myUsername || "—"} · 最多 ${MAX_MESSAGE_LENGTH} 字`}
+          />
           <SiteTextarea
             value={content}
             onChange={(event) => setContent(event.target.value.slice(0, MAX_MESSAGE_LENGTH))}
@@ -120,10 +121,7 @@ export default function MessageBoardPage() {
         {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">全部留言</h2>
-            <span className="text-sm text-slate-500 dark:text-slate-400">共 {total} 条</span>
-          </div>
+          <SiteSectionTitle title="全部留言" action={<span className="text-sm text-slate-500 dark:text-slate-400">共 {total} 条</span>} />
 
           {loading ? <SiteLoadingBlock>正在加载留言...</SiteLoadingBlock> : null}
           {!loading && messages.length === 0 ? (
@@ -131,7 +129,7 @@ export default function MessageBoardPage() {
           ) : null}
           {!loading && messages.length > 0
             ? messages.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+              <SiteCard key={item.id}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="rounded-full bg-violet-500/15 px-3 py-1 text-sm font-medium text-violet-700 dark:text-violet-200">
                     {item.username}
@@ -143,7 +141,7 @@ export default function MessageBoardPage() {
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">
                   {item.content}
                 </p>
-              </article>
+              </SiteCard>
             ))
             : null}
         </section>

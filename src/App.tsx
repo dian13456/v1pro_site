@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
+import { SitePageTransition } from "./components/SitePageTransition";
+import { SiteLoadingScreen } from "./components/SiteUi";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import AiGuidePage from "./pages/AiGuidePage.tsx";
 import AiImagePage from "./pages/AiImagePage.tsx";
@@ -19,11 +21,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const status = useAuthGuard();
 
   if (status === "checking") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
-        正在验证访问权限...
-      </div>
-    );
+    return <SiteLoadingScreen message="正在验证访问权限…" />;
   }
 
   if (status === "unauthorized") {
@@ -40,77 +38,79 @@ export default function App() {
   return (
     <>
       {showFirstVisitPrompts ? <LatestSoftwareModal /> : null}
-      <Routes>
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/auth" element={<AuthPage />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <ResourcesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/favorites"
-          element={
-            <ProtectedRoute>
-              <FavoritesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/board"
-          element={
-            <ProtectedRoute>
-              <MessageBoardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/guide"
-          element={
-            <ProtectedRoute>
-              <AiGuidePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/ai-image"
-          element={
-            <ProtectedRoute>
-              <AiImagePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/share"
-          element={
-            <ProtectedRoute>
-              <SharePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/upload-gif" element={<Navigate to="/share" replace />} />
-        <Route path="/upload-video" element={<Navigate to="/share" replace />} />
-        <Route
-          path="/shop"
-          element={
-            <ProtectedRoute>
-              <ShopPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      <SitePageTransition routeKey={location.pathname}>
+        <Routes location={location}>
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <ResourcesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/favorites"
+            element={
+              <ProtectedRoute>
+                <FavoritesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/board"
+            element={
+              <ProtectedRoute>
+                <MessageBoardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/guide"
+            element={
+              <ProtectedRoute>
+                <AiGuidePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ai-image"
+            element={
+              <ProtectedRoute>
+                <AiImagePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/share"
+            element={
+              <ProtectedRoute>
+                <SharePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/upload-gif" element={<Navigate to="/share" replace />} />
+          <Route path="/upload-video" element={<Navigate to="/share" replace />} />
+          <Route
+            path="/shop"
+            element={
+              <ProtectedRoute>
+                <ShopPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </SitePageTransition>
     </>
   );
 }

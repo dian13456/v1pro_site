@@ -6,9 +6,12 @@ import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
+  SiteCard,
   SiteChipButton,
   SitePanel,
   SiteTextarea,
+  SITE_CHAT_ASSISTANT_CLASS,
+  SITE_CHAT_USER_CLASS,
 } from "../components/SiteUi";
 import { useResourceInteractions } from "../hooks/useResourceInteractions";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -163,11 +166,7 @@ export default function AiGuidePage() {
             <div key={`${message.role}-${index}`} className="space-y-4">
               <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[760px] rounded-2xl px-4 py-3 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "bg-cyan-600 text-white"
-                      : "border border-white/20 bg-white/80 text-slate-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200"
-                  }`}
+                  className={message.role === "user" ? SITE_CHAT_USER_CLASS : SITE_CHAT_ASSISTANT_CLASS}
                 >
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>
@@ -179,12 +178,9 @@ export default function AiGuidePage() {
                     const resource = resourceMap.get(id);
                     if (!resource) {
                       return (
-                        <div
-                          key={id}
-                          className="rounded-3xl border border-white/25 bg-white/55 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400"
-                        >
+                        <SiteCard key={id} className="text-sm text-slate-500 dark:text-slate-400">
                           素材 #{id} 暂不可用
-                        </div>
+                        </SiteCard>
                       );
                     }
                     return (

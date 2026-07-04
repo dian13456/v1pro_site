@@ -8,6 +8,7 @@ import {
   SiteLabel,
   SitePanel,
   SITE_PANEL_NESTED_CLASS,
+  SITE_CONTENT_NARROW,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { getAuthState, hasValidLocalAuth } from "../services/authService";
@@ -119,7 +120,7 @@ export default function ProfilePage() {
       subtitle="个人中心 · 昵称、积分与我的上传"
       theme={theme}
       onToggleTheme={toggleTheme}
-      contentClassName="mx-auto w-full max-w-3xl"
+      contentClassName={SITE_CONTENT_NARROW}
     >
         <SitePanel className="space-y-5">
           <div className="space-y-2">

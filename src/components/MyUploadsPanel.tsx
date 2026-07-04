@@ -1,7 +1,15 @@
 import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
-import { SiteButton, SiteEmptyBlock, SiteLabel, SiteLoadingBlock, SitePanel } from "./SiteUi";
+import {
+  SiteAlert,
+  SiteButton,
+  SiteCard,
+  SiteEmptyBlock,
+  SiteLabel,
+  SiteLoadingBlock,
+  SitePanel,
+} from "./SiteUi";
 import { createImageUrl } from "../services/imageService";
 import {
   deleteMyUpload,
@@ -99,7 +107,7 @@ function UploadCard({
       : `确定删除上传记录「${title}」？`;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-white/25 bg-white/55 dark:border-white/10 dark:bg-slate-900/45">
+    <SiteCard className="overflow-hidden p-0">
       <div className="p-3">
         <UploadPreview item={item} />
       </div>
@@ -135,7 +143,7 @@ function UploadCard({
           </SiteButton>
         </div>
       </div>
-    </article>
+    </SiteCard>
   );
 }
 
@@ -216,8 +224,8 @@ export function MyUploadsPanel() {
       </div>
 
       {loading ? <SiteLoadingBlock>正在加载上传记录...</SiteLoadingBlock> : null}
-      {noticeMessage ? <p className="text-sm text-emerald-600 dark:text-emerald-300">{noticeMessage}</p> : null}
-      {errorMessage ? <p className="text-sm text-rose-600 dark:text-rose-300">{errorMessage}</p> : null}
+      {noticeMessage ? <SiteAlert variant="success">{noticeMessage}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
       {!loading && items.length === 0 ? (
         <SiteEmptyBlock>

@@ -4,8 +4,11 @@ import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
+  SiteEmptyBlock,
+  SiteLoadingBlock,
   SitePanel,
   SiteSectionTitle,
+  SITE_CONTENT_MEDIUM,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { hasValidLocalAuth } from "../services/authService";
@@ -76,7 +79,7 @@ export default function ShopPage() {
       subtitle="积分商城 · 点赞得积分，积分换权益"
       theme={theme}
       onToggleTheme={toggleTheme}
-      contentClassName="mx-auto w-full max-w-4xl space-y-5"
+      contentClassName={SITE_CONTENT_MEDIUM}
     >
         <SitePanel>
           <SiteSectionTitle
@@ -106,17 +109,13 @@ export default function ShopPage() {
         {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
         <div className="grid gap-4">
-          {loading ? (
-            <div className="col-span-full text-sm text-slate-500 dark:text-slate-400">加载商品中…</div>
-          ) : items.length === 0 ? (
-            <div className="col-span-full rounded-2xl border border-white/25 bg-white/55 p-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400">
-              暂无可兑换商品。
-            </div>
-          ) : (
-            items.map((item) => {
+          {loading ? <SiteLoadingBlock>加载商品中…</SiteLoadingBlock> : null}
+          {!loading && items.length === 0 ? <SiteEmptyBlock>暂无可兑换商品。</SiteEmptyBlock> : null}
+          {!loading
+            ? items.map((item) => {
               const affordable = credits >= item.cost;
               return (
-                <article key={item.id} className="flex h-full flex-col rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+                <SitePanel key={item.id} className="flex h-full flex-col">
                   <div className="flex-1 space-y-2">
                     <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{item.title}</div>
                     <p className="text-sm text-slate-600 dark:text-slate-300">{item.description}</p>
@@ -132,10 +131,10 @@ export default function ShopPage() {
                       {redeemingId === item.id ? "兑换中…" : affordable ? "立即兑换" : "积分不足"}
                     </SiteButton>
                   </div>
-                </article>
+                </SitePanel>
               );
             })
-          )}
+            : null}
         </div>
     </SitePageLayout>
   );

@@ -1,4 +1,15 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { SITE_PAGE_CONTAINER_CLASS, SITE_PAGE_SHELL_CLASS } from "./SitePageShell";
+
+export const SITE_CONTENT_DEFAULT = "space-y-5";
+export const SITE_CONTENT_NARROW = "mx-auto w-full max-w-3xl space-y-5";
+export const SITE_CONTENT_MEDIUM = "mx-auto w-full max-w-4xl space-y-5";
+
+export const SITE_CHAT_USER_CLASS =
+  "max-w-[760px] rounded-2xl bg-cyan-600 px-4 py-3 text-sm leading-6 text-white shadow-sm shadow-cyan-500/20";
+
+export const SITE_CHAT_ASSISTANT_CLASS =
+  "max-w-[760px] rounded-2xl border border-white/20 bg-white/80 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200";
 
 export const SITE_PANEL_CLASS =
   "rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45";
@@ -111,6 +122,49 @@ export function SiteInput(props: InputHTMLAttributes<HTMLInputElement>) {
 
 export function SiteTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={joinClasses(SITE_TEXTAREA_CLASS, props.className)} />;
+}
+
+export function SiteSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={joinClasses(SITE_INPUT_CLASS, props.className)} />;
+}
+
+export function SiteMediaPreview({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={joinClasses(
+        "overflow-hidden rounded-2xl border border-white/30 bg-white/70 dark:border-white/10 dark:bg-slate-950/50",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function SiteCard({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <article className={joinClasses(SITE_PANEL_CLASS, className)}>{children}</article>;
+}
+
+export function SiteLoadingScreen({ message = "正在加载…" }: { message?: string }) {
+  return (
+    <div className={SITE_PAGE_SHELL_CLASS}>
+      <div className={`${SITE_PAGE_CONTAINER_CLASS} flex min-h-screen items-center justify-center pb-8`}>
+        <SiteLoadingBlock>{message}</SiteLoadingBlock>
+      </div>
+    </div>
+  );
 }
 
 export function SiteButton({

@@ -6,8 +6,11 @@ import {
   SiteButton,
   SiteInput,
   SiteLabel,
+  SiteMediaPreview,
   SitePanel,
   SiteSectionTitle,
+  SiteSelect,
+  SITE_CONTENT_NARROW,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { useColumnTags } from "../hooks/useColumnTags";
@@ -237,7 +240,7 @@ export default function SharePage() {
       subtitle="分享素材到素材库"
       theme={theme}
       onToggleTheme={toggleTheme}
-      contentClassName="mx-auto w-full max-w-3xl space-y-5"
+      contentClassName={SITE_CONTENT_NARROW}
     >
       <SitePanel>
         <SiteSectionTitle
@@ -287,17 +290,13 @@ export default function SharePage() {
             {mediaKind === "video" ? (
               <div className="space-y-2">
                 <SiteLabel>专栏</SiteLabel>
-                <select
-                  value={columnTag}
-                  onChange={(event) => setColumnTag(event.target.value)}
-                  className="w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100"
-                >
+                <SiteSelect value={columnTag} onChange={(event) => setColumnTag(event.target.value)}>
                   {shareColumnOptions.map((item) => (
                     <option key={item.value || "none"} value={item.value}>
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </SiteSelect>
               </div>
             ) : null}
             <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
@@ -308,7 +307,7 @@ export default function SharePage() {
         ) : null}
 
         {previewUrl && mediaKind ? (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-white/30 bg-white/70 dark:border-white/10 dark:bg-slate-950/50">
+          <SiteMediaPreview className="mt-6">
             {mediaKind === "video" ? (
               <video
                 src={previewUrl}
@@ -323,7 +322,7 @@ export default function SharePage() {
                 className="mx-auto max-h-72 object-contain"
               />
             )}
-          </div>
+          </SiteMediaPreview>
         ) : null}
 
         {notice ? (
