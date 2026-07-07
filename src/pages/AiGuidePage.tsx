@@ -148,103 +148,102 @@ export default function AiGuidePage() {
         <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       }
     >
-        <section className="mb-4 flex flex-wrap gap-2">
-          {STARTER_PROMPTS.map((prompt) => (
-            <SiteChipButton
-              key={prompt}
-              cyan
-              disabled={loading}
-              onClick={() => void submitQuestion(prompt)}
-            >
-              {prompt}
-            </SiteChipButton>
-          ))}
-        </section>
+      <section className="mb-4 flex flex-wrap gap-2">
+        {STARTER_PROMPTS.map((prompt) => (
+          <SiteChipButton
+            key={prompt}
+            cyan
+            disabled={loading}
+            onClick={() => void submitQuestion(prompt)}
+          >
+            {prompt}
+          </SiteChipButton>
+        ))}
+      </section>
 
-        <SitePanel className="space-y-6">
-          {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className="space-y-4">
-              <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={message.role === "user" ? SITE_CHAT_USER_CLASS : SITE_CHAT_ASSISTANT_CLASS}
-                >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                </div>
-              </div>
-
-              {message.role === "assistant" && message.resourceIds && message.resourceIds.length > 0 ? (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-                  {message.resourceIds.map((id) => {
-                    const resource = resourceMap.get(id);
-                    if (!resource) {
-                      return (
-                        <SiteCard key={id} className="text-sm text-slate-500 dark:text-slate-400">
-                          ?? #{id} ????
-                        </SiteCard>
-                      );
-                    }
-                    return (
-                      <ResourceCard
-                        key={`${index}-${resource.id}`}
-                        resource={resource}
-                        onDownload={handleDownload}
-                        onTransfer={handleTransfer}
-                        onTransferPrepare={handleTransferPrepare}
-                        onPlay={handlePlay}
-                        onPlayPrepare={handlePlayPrepare}
-                        onStopPlay={stopPlay}
-                        onLike={handleLike}
-                        onFavorite={handleFavorite}
-                        downloading={downloadingId === resource.id}
-                        transferring={transferringId === resource.id}
-                        playing={playingId === resource.id}
-                        isPlaying={playingResourceId === resource.id}
-                        playUrl={playingResourceId === resource.id ? playingUrl : ""}
-                        liking={likingId === resource.id}
-                        liked={likedIds.has(resource.id)}
-                        likeCount={likeCounts[resource.id] || 0}
-                        favorited={favoriteIdSet.has(resource.id)}
-                        favoriting={favoritingId === resource.id}
-                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
-                        weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
-                      />
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          ))}
-
-          {loading ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">AI ?????</div>
-          ) : null}
-
-          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
-
-          <div className="flex flex-col gap-3 border-t border-white/20 pt-4 dark:border-white/10">
-            <SiteTextarea
-              value={input}
-              onChange={(event) => setInput(event.target.value.slice(0, MAX_QUESTION_LENGTH))}
-              rows={3}
-              placeholder="?????????????? GIF"
-              className="ring-cyan-400/40"
-            />
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {input.trim().length}/{MAX_QUESTION_LENGTH}
-              </span>
-              <SiteButton
-                type="button"
-                disabled={loading || !input.trim()}
-                onClick={() => void submitQuestion(input)}
-                className="bg-cyan-600 hover:bg-cyan-500"
+      <SitePanel className="space-y-6">
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className="space-y-4">
+            <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                className={message.role === "user" ? SITE_CHAT_USER_CLASS : SITE_CHAT_ASSISTANT_CLASS}
               >
-                {loading ? "???..." : "??"}
-              </SiteButton>
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              </div>
             </div>
-          </div>
-        </SitePanel>
 
+            {message.role === "assistant" && message.resourceIds && message.resourceIds.length > 0 ? (
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {message.resourceIds.map((id) => {
+                  const resource = resourceMap.get(id);
+                  if (!resource) {
+                    return (
+                      <SiteCard key={id} className="text-sm text-slate-500 dark:text-slate-400">
+                        ?? #{id} ????
+                      </SiteCard>
+                    );
+                  }
+                  return (
+                    <ResourceCard
+                      key={`${index}-${resource.id}`}
+                      resource={resource}
+                      onDownload={handleDownload}
+                      onTransfer={handleTransfer}
+                      onTransferPrepare={handleTransferPrepare}
+                      onPlay={handlePlay}
+                      onPlayPrepare={handlePlayPrepare}
+                      onStopPlay={stopPlay}
+                      onLike={handleLike}
+                      onFavorite={handleFavorite}
+                      downloading={downloadingId === resource.id}
+                      transferring={transferringId === resource.id}
+                      playing={playingId === resource.id}
+                      isPlaying={playingResourceId === resource.id}
+                      playUrl={playingResourceId === resource.id ? playingUrl : ""}
+                      liking={likingId === resource.id}
+                      liked={likedIds.has(resource.id)}
+                      likeCount={likeCounts[resource.id] || 0}
+                      favorited={favoriteIdSet.has(resource.id)}
+                      favoriting={favoritingId === resource.id}
+                      downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                      weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ))}
+
+        {loading ? (
+          <div className="text-sm text-slate-500 dark:text-slate-400">AI ????…</div>
+        ) : null}
+
+        {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+
+        <div className="flex flex-col gap-3 border-t border-white/20 pt-4 dark:border-white/10">
+          <SiteTextarea
+            value={input}
+            onChange={(event) => setInput(event.target.value.slice(0, MAX_QUESTION_LENGTH))}
+            rows={3}
+            placeholder="?????????????? GIF"
+            className="ring-cyan-400/40"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {input.trim().length}/{MAX_QUESTION_LENGTH}
+            </span>
+            <SiteButton
+              type="button"
+              disabled={loading || !input.trim()}
+              onClick={() => void submitQuestion(input)}
+              className="bg-cyan-600 hover:bg-cyan-500"
+            >
+              {loading ? "???..." : "??"}
+            </SiteButton>
+          </div>
+        </div>
+      </SitePanel>
     </SitePageLayout>
   );
 }
