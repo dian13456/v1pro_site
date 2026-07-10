@@ -286,7 +286,7 @@ async function prepareTransferDownloadUrl(
 ): Promise<TransferCacheEntry> {
   const resourceId = resource.id;
   const cached = transferCache.get(resourceId);
-  if (cached && isCacheEntryFresh(cached)) {
+  if (cached && isCacheEntryFresh(cached) && cached.countsAsDownload) {
     return cached;
   }
 
@@ -294,11 +294,12 @@ async function prepareTransferDownloadUrl(
   if (inflight) {
     if (options.priority) {
       transferAbortControllers.get(resourceId)?.abort();
-    }
-    await Promise.race([inflight.catch(() => undefined), sleep(TRANSFER_INFLIGHT_WAIT_MS)]);
-    const ready = transferCache.get(resourceId);
-    if (ready && isCacheEntryFresh(ready)) {
-      return ready;
+    } else {
+      await Promise.race([inflight.catch(() => undefined), sleep(TRANSFER_INFLIGHT_WAIT_MS)]);
+      const ready = transferCache.get(resourceId);
+      if (ready && isCacheEntryFresh(ready) && ready.countsAsDownload) {
+        return ready;
+      }
     }
   }
 
@@ -313,7 +314,7 @@ async function prepareTransferDownloadUrl(
 
 export function isTransferDownloadUrlReady(resourceId: number): boolean {
   const cached = transferCache.get(resourceId);
-  return Boolean(cached && isCacheEntryFresh(cached));
+  return Boolean(cached && isCacheEntryFresh(cached) && cached.countsAsDownload);
 }
 
 export function isTransferDownloadUrlPrefetching(resourceId: number): boolean {
@@ -335,7 +336,7 @@ export function prefetchTransferDownloadUrl(
 
   const resourceId = resource.id;
   const cached = transferCache.get(resourceId);
-  if (cached && isCacheEntryFresh(cached)) {
+  if (cached && isCacheEntryFresh(cached) && cached.countsAsDownload) {
     return;
   }
 
