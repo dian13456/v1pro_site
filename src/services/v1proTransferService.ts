@@ -21,7 +21,10 @@ interface TransferCacheEntry {
   url: string;
   stats?: DownloadStatsSnapshot | null;
   fetchedAt: number;
+  countsAsDownload: boolean;
 }
+
+type TransferUrlMode = "preview" | "download";
 
 export interface TransferExecuteResult {
   launched: boolean;
@@ -191,20 +194,25 @@ export function canTransferViaV1Pro(resource: ResourceItem): boolean {
   );
 }
 
-function transferApiPath(resource: ResourceItem): string {
+function transferApiPath(resource: ResourceItem, mode: TransferUrlMode): string {
   if (resource.materialType === "image") {
-    return `/api/image/?id=${resource.id}&download=1`;
+    return mode === "download"
+      ? `/api/image/?id=${resource.id}&download=1`
+      : `/api/image/?id=${resource.id}`;
   }
-  return `/api/resource/?id=${resource.id}&download=1`;
+  return mode === "download"
+    ? `/api/resource/?id=${resource.id}&download=1`
+    : `/api/resource/?id=${resource.id}&preview=1`;
 }
 
 async function fetchTransferDownloadUrl(
   resource: ResourceItem,
-  options: { verifyRemote?: boolean; priority?: boolean } = {},
+  options: { verifyRemote?: boolean; priority?: boolean; mode?: TransferUrlMode } = {},
 ): Promise<{
   url: string;
   stats?: DownloadStatsSnapshot | null;
 }> {
+  const mode = options.mode ?? "download";
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
@@ -234,7 +242,7 @@ async function fetchTransferDownloadUrl(
 
   try {
     const payload = await apiFetch<TransferUrlResponse>(
-      transferApiPath(resource),
+      transferApiPath(resource, mode),
       {
         method: "GET",
         headers: {
@@ -265,7 +273,10 @@ async function fetchTransferDownloadUrl(
   }
 }
 
-function storeTransferCache(resourceId: number, entry: Omit<TransferCacheEntry, "fetchedAt">): void {
+function storeTransferCache(
+  resourceId: number,
+  entry: Omit<TransferCacheEntry, "fetchedAt">,
+): void {
   transferCache.set(resourceId, { ...entry, fetchedAt: Date.now() });
 }
 
@@ -294,8 +305,9 @@ async function prepareTransferDownloadUrl(
   const { url, stats } = await fetchTransferDownloadUrl(resource, {
     verifyRemote: false,
     priority: options.priority,
+    mode: "download",
   });
-  storeTransferCache(resourceId, { url, stats });
+  storeTransferCache(resourceId, { url, stats, countsAsDownload: true });
   return transferCache.get(resourceId) as TransferCacheEntry;
 }
 
@@ -343,9 +355,13 @@ export function prefetchTransferDownloadUrl(
     activeTransferPrefetchCount += 1;
   }
 
-  const task = fetchTransferDownloadUrl(resource, { verifyRemote: false, priority: urgent })
+  const task = fetchTransferDownloadUrl(resource, {
+    verifyRemote: false,
+    priority: urgent,
+    mode: "preview",
+  })
     .then(({ url, stats }) => {
-      storeTransferCache(resourceId, { url, stats });
+      storeTransferCache(resourceId, { url, stats, countsAsDownload: false });
     })
     .catch(() => {
       // prefetch 失败时静默，点击传输再提示
@@ -394,7 +410,7 @@ export function executeTransferToDevice(
   options: Pick<V1ProOpenOptions, "auto"> = {},
 ): TransferExecuteResult {
   const cached = transferCache.get(resource.id);
-  if (!cached || !isCacheEntryFresh(cached)) {
+  if (!cached || !isCacheEntryFresh(cached) || !cached.countsAsDownload) {
     return { launched: false, error: V1PRO_TRANSFER_NOT_READY_MESSAGE };
   }
 
