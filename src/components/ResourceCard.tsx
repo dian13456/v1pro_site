@@ -249,7 +249,7 @@ function ResourceCardComponent({
           ) : previewUrl ? (
             <img
               src={previewUrl}
-              alt={resource.title}
+              alt={cardTitle}
               loading="lazy"
               decoding="async"
               className={`h-full w-full ${previewFitClass}`}
