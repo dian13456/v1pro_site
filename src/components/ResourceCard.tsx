@@ -4,6 +4,24 @@ import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 
+function looksLikeFilename(text: string): boolean {
+  const value = text.trim();
+  if (!value) return false;
+  if (/^https?:\/\//i.test(value)) return true;
+  if (/[/\\]/.test(value)) return true;
+  return /\.(jpg|jpeg|png|gif|webp|bmp|mp4|mov|avi|mkv|webm|exe|zip|7z|rar|apk)$/i.test(value);
+}
+
+/** Prefer human title text; avoid showing uploaded filenames like preview.jpg. */
+function resolveCardTitle(resource: ResourceItem): string {
+  const title = (resource.title || "").trim();
+  const description = (resource.description || "").trim();
+  if (looksLikeFilename(title) && description) {
+    return description;
+  }
+  return title || description || "未命名素材";
+}
+
 interface ResourceCardProps {
   resource: ResourceItem;
   onDownload?: (resource: ResourceItem) => void;
@@ -79,6 +97,7 @@ function ResourceCardComponent({
         : resource.materialType === "gif"
           ? "GIF素材"
         : "V1PRO素材包";
+  const cardTitle = resolveCardTitle(resource);
   const previewFitClass =
     resource.materialType === "video" || resource.materialType === "image"
       ? "object-cover"
@@ -208,7 +227,7 @@ function ResourceCardComponent({
               ) : previewUrl ? (
                 <img
                   src={previewUrl}
-                  alt={resource.title}
+                  alt={cardTitle}
                   loading="lazy"
                   decoding="async"
                   className={`h-full w-full ${previewFitClass}`}
@@ -222,7 +241,7 @@ function ResourceCardComponent({
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
             <img
               src={playUrl}
-              alt={`${resource.title} GIF 播放`}
+              alt={`${cardTitle} GIF 播放`}
               loading="eager"
               decoding="async"
               className="h-full w-full object-contain"
@@ -244,7 +263,7 @@ function ResourceCardComponent({
 
       <div className="mt-3 min-w-0">
         <h3 className="line-clamp-2 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
-          {resource.title}
+          {cardTitle}
         </h3>
       </div>
 
