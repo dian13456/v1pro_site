@@ -77,6 +77,21 @@ func (r *UserDataRepo) SaveLikes(store LikesStore) error {
 	return saveLikesJSON(r.paths.LikesPath, store)
 }
 
+// ApplyDeviceLike atomically records one device like and returns the updated count.
+func (r *UserDataRepo) ApplyDeviceLike(serial, resourceID string) (DeviceLikeResult, error) {
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	if serial == "" || resourceID == "" {
+		return DeviceLikeResult{}, fmt.Errorf("serial or resourceId empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.applyDeviceLike(ctx, serial, resourceID)
+	}
+	return DeviceLikeResult{}, fmt.Errorf("ApplyDeviceLike requires mysql backend")
+}
+
 func (r *UserDataRepo) LoadFavorites() (FavoritesStore, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()

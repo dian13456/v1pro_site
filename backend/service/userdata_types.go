@@ -43,6 +43,7 @@ type LikesStore struct {
 }
 
 type FavoritesStore struct {
+	Counts          map[string]int              `json:"counts"`
 	DeviceFavorites map[string]map[string]int64 `json:"deviceFavorites"`
 }
 
@@ -116,12 +117,68 @@ func FavoriteResourceIDsForSerial(store FavoritesStore, serial string) []string 
 
 func RemoveResourceFromAllFavorites(store *FavoritesStore, resourceID string) {
 	resourceID = strings.TrimSpace(resourceID)
-	if resourceID == "" || store == nil || store.DeviceFavorites == nil {
+	if resourceID == "" || store == nil {
 		return
 	}
-	for serial := range store.DeviceFavorites {
-		delete(store.DeviceFavorites[serial], resourceID)
+	if store.DeviceFavorites != nil {
+		for serial := range store.DeviceFavorites {
+			delete(store.DeviceFavorites[serial], resourceID)
+		}
 	}
+	if store.Counts != nil {
+		delete(store.Counts, resourceID)
+	}
+}
+
+func ReconcileFavoriteCounts(store *FavoritesStore) bool {
+	if store == nil {
+		return false
+	}
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
+	for _, count := range store.Counts {
+		if count > 0 {
+			return false
+		}
+	}
+	hasDevices := false
+	for _, deviceMap := range store.DeviceFavorites {
+		if len(deviceMap) > 0 {
+			hasDevices = true
+			break
+		}
+	}
+	if !hasDevices {
+		return false
+	}
+	rebuilt := map[string]int{}
+	for _, deviceMap := range store.DeviceFavorites {
+		for resourceID := range deviceMap {
+			rebuilt[resourceID]++
+		}
+	}
+	store.Counts = rebuilt
+	return true
+}
+
+func AdjustFavoriteCount(store *FavoritesStore, resourceID string, delta int) int {
+	if store == nil {
+		return 0
+	}
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return 0
+	}
+	count := store.Counts[resourceID] + delta
+	if count < 0 {
+		count = 0
+	}
+	store.Counts[resourceID] = count
+	return count
 }
 
 func (store *DownloadsStore) EnsureDeviceWindow(serial string, now time.Time) {
@@ -200,8 +257,131 @@ func NewEmptyLikesStore() LikesStore {
 	}
 }
 
+type DeviceLikeResult struct {
+	AlreadyLiked bool
+	LikeCount    int
+}
+
+func ensureLikesStoreMaps(store *LikesStore) {
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
+	if store.DeviceLikes == nil {
+		store.DeviceLikes = map[string]map[string]bool{}
+	}
+}
+
+func NormalizeLikeSerial(serial string) string {
+	return normalizeUploaderSerial(serial)
+}
+
+func DeviceLikesForSerial(store *LikesStore, serial string) map[string]bool {
+	ensureLikesStoreMaps(store)
+	serial = NormalizeLikeSerial(serial)
+	if serial == "" {
+		return nil
+	}
+	if liked := store.DeviceLikes[serial]; liked != nil {
+		return liked
+	}
+	for key, liked := range store.DeviceLikes {
+		if NormalizeLikeSerial(key) == serial {
+			return liked
+		}
+	}
+	return nil
+}
+
+func LikedResourceIDsForSerial(store *LikesStore, serial string) []string {
+	likedMap := DeviceLikesForSerial(store, serial)
+	if len(likedMap) == 0 {
+		return []string{}
+	}
+	ids := make([]string, 0, len(likedMap))
+	for id, liked := range likedMap {
+		if liked {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// ApplyDeviceLikeInMemory marks one like and returns previous/new state for rollback.
+func ApplyDeviceLikeInMemory(store *LikesStore, serial, resourceID string) (alreadyLiked bool, likeCount int) {
+	ensureLikesStoreMaps(store)
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	if serial == "" || resourceID == "" {
+		return false, 0
+	}
+	if store.DeviceLikes[serial] == nil {
+		store.DeviceLikes[serial] = map[string]bool{}
+	}
+	alreadyLiked = store.DeviceLikes[serial][resourceID]
+	if !alreadyLiked {
+		store.DeviceLikes[serial][resourceID] = true
+		store.Counts[resourceID] = store.Counts[resourceID] + 1
+	}
+	likeCount = store.Counts[resourceID]
+	if likeCount < 0 {
+		likeCount = 0
+	}
+	return alreadyLiked, likeCount
+}
+
+func RollbackDeviceLikeInMemory(store *LikesStore, serial, resourceID string) {
+	ensureLikesStoreMaps(store)
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	if serial == "" || resourceID == "" {
+		return
+	}
+	if liked := store.DeviceLikes[serial]; liked != nil {
+		delete(liked, resourceID)
+	}
+	if store.Counts[resourceID] > 0 {
+		store.Counts[resourceID] = store.Counts[resourceID] - 1
+	}
+	if store.Counts[resourceID] <= 0 {
+		delete(store.Counts, resourceID)
+	}
+}
+
+func SyncDeviceLikeInMemory(store *LikesStore, serial, resourceID string, likeCount int) {
+	ensureLikesStoreMaps(store)
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	if serial == "" || resourceID == "" {
+		return
+	}
+	if store.DeviceLikes[serial] == nil {
+		store.DeviceLikes[serial] = map[string]bool{}
+	}
+	store.DeviceLikes[serial][resourceID] = true
+	if likeCount < 0 {
+		likeCount = 0
+	}
+	store.Counts[resourceID] = likeCount
+}
+
+func RemoveResourceFromAllLikes(store *LikesStore, resourceID string) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || store == nil {
+		return
+	}
+	ensureLikesStoreMaps(store)
+	delete(store.Counts, resourceID)
+	for serial := range store.DeviceLikes {
+		delete(store.DeviceLikes[serial], resourceID)
+	}
+}
+
 func NewEmptyFavoritesStore() FavoritesStore {
-	return FavoritesStore{DeviceFavorites: map[string]map[string]int64{}}
+	return FavoritesStore{
+		Counts:          map[string]int{},
+		DeviceFavorites: map[string]map[string]int64{},
+	}
 }
 
 func NewEmptyDownloadsStore(now time.Time) DownloadsStore {

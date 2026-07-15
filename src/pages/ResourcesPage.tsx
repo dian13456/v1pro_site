@@ -169,15 +169,23 @@ export default function ResourcesPage() {
 
   useEffect(() => {
     let active = true;
-    fetchResourceLikes()
-      .then((state) => {
-        if (!active) return;
-        setLikeCounts(state.counts);
-        setLikedIds(state.likedIds);
-      })
-      .catch(() => {
-        // Ignore like init errors, download flow handles auth failures explicitly.
-      });
+    const loadLikes = (attempt = 0) => {
+      fetchResourceLikes()
+        .then((state) => {
+          if (!active) return;
+          setLikeCounts(state.counts);
+          setLikedIds(state.likedIds);
+        })
+        .catch(() => {
+          if (!active) return;
+          if (attempt < 1) {
+            window.setTimeout(() => loadLikes(attempt + 1), 800);
+            return;
+          }
+          setErrorMessage((current) => current || "点赞数据加载失败，刷新页面后可重试");
+        });
+    };
+    loadLikes();
     fetchResourceFavorites()
       .then((state) => {
         if (!active) return;
@@ -326,10 +334,13 @@ export default function ResourcesPage() {
       setLikingId(resource.id);
       setErrorMessage("");
       const result = await likeResource(resource.id);
-      setLikeCounts((prev) => ({
-        ...prev,
-        [resource.id]: result.likeCount,
-      }));
+      setLikeCounts((prev) => {
+        const previous = prev[resource.id] || 0;
+        const nextCount = result.alreadyLiked
+          ? Math.max(result.likeCount, previous)
+          : Math.max(result.likeCount, previous + 1);
+        return { ...prev, [resource.id]: nextCount };
+      });
       if (result.liked || result.alreadyLiked) {
         setLikedIds((prev) => {
           const next = new Set(prev);

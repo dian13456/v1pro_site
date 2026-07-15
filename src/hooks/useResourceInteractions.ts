@@ -160,7 +160,13 @@ export function useResourceInteractions() {
       setLikingId(resource.id);
       setErrorMessage("");
       const result = await likeResource(resource.id);
-      setLikeCounts((prev) => ({ ...prev, [resource.id]: result.likeCount }));
+      setLikeCounts((prev) => {
+        const previous = prev[resource.id] || 0;
+        const nextCount = result.alreadyLiked
+          ? Math.max(result.likeCount, previous)
+          : Math.max(result.likeCount, previous + 1);
+        return { ...prev, [resource.id]: nextCount };
+      });
       if (result.liked || result.alreadyLiked) {
         setLikedIds((prev) => new Set(prev).add(resource.id));
       }

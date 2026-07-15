@@ -13,6 +13,7 @@ interface LikeActionResponse {
   alreadyLiked?: boolean;
   likeCount?: number;
   liked?: boolean;
+  message?: string;
 }
 
 export interface ResourceLikesState {
@@ -106,6 +107,10 @@ export async function fetchResourceLikes(): Promise<ResourceLikesState> {
     },
   });
 
+  if (payload.success === false) {
+    throw new Error((payload as { message?: string }).message || "加载点赞数据失败");
+  }
+
   const counts: Record<number, number> = {};
   for (const [key, count] of Object.entries(payload.counts || {})) {
     const id = toNumberId(key);
@@ -159,9 +164,14 @@ export async function likeResource(
     body: JSON.stringify({ resourceId: String(resourceId) }),
   });
 
+  if (payload.success === false) {
+    throw new Error((payload as { message?: string }).message || "点赞失败");
+  }
+
+  const likeCount = Math.max(0, Number(payload.likeCount || 0));
   return {
-    likeCount: Math.max(0, Number(payload.likeCount || 0)),
-    liked: Boolean(payload.liked),
+    likeCount,
+    liked: payload.liked !== false,
     alreadyLiked: Boolean(payload.alreadyLiked),
   };
 }

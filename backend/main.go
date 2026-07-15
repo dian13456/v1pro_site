@@ -856,6 +856,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("load resource favorites failed: %v", err)
 	}
+	if service.ReconcileFavoriteCounts(&favorites) {
+		if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
+			log.Printf("warn: reconcile favorite counts save failed: %v", saveErr)
+		} else {
+			log.Printf("info: reconciled favorite counts from device favorites")
+		}
+	}
 	downloads, err := userDataRepo.LoadDownloads()
 	if err != nil {
 		log.Fatalf("load resource downloads failed: %v", err)
@@ -1215,6 +1222,14 @@ func main() {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
 				return
 			}
+
+			deletedEntry, deletedResourceMap, deletedImageMap, idKey, hasSnapshot := service.LoadPublishedUploadSnapshot(
+				resourcesPath,
+				resourceMapPath,
+				imageMapPath,
+				resourceID,
+			)
+
 			if err := service.DeleteOwnPublishedUpload(c.Request.Context(), service.DeleteOwnPublishedUploadInput{
 				Serial:          serial,
 				ResourceID:      resourceID,
@@ -1231,20 +1246,40 @@ func main() {
 				return
 			}
 
-			idKey := strconv.FormatInt(resourceID, 10)
+			if hasSnapshot {
+				imageReviewMu.Lock()
+				service.RemoveReviewEntriesForPublishedResource(
+					&imageReviewStore,
+					serial,
+					deletedEntry,
+					deletedResourceMap,
+					deletedImageMap,
+					idKey,
+				)
+				if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+					log.Printf("warn: cleanup review entries after published delete failed: %v", saveErr)
+				}
+				imageReviewMu.Unlock()
+			}
+
 			favoritesMu.Lock()
 			service.RemoveResourceFromAllFavorites(&favorites, idKey)
 			if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
-				favoritesMu.Unlock()
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "收藏数据更新失败"})
-				return
+				log.Printf("warn: favorites cleanup after published delete failed: %v", saveErr)
 			}
 			favoritesMu.Unlock()
 
+			likesMu.Lock()
+			service.RemoveResourceFromAllLikes(&likes, idKey)
+			if saveErr := userDataRepo.SaveLikes(likes); saveErr != nil {
+				log.Printf("warn: likes cleanup after published delete failed: %v", saveErr)
+			}
+			likesMu.Unlock()
+
 			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"message": "素材已删除",
-				"kind":    kind,
+				"success":    true,
+				"message":    "素材已删除",
+				"kind":       kind,
 				"resourceId": resourceID,
 			})
 		case "review":
@@ -1254,13 +1289,15 @@ func main() {
 				return
 			}
 			imageReviewMu.Lock()
-			deleteErr := service.DeleteOwnReviewUpload(
-				c.Request.Context(),
-				&imageReviewStore,
-				reviewID,
-				serial,
-				deleteSigners,
-			)
+			deleteResult, deleteErr := service.DeleteOwnReviewUpload(c.Request.Context(), service.DeleteOwnReviewUploadInput{
+				Store:           &imageReviewStore,
+				ReviewID:        reviewID,
+				Serial:          serial,
+				Signers:         deleteSigners,
+				ResourcesPath:   resourcesPath,
+				ResourceMapPath: resourceMapPath,
+				ImageMapPath:    imageMapPath,
+			})
 			if deleteErr != nil {
 				imageReviewMu.Unlock()
 				status := http.StatusBadRequest
@@ -1276,6 +1313,16 @@ func main() {
 				return
 			}
 			imageReviewMu.Unlock()
+
+			if deleteResult.DeletedResourceID > 0 {
+				idKey := strconv.FormatInt(deleteResult.DeletedResourceID, 10)
+				favoritesMu.Lock()
+				service.RemoveResourceFromAllFavorites(&favorites, idKey)
+				if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
+					log.Printf("warn: favorites cleanup after review delete failed: %v", saveErr)
+				}
+				favoritesMu.Unlock()
+			}
 
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
@@ -2580,6 +2627,7 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		serial = service.NormalizeLikeSerial(serial)
 
 		likesMu.RLock()
 		counts := make(map[string]int, len(likes.Counts))
@@ -2589,13 +2637,7 @@ func main() {
 			}
 			counts[id] = count
 		}
-		likedMap := likes.DeviceLikes[serial]
-		likedResourceIDs := make([]string, 0, len(likedMap))
-		for id, liked := range likedMap {
-			if liked {
-				likedResourceIDs = append(likedResourceIDs, id)
-			}
-		}
+		likedResourceIDs := service.LikedResourceIDsForSerial(&likes, serial)
 		likesMu.RUnlock()
 
 		c.JSON(http.StatusOK, gin.H{
@@ -2615,6 +2657,7 @@ func main() {
 		if rateLimitRejected(c, likeTokenRateLimiter, likeIPRateLimiter, serial, "点赞过于频繁，请稍后再试") {
 			return
 		}
+		serial = service.NormalizeLikeSerial(serial)
 
 		var req likeRequest
 		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
@@ -2623,25 +2666,34 @@ func main() {
 		}
 		resourceID := strings.TrimSpace(req.ResourceID)
 
+		var alreadyLiked bool
+		var likeCount int
+
 		likesMu.Lock()
-		if likes.DeviceLikes[serial] == nil {
-			likes.DeviceLikes[serial] = map[string]bool{}
+		if userDataRepo.UsesMySQL() {
+			result, applyErr := userDataRepo.ApplyDeviceLike(serial, resourceID)
+			if applyErr != nil {
+				likesMu.Unlock()
+				log.Printf("apply device like failed: %v", applyErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "点赞保存失败"})
+				return
+			}
+			alreadyLiked = result.AlreadyLiked
+			likeCount = result.LikeCount
+			service.SyncDeviceLikeInMemory(&likes, serial, resourceID, likeCount)
+		} else {
+			alreadyLiked, likeCount = service.ApplyDeviceLikeInMemory(&likes, serial, resourceID)
+			if saveErr := userDataRepo.SaveLikes(likes); saveErr != nil {
+				if !alreadyLiked {
+					service.RollbackDeviceLikeInMemory(&likes, serial, resourceID)
+				}
+				likesMu.Unlock()
+				log.Printf("save likes failed: %v", saveErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "点赞保存失败"})
+				return
+			}
 		}
-		alreadyLiked := likes.DeviceLikes[serial][resourceID]
-		if !alreadyLiked {
-			likes.DeviceLikes[serial][resourceID] = true
-			likes.Counts[resourceID] = likes.Counts[resourceID] + 1
-		}
-		likeCount := likes.Counts[resourceID]
-		if likeCount < 0 {
-			likeCount = 0
-		}
-		saveErr := userDataRepo.SaveLikes(likes)
 		likesMu.Unlock()
-		if saveErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "点赞保存失败"})
-			return
-		}
 
 		creditRewarded := false
 		creditRewardAmount := 0
@@ -2686,11 +2738,19 @@ func main() {
 		}
 
 		favoritesMu.RLock()
+		counts := make(map[string]int, len(favorites.Counts))
+		for id, count := range favorites.Counts {
+			if count < 0 {
+				count = 0
+			}
+			counts[id] = count
+		}
 		favoriteResourceIDs := service.FavoriteResourceIDsForSerial(favorites, serial)
 		favoritesMu.RUnlock()
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":             true,
+			"counts":              counts,
 			"favoriteResourceIds": favoriteResourceIDs,
 		})
 	})
@@ -2725,27 +2785,38 @@ func main() {
 		if favorites.DeviceFavorites[serial] == nil {
 			favorites.DeviceFavorites[serial] = map[string]int64{}
 		}
+		if favorites.Counts == nil {
+			favorites.Counts = map[string]int{}
+		}
 		deviceFavorites := favorites.DeviceFavorites[serial]
 		_, exists := deviceFavorites[resourceID]
 		favorited := exists
+		favoriteCount := favorites.Counts[resourceID]
+		if favoriteCount < 0 {
+			favoriteCount = 0
+		}
 		switch action {
 		case "add":
 			if !exists {
 				deviceFavorites[resourceID] = time.Now().Unix()
 				favorited = true
+				favoriteCount = service.AdjustFavoriteCount(&favorites, resourceID, 1)
 			}
 		case "remove":
 			if exists {
 				delete(deviceFavorites, resourceID)
 				favorited = false
+				favoriteCount = service.AdjustFavoriteCount(&favorites, resourceID, -1)
 			}
 		case "toggle":
 			if exists {
 				delete(deviceFavorites, resourceID)
 				favorited = false
+				favoriteCount = service.AdjustFavoriteCount(&favorites, resourceID, -1)
 			} else {
 				deviceFavorites[resourceID] = time.Now().Unix()
 				favorited = true
+				favoriteCount = service.AdjustFavoriteCount(&favorites, resourceID, 1)
 			}
 		}
 		favoriteResourceIDs := service.FavoriteResourceIDsForSerial(favorites, serial)
@@ -2759,6 +2830,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"success":             true,
 			"favorited":           favorited,
+			"favoriteCount":       favoriteCount,
 			"favoriteResourceIds": favoriteResourceIDs,
 		})
 	})

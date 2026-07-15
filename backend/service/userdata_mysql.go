@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -115,6 +116,60 @@ func (m *mysqlStore) loadLikes(ctx context.Context) (LikesStore, error) {
 	return store, likeRows.Err()
 }
 
+func (m *mysqlStore) applyDeviceLike(ctx context.Context, serial, resourceID string) (DeviceLikeResult, error) {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return DeviceLikeResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO resource_device_likes (serial, resource_id, created_at) VALUES (?, ?, ?)
+		 ON DUPLICATE KEY UPDATE serial = serial`,
+		serial, resourceID, time.Now().Unix(),
+	)
+	if err != nil {
+		return DeviceLikeResult{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return DeviceLikeResult{}, err
+	}
+	// MySQL ON DUPLICATE KEY UPDATE: RowsAffected is 1 for insert, 2 for update, 0 if values unchanged.
+	alreadyLiked := affected == 0 || affected == 2
+	if !alreadyLiked {
+		if _, err := tx.ExecContext(
+			ctx,
+			`INSERT INTO resource_like_counts (resource_id, like_count) VALUES (?, 1)
+			 ON DUPLICATE KEY UPDATE like_count = like_count + 1`,
+			resourceID,
+		); err != nil {
+			return DeviceLikeResult{}, err
+		}
+	}
+
+	var likeCount int
+	if err := tx.QueryRowContext(
+		ctx,
+		`SELECT like_count FROM resource_like_counts WHERE resource_id = ?`,
+		resourceID,
+	).Scan(&likeCount); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			likeCount = 0
+		} else {
+			return DeviceLikeResult{}, err
+		}
+	}
+	if likeCount < 0 {
+		likeCount = 0
+	}
+	if err := tx.Commit(); err != nil {
+		return DeviceLikeResult{}, err
+	}
+	return DeviceLikeResult{AlreadyLiked: alreadyLiked, LikeCount: likeCount}, nil
+}
+
 func (m *mysqlStore) saveLikes(ctx context.Context, store LikesStore) error {
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -158,6 +213,23 @@ func (m *mysqlStore) saveLikes(ctx context.Context, store LikesStore) error {
 
 func (m *mysqlStore) loadFavorites(ctx context.Context) (FavoritesStore, error) {
 	store := NewEmptyFavoritesStore()
+	countRows, err := m.db.QueryContext(ctx, `SELECT resource_id, favorite_count FROM resource_favorite_counts`)
+	if err != nil {
+		return store, err
+	}
+	defer countRows.Close()
+	for countRows.Next() {
+		var resourceID string
+		var count int
+		if err := countRows.Scan(&resourceID, &count); err != nil {
+			return store, err
+		}
+		store.Counts[resourceID] = count
+	}
+	if err := countRows.Err(); err != nil {
+		return store, err
+	}
+
 	rows, err := m.db.QueryContext(ctx, `SELECT serial, resource_id, created_at FROM resource_favorites`)
 	if err != nil {
 		return store, err
@@ -186,6 +258,21 @@ func (m *mysqlStore) saveFavorites(ctx context.Context, store FavoritesStore) er
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM resource_favorites`); err != nil {
 		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM resource_favorite_counts`); err != nil {
+		return err
+	}
+
+	for resourceID, count := range store.Counts {
+		if count <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO resource_favorite_counts (resource_id, favorite_count) VALUES (?, ?)`,
+			resourceID, count,
+		); err != nil {
+			return err
+		}
 	}
 	for serial, favMap := range store.DeviceFavorites {
 		for resourceID, createdAt := range favMap {
