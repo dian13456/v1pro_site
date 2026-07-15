@@ -138,15 +138,6 @@ function ResourceCardComponent({
   }, [resource, showTransfer, onTransferPrepare]);
 
   const showVideoPlayer = isPlaying && Boolean(playUrl);
-  const actionCols = 1 + (onFavorite ? 1 : 0) + (showTransfer ? 1 : 0) + (hasPlay ? 1 : 0);
-  const actionGridColsClass =
-    actionCols >= 4
-      ? "grid-cols-4"
-      : actionCols === 3
-        ? "grid-cols-3"
-        : actionCols === 2
-          ? "grid-cols-2"
-          : "grid-cols-1";
 
   useEffect(() => {
     setPlayError(false);
@@ -251,7 +242,7 @@ function ResourceCardComponent({
           )}
       </DevicePreviewFrame>
 
-      <div className={`mt-4 grid gap-2 ${actionGridColsClass}`}>
+      <div className="mt-4 grid grid-cols-4 gap-2">
         <button
           type="button"
           aria-label="点赞"
@@ -284,7 +275,9 @@ function ResourceCardComponent({
               <path d="M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.8L12 16.9 5.8 20.2l1.6-6.8-5.2-4.5 6.9-.6L12 2z" />
             </svg>
           </button>
-        ) : null}
+        ) : (
+          <div className="h-10" aria-hidden="true" />
+        )}
         {showTransfer ? (
           <button
             type="button"
@@ -295,7 +288,9 @@ function ResourceCardComponent({
           >
             <span className="truncate">{transferring ? "传输中..." : "传输"}</span>
           </button>
-        ) : null}
+        ) : (
+          <div className="h-10" aria-hidden="true" />
+        )}
         {hasPlay ? (
           <button
             type="button"
@@ -306,7 +301,9 @@ function ResourceCardComponent({
           >
             <span className="truncate">{playing ? "打开中..." : isPlaying ? "收起" : "播放"}</span>
           </button>
-        ) : null}
+        ) : (
+          <div className="h-10" aria-hidden="true" />
+        )}
       </div>
     </article>
   );
