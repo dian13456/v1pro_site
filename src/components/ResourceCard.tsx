@@ -261,17 +261,11 @@ function ResourceCardComponent({
           )}
       </DevicePreviewFrame>
 
-      <div className="mt-3 min-w-0">
-        <h3 className="line-clamp-2 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
-          {cardTitle}
-        </h3>
-        {resource.description?.trim() &&
-        resource.description.trim() !== cardTitle ? (
-          <p className="mt-1 max-h-0 overflow-hidden text-xs leading-relaxed text-slate-500 opacity-0 transition-all duration-200 group-hover:max-h-10 group-hover:opacity-100 dark:text-slate-400">
-            <span className="line-clamp-2">{resource.description.trim()}</span>
-          </p>
-        ) : null}
-      </div>
+      {resource.description?.trim() ? (
+        <p className="max-h-0 overflow-hidden text-xs leading-relaxed text-slate-500 opacity-0 transition-all duration-200 group-hover:mt-3 group-hover:max-h-10 group-hover:opacity-100 dark:text-slate-400">
+          <span className="line-clamp-2">{resource.description.trim()}</span>
+        </p>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-4 gap-2">
         <button
