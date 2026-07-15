@@ -242,7 +242,18 @@ function ResourceCardComponent({
           )}
       </DevicePreviewFrame>
 
-      <div className="mt-4 grid grid-cols-4 gap-2">
+      <div className="mt-3 min-w-0 space-y-1">
+        <h3 className="line-clamp-2 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
+          {resource.title}
+        </h3>
+        {resource.description ? (
+          <p className="line-clamp-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            {resource.description}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
         <button
           type="button"
           aria-label="点赞"
