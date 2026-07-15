@@ -178,7 +178,7 @@ function ResourceCardComponent({
               本周 {weeklyDownloadCount}
             </div>
           ) : null}
-          {downloadCount > 0 ? <div>总下载 {downloadCount}</div> : null}
+          <div>总下载 {downloadCount}</div>
           {resource.author ? <div>上传人：{resource.author}</div> : null}
         </div>
       </div>
