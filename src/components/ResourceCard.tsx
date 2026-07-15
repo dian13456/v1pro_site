@@ -138,6 +138,15 @@ function ResourceCardComponent({
   }, [resource, showTransfer, onTransferPrepare]);
 
   const showVideoPlayer = isPlaying && Boolean(playUrl);
+  const actionCols = 1 + (onFavorite ? 1 : 0) + (showTransfer ? 1 : 0) + (hasPlay ? 1 : 0);
+  const actionGridColsClass =
+    actionCols >= 4
+      ? "grid-cols-4"
+      : actionCols === 3
+        ? "grid-cols-3"
+        : actionCols === 2
+          ? "grid-cols-2"
+          : "grid-cols-1";
 
   useEffect(() => {
     setPlayError(false);
@@ -242,22 +251,22 @@ function ResourceCardComponent({
           )}
       </DevicePreviewFrame>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className={`mt-4 grid gap-2 ${actionGridColsClass}`}>
         <button
           type="button"
           aria-label="点赞"
           disabled={liked || liking || transferring}
           onClick={() => onLike(resource)}
-          className={`inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border px-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
+          className={`inline-flex h-10 w-full items-center justify-center gap-1 rounded-xl border px-1 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
             liked
               ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/15 dark:text-rose-400"
               : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor" aria-hidden="true">
             <path d="M12 21s-6.7-4.35-9.3-8.12C.84 10.3 1.4 6.72 4.2 5.2a5.2 5.2 0 0 1 6.2 1.08L12 7.9l1.6-1.62a5.2 5.2 0 0 1 6.2-1.08c2.8 1.52 3.36 5.1 1.5 7.68C18.7 16.65 12 21 12 21z" />
           </svg>
-          <span>{liking ? "..." : likeCount}</span>
+          <span className="truncate">{liking ? "..." : likeCount}</span>
         </button>
         {onFavorite ? (
           <button
@@ -265,7 +274,7 @@ function ResourceCardComponent({
             aria-label={favorited ? "取消收藏" : "收藏"}
             disabled={favoriting || transferring}
             onClick={() => onFavorite(resource)}
-            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`inline-flex h-10 w-full items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-60 ${
               favorited
                 ? "border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/50 dark:bg-amber-500/15 dark:text-amber-300"
                 : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -282,9 +291,9 @@ function ResourceCardComponent({
             disabled={transferring}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
-            className="min-w-0 flex-1 rounded-xl bg-cyan-600 px-2 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-cyan-600 px-1 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {transferring ? "传输中..." : "传输"}
+            <span className="truncate">{transferring ? "传输中..." : "传输"}</span>
           </button>
         ) : null}
         {hasPlay ? (
@@ -293,9 +302,9 @@ function ResourceCardComponent({
             disabled={playing || transferring}
             onPointerDown={() => onPlayPrepare?.(resource)}
             onClick={() => void handlePlayClick()}
-            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-1 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
-            {playing ? "打开中..." : isPlaying ? "收起" : "播放"}
+            <span className="truncate">{playing ? "打开中..." : isPlaying ? "收起" : "播放"}</span>
           </button>
         ) : null}
       </div>
