@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS resource_favorites (
   KEY idx_favorites_serial_created (serial, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS resource_favorite_counts (
+  resource_id VARCHAR(64) NOT NULL PRIMARY KEY,
+  favorite_count INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS download_meta (
   id TINYINT NOT NULL PRIMARY KEY,
   week_key VARCHAR(16) NOT NULL
@@ -77,4 +82,85 @@ CREATE TABLE IF NOT EXISTS ai_credits (
 CREATE TABLE IF NOT EXISTS ai_share_counts (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
   share_count INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Activity lottery module
+CREATE TABLE IF NOT EXISTS activity (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  rule_text TEXT NOT NULL,
+  start_time BIGINT NOT NULL DEFAULT 0,
+  end_time BIGINT NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL DEFAULT 'draft',
+  prize_title VARCHAR(255) NOT NULL DEFAULT '',
+  prize_description TEXT,
+  prize_image VARCHAR(512) NOT NULL DEFAULT '',
+  draw_hour INT NOT NULL DEFAULT 20,
+  draw_minute INT NOT NULL DEFAULT 0,
+  winners_per_draw INT NOT NULL DEFAULT 1,
+  shipping_days INT NOT NULL DEFAULT 7,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  updated_at BIGINT NOT NULL DEFAULT 0,
+  KEY idx_activity_status (status, start_time, end_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS activity_join (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  activity_id VARCHAR(64) NOT NULL,
+  sn VARCHAR(191) NOT NULL,
+  device_id VARCHAR(191) NOT NULL DEFAULT '',
+  user_serial VARCHAR(191) NOT NULL DEFAULT '',
+  user_ip VARCHAR(64) NOT NULL DEFAULT '',
+  join_time BIGINT NOT NULL DEFAULT 0,
+  draw_period VARCHAR(16) NOT NULL DEFAULT '',
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  KEY idx_join_activity_period (activity_id, draw_period),
+  KEY idx_join_sn_period (activity_id, sn, draw_period),
+  KEY idx_join_time (join_time DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS winner (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  activity_id VARCHAR(64) NOT NULL,
+  join_id VARCHAR(64) NOT NULL,
+  sn VARCHAR(191) NOT NULL,
+  user_serial VARCHAR(191) NOT NULL DEFAULT '',
+  winner_time BIGINT NOT NULL DEFAULT 0,
+  seed_hash VARCHAR(128) NOT NULL DEFAULT '',
+  contact_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  shipping_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  draw_period VARCHAR(16) NOT NULL DEFAULT '',
+  KEY idx_winner_activity (activity_id, winner_time DESC),
+  KEY idx_winner_sn (activity_id, sn),
+  KEY idx_winner_user (activity_id, user_serial)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS winner_info (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  winner_id VARCHAR(64) NOT NULL UNIQUE,
+  name_enc TEXT NOT NULL,
+  phone_enc TEXT NOT NULL,
+  wechat_enc TEXT NOT NULL,
+  province VARCHAR(64) NOT NULL DEFAULT '',
+  city VARCHAR(64) NOT NULL DEFAULT '',
+  address_enc TEXT NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS device_registry (
+  serial VARCHAR(191) NOT NULL PRIMARY KEY,
+  source VARCHAR(64) NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS activity_draw_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  activity_id VARCHAR(64) NOT NULL,
+  draw_period VARCHAR(16) NOT NULL,
+  drawn_at BIGINT NOT NULL DEFAULT 0,
+  join_count INT NOT NULL DEFAULT 0,
+  winner_count INT NOT NULL DEFAULT 0,
+  seed_hash VARCHAR(128) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_activity_draw_period (activity_id, draw_period)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

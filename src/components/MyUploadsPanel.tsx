@@ -200,13 +200,12 @@ export function MyUploadsPanel() {
     try {
       if (item.kind === "published") {
         await deleteMyUpload({ kind: "published", resourceId: item.resource.id });
-        setPublished((current) => current.filter((entry) => entry.id !== item.resource.id));
       } else {
         await deleteMyUpload({ kind: "review", reviewId: item.review.reviewId });
-        setReviews((current) => current.filter((entry) => entry.reviewId !== item.review.reviewId));
       }
       setNoticeMessage("素材已删除");
       window.setTimeout(() => setNoticeMessage(""), 3000);
+      await loadUploads();
     } catch (err) {
       setErrorMessage((err as Error)?.message || "删除失败");
     } finally {

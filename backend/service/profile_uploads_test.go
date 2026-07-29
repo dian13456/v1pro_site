@@ -61,6 +61,153 @@ func TestRemoveDeviceReviewUpload(t *testing.T) {
 	}
 }
 
+func TestDeleteOwnPublishedUploadVideo(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resourceMapPath := filepath.Join(dir, "resource_map.json")
+	imageMapPath := filepath.Join(dir, "image_map.json")
+
+	resources := []map[string]any{
+		{
+			"id":             2607031234567890,
+			"title":          "my video",
+			"description":    "demo",
+			"size":           "1MB",
+			"image":          "cover_260703.jpg",
+			"download":       "vid_260703.mp4",
+			"category":       "gif",
+			"materialType":   "video",
+			"updatedAt":      "2026-01-01T00:00:00Z",
+			"uploaderSerial": "abc123",
+		},
+	}
+	raw, err := json.Marshal(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourceMapPath, []byte(`{"2607031234567890":"vid_260703.mp4"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imageMapPath, []byte(`{"2607031234567890":"cover_260703.jpg"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DeleteOwnPublishedUpload(context.Background(), DeleteOwnPublishedUploadInput{
+		Serial:          "abc123",
+		ResourceID:      2607031234567890,
+		ResourcesPath:   resourcesPath,
+		ResourceMapPath: resourceMapPath,
+		ImageMapPath:    imageMapPath,
+	}); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+
+	remaining, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("expected empty catalog, got %#v", remaining)
+	}
+}
+
+func TestDeleteOwnReviewUploadRemovesApprovedPublishedVideo(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resourceMapPath := filepath.Join(dir, "resource_map.json")
+	imageMapPath := filepath.Join(dir, "image_map.json")
+
+	resources := []map[string]any{
+		{
+			"id":             2607031234567890,
+			"title":          "my video",
+			"description":    "demo",
+			"size":           "1MB",
+			"image":          "cover_260703.jpg",
+			"download":       "vid_260703.mp4",
+			"category":       "gif",
+			"materialType":   "video",
+			"updatedAt":      "2026-01-01T00:00:00Z",
+			"uploaderSerial": "abc123",
+		},
+	}
+	raw, err := json.Marshal(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourceMapPath, []byte(`{"2607031234567890":"vid_260703.mp4"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imageMapPath, []byte(`{"2607031234567890":"cover_260703.jpg"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := ImageReviewStore{
+		Items: []PendingImageReview{
+			{
+				ID:             "rev-video",
+				Serial:         "abc123",
+				Action:         ReviewActionShareUserVideo,
+				Status:         ImageReviewStatusApproved,
+				Title:          "my video",
+				GifObjectKey:   "vid_260703.mp4",
+				CoverObjectKey: "cover_260703.jpg",
+			},
+		},
+	}
+
+	result, err := DeleteOwnReviewUpload(context.Background(), DeleteOwnReviewUploadInput{
+		Store:           &store,
+		ReviewID:        "rev-video",
+		Serial:          "abc123",
+		ResourcesPath:   resourcesPath,
+		ResourceMapPath: resourceMapPath,
+		ImageMapPath:    imageMapPath,
+	})
+	if err != nil {
+		t.Fatalf("delete review failed: %v", err)
+	}
+	if result.DeletedResourceID != 2607031234567890 {
+		t.Fatalf("expected published resource to be deleted, got %d", result.DeletedResourceID)
+	}
+	if len(store.Items) != 0 {
+		t.Fatalf("expected review queue to be empty, got %#v", store.Items)
+	}
+	remaining, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("expected catalog to be empty, got %#v", remaining)
+	}
+}
+
+func TestRemoveDeviceReviewUploadAllowsApproved(t *testing.T) {
+	store := ImageReviewStore{
+		Items: []PendingImageReview{
+			{
+				ID:     "r1",
+				Serial: "sn1",
+				Action: ReviewActionShareUserVideo,
+				Status: ImageReviewStatusApproved,
+			},
+		},
+	}
+	item, err := RemoveDeviceReviewUpload(&store, "r1", "sn1")
+	if err != nil {
+		t.Fatalf("remove approved review failed: %v", err)
+	}
+	if item.ID != "r1" || len(store.Items) != 0 {
+		t.Fatalf("unexpected store after remove: %#v", store.Items)
+	}
+}
+
 func TestDeleteOwnPublishedUpload(t *testing.T) {
 	dir := t.TempDir()
 	resourcesPath := filepath.Join(dir, "resources.json")

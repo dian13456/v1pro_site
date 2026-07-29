@@ -71,6 +71,9 @@ func loadFavoritesJSON(path string) (FavoritesStore, error) {
 	if err != nil {
 		return FavoritesStore{}, err
 	}
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
 	if store.DeviceFavorites == nil {
 		store.DeviceFavorites = map[string]map[string]int64{}
 	}
@@ -78,6 +81,9 @@ func loadFavoritesJSON(path string) (FavoritesStore, error) {
 }
 
 func saveFavoritesJSON(path string, store FavoritesStore) error {
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
 	if store.DeviceFavorites == nil {
 		store.DeviceFavorites = map[string]map[string]int64{}
 	}

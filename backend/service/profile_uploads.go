@@ -247,6 +247,38 @@ func findCatalogEntryByID(resources []map[string]any, resourceID int64) (map[str
 	return nil, -1, false
 }
 
+// FindCatalogEntryByID returns one catalog entry by resource id.
+func FindCatalogEntryByID(resources []map[string]any, resourceID int64) (map[string]any, int, bool) {
+	return findCatalogEntryByID(resources, resourceID)
+}
+
+// LoadPublishedUploadSnapshot reads catalog entry and maps before deleting a published upload.
+func LoadPublishedUploadSnapshot(
+	resourcesPath, resourceMapPath, imageMapPath string,
+	resourceID int64,
+) (entry map[string]any, resourceMap map[string]string, imageMap map[string]string, idKey string, ok bool) {
+	if resourceID <= 0 {
+		return nil, nil, nil, "", false
+	}
+	resources, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	entry, _, ok = findCatalogEntryByID(resources, resourceID)
+	if !ok {
+		return nil, nil, nil, "", false
+	}
+	resourceMap, err = loadStringMapFile(resourceMapPath)
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	imageMap, err = loadStringMapFile(imageMapPath)
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	return entry, resourceMap, imageMap, strconv.FormatInt(resourceID, 10), true
+}
+
 func catalogEntryOwnedBySerial(entry map[string]any, serial string) bool {
 	if entry == nil {
 		return false
@@ -350,14 +382,151 @@ func DeleteOwnPublishedUpload(ctx context.Context, input DeleteOwnPublishedUploa
 	return nil
 }
 
+func reviewVideoObjectKey(item PendingImageReview) string {
+	if key := strings.TrimSpace(item.GifObjectKey); key != "" {
+		return key
+	}
+	return strings.TrimSpace(item.ImageObjectKey)
+}
+
+func reviewCoverObjectKey(item PendingImageReview) string {
+	if key := strings.TrimSpace(item.CoverObjectKey); key != "" {
+		return key
+	}
+	return strings.TrimSpace(item.ImageObjectKey)
+}
+
+func reviewShareObjectKey(item PendingImageReview) string {
+	switch strings.TrimSpace(item.Action) {
+	case ReviewActionShareUserGif:
+		return strings.TrimSpace(item.GifObjectKey)
+	case ReviewActionShareUserVideo:
+		return reviewVideoObjectKey(item)
+	default:
+		return strings.TrimSpace(item.ImageObjectKey)
+	}
+}
+
+func objectKeysMatch(left, right string) bool {
+	left = StripPublicObjectURL(strings.TrimSpace(left))
+	right = StripPublicObjectURL(strings.TrimSpace(right))
+	if left == "" || right == "" {
+		return false
+	}
+	if left == right {
+		return true
+	}
+	if mp4ObjectKey(left) == mp4ObjectKey(right) {
+		return true
+	}
+	return strings.EqualFold(left, right)
+}
+
+func catalogDownloadKey(entry map[string]any, resourceMap map[string]string, idKey string) string {
+	if downloadKey := strings.TrimSpace(resourceMap[idKey]); downloadKey != "" {
+		return StripPublicObjectURL(downloadKey)
+	}
+	return StripPublicObjectURL(stringifyCatalogValue(entry["download"]))
+}
+
+func catalogImageKey(entry map[string]any, imageMap map[string]string, idKey string) string {
+	if imageKey := strings.TrimSpace(imageMap[idKey]); imageKey != "" {
+		return StripPublicObjectURL(imageKey)
+	}
+	return StripPublicObjectURL(stringifyCatalogValue(entry["image"]))
+}
+
+func findPublishedResourceIDForReview(
+	resources []map[string]any,
+	resourceMap map[string]string,
+	imageMap map[string]string,
+	item PendingImageReview,
+	serial string,
+) int64 {
+	shareKey := reviewShareObjectKey(item)
+	coverKey := reviewCoverObjectKey(item)
+	if shareKey == "" {
+		return 0
+	}
+	for _, entry := range resources {
+		if entry == nil || !catalogEntryOwnedBySerial(entry, serial) {
+			continue
+		}
+		idKey := stringifyCatalogID(entry["id"])
+		if idKey == "" {
+			continue
+		}
+		downloadKey := catalogDownloadKey(entry, resourceMap, idKey)
+		if !objectKeysMatch(downloadKey, shareKey) {
+			continue
+		}
+		if coverKey != "" {
+			imageKey := catalogImageKey(entry, imageMap, idKey)
+			if imageKey != "" && !objectKeysMatch(imageKey, coverKey) {
+				continue
+			}
+		}
+		resourceID, err := strconv.ParseInt(idKey, 10, 64)
+		if err != nil || resourceID <= 0 {
+			continue
+		}
+		return resourceID
+	}
+	return 0
+}
+
+func reviewItemMatchesPublishedResource(item PendingImageReview, downloadKey, coverKey string) bool {
+	shareKey := reviewShareObjectKey(item)
+	if shareKey == "" || !objectKeysMatch(downloadKey, shareKey) {
+		return false
+	}
+	itemCoverKey := reviewCoverObjectKey(item)
+	if itemCoverKey == "" || coverKey == "" {
+		return true
+	}
+	return objectKeysMatch(coverKey, itemCoverKey)
+}
+
+func RemoveReviewEntriesForPublishedResource(
+	store *ImageReviewStore,
+	serial string,
+	entry map[string]any,
+	resourceMap map[string]string,
+	imageMap map[string]string,
+	idKey string,
+) {
+	if store == nil || entry == nil || len(store.Items) == 0 {
+		return
+	}
+	downloadKey := catalogDownloadKey(entry, resourceMap, idKey)
+	coverKey := catalogImageKey(entry, imageMap, idKey)
+	target := normalizeUploaderSerial(serial)
+	if target == "" || downloadKey == "" {
+		return
+	}
+
+	filtered := make([]PendingImageReview, 0, len(store.Items))
+	for _, item := range store.Items {
+		if normalizeUploaderSerial(item.Serial) != target || !isShareReviewAction(item.Action) {
+			filtered = append(filtered, item)
+			continue
+		}
+		if reviewItemMatchesPublishedResource(item, downloadKey, coverKey) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	store.Items = filtered
+}
+
 func deleteReviewObjects(ctx context.Context, item PendingImageReview, signers UploadDeleteSigners) {
 	switch strings.TrimSpace(item.Action) {
 	case ReviewActionShareUserGif:
 		tryDeleteObject(ctx, signers.Gif, item.GifObjectKey)
-		tryDeleteObject(ctx, signers.GifCover, item.CoverObjectKey)
+		tryDeleteObject(ctx, signers.GifCover, reviewCoverObjectKey(item))
 	case ReviewActionShareUserVideo:
-		tryDeleteObject(ctx, signers.Video, item.GifObjectKey)
-		tryDeleteObject(ctx, signers.VideoCover, item.CoverObjectKey)
+		tryDeleteObject(ctx, signers.Video, reviewVideoObjectKey(item))
+		tryDeleteObject(ctx, signers.VideoCover, reviewCoverObjectKey(item))
 	default:
 		tryDeleteObject(ctx, signers.Image, item.ImageObjectKey)
 	}
@@ -387,24 +556,67 @@ func RemoveDeviceReviewUpload(store *ImageReviewStore, reviewID, serial string) 
 		return PendingImageReview{}, fmt.Errorf("该记录不可删除")
 	}
 	status := strings.TrimSpace(strings.ToLower(item.Status))
-	if status != ImageReviewStatusPending && status != ImageReviewStatusRejected {
+	if status != ImageReviewStatusPending &&
+		status != ImageReviewStatusRejected &&
+		status != ImageReviewStatusApproved {
 		return PendingImageReview{}, fmt.Errorf("当前状态不可删除")
 	}
 	store.Items = append(store.Items[:idx], store.Items[idx+1:]...)
 	return item, nil
 }
 
-func DeleteOwnReviewUpload(
-	ctx context.Context,
-	store *ImageReviewStore,
-	reviewID string,
-	serial string,
-	signers UploadDeleteSigners,
-) error {
-	item, err := RemoveDeviceReviewUpload(store, reviewID, serial)
+type DeleteOwnReviewUploadInput struct {
+	Store           *ImageReviewStore
+	ReviewID        string
+	Serial          string
+	Signers         UploadDeleteSigners
+	ResourcesPath   string
+	ResourceMapPath string
+	ImageMapPath    string
+}
+
+type DeleteOwnReviewUploadResult struct {
+	Item              PendingImageReview
+	DeletedResourceID int64
+}
+
+func DeleteOwnReviewUpload(ctx context.Context, input DeleteOwnReviewUploadInput) (DeleteOwnReviewUploadResult, error) {
+	item, err := RemoveDeviceReviewUpload(input.Store, input.ReviewID, input.Serial)
 	if err != nil {
-		return err
+		return DeleteOwnReviewUploadResult{}, err
 	}
-	deleteReviewObjects(ctx, item, signers)
-	return nil
+
+	result := DeleteOwnReviewUploadResult{Item: item}
+	if input.ResourcesPath != "" {
+		resources, loadErr := loadResourceCatalogFile(input.ResourcesPath)
+		if loadErr == nil {
+			resourceMap, mapErr := loadStringMapFile(input.ResourceMapPath)
+			if mapErr == nil {
+				imageMap, imageErr := loadStringMapFile(input.ImageMapPath)
+				if imageErr == nil {
+					if resourceID := findPublishedResourceIDForReview(
+						resources,
+						resourceMap,
+						imageMap,
+						item,
+						input.Serial,
+					); resourceID > 0 {
+						if deleteErr := DeleteOwnPublishedUpload(ctx, DeleteOwnPublishedUploadInput{
+							Serial:          input.Serial,
+							ResourceID:      resourceID,
+							ResourcesPath:   input.ResourcesPath,
+							ResourceMapPath: input.ResourceMapPath,
+							ImageMapPath:    input.ImageMapPath,
+							Signers:         input.Signers,
+						}); deleteErr == nil {
+							result.DeletedResourceID = resourceID
+						}
+					}
+				}
+			}
+		}
+	}
+
+	deleteReviewObjects(ctx, item, input.Signers)
+	return result, nil
 }

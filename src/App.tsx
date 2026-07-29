@@ -13,6 +13,10 @@ import FavoritesPage from "./pages/FavoritesPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
 import ResourcesPage from "./pages/ResourcesPage.tsx";
+import ActivityCenterPage from "./pages/ActivityCenterPage.tsx";
+import ActivityLotteryPage from "./pages/ActivityLotteryPage.tsx";
+import ActivityPrizeInfoPage from "./pages/ActivityPrizeInfoPage.tsx";
+import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -95,6 +99,39 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ShopPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities"
+            element={
+              <ProtectedRoute>
+                <ActivityCenterPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/activity" element={<Navigate to="/activities/lottery" replace />} />
+          <Route
+            path="/activities/lottery"
+            element={
+              <ProtectedRoute>
+                <ActivityLotteryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities/prize-info"
+            element={
+              <ProtectedRoute>
+                <ActivityPrizeInfoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities/admin"
+            element={
+              <ProtectedRoute>
+                <ActivityAdminPage />
               </ProtectedRoute>
             }
           />

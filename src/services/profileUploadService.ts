@@ -141,7 +141,7 @@ export type ProfileUploadDeleteKind = "published" | "review";
 
 export interface DeleteMyUploadInput {
   kind: ProfileUploadDeleteKind;
-  resourceId?: number;
+  resourceId?: number | string;
   reviewId?: string;
 }
 

@@ -629,6 +629,8 @@ func main() {
 	messageIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("MESSAGE_RATE_LIMIT_IP_PER_MIN"), 15), time.Minute)
 	likeTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_TOKEN_PER_MIN"), 30), time.Minute)
 	likeIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
+	activityTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("ACTIVITY_RATE_LIMIT_TOKEN_PER_MIN"), 8), time.Minute)
+	activityIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("ACTIVITY_RATE_LIMIT_IP_PER_MIN"), 20), time.Minute)
 	abuseGuard := service.NewAbuseGuard(service.AbuseGuardConfigFromEnv())
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {
@@ -978,6 +980,25 @@ func main() {
 	var aiCreditsMu sync.Mutex
 	var imageReviewMu sync.RWMutex
 	imageSignTTL := 10 * time.Minute
+
+	activityRepo, err := service.NewActivityRepo(filepath.Join("config"))
+	if err != nil {
+		log.Fatalf("init activity repo failed: %v", err)
+	}
+	defer activityRepo.Close()
+	activityService := service.NewActivityService(activityRepo, jwtSecret, func(sn string) bool {
+		profilesMu.RLock()
+		defer profilesMu.RUnlock()
+		_, ok := userProfiles.Profiles[sn]
+		return ok
+	})
+	if err := activityService.EnsureDefaultActivity(); err != nil {
+		log.Fatalf("init default activity failed: %v", err)
+	}
+	activityCron := service.NewActivityCron(activityService)
+	activityCron.Start()
+	defer activityCron.Stop()
+
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
 	imagePublicBase := strings.TrimSpace(os.Getenv("IMAGE_COS_PUBLIC_BASE"))
@@ -1015,6 +1036,9 @@ func main() {
 		}
 
 		token := createToken(req.Serial, jwtSecret)
+		if regErr := activityService.RegisterAuthenticatedDevice(req.Serial, "auth"); regErr != nil {
+			log.Printf("warn: register device serial failed: %v", regErr)
+		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "token": token})
 	})
 
@@ -3231,6 +3255,15 @@ func main() {
 			"success": true,
 			"message": entry,
 		})
+	})
+
+	registerActivityRoutes(router, activityRouteDeps{
+		activityService:      activityService,
+		reviewAdminToken:     reviewAdminToken,
+		jwtSecret:            jwtSecret,
+		tokenTTL:             tokenTTL,
+		activityTokenLimiter: activityTokenRateLimiter,
+		activityIPLimiter:    activityIPRateLimiter,
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {
