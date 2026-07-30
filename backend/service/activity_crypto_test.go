@@ -41,3 +41,18 @@ func TestValidateChinaMobilePhone(t *testing.T) {
 		t.Fatal("expected invalid phone")
 	}
 }
+
+func TestValidateQQNumber(t *testing.T) {
+	if !ValidateQQNumber("10001") {
+		t.Fatal("expected valid QQ")
+	}
+	if !ValidateQQNumber("123456789") {
+		t.Fatal("expected valid QQ")
+	}
+	if ValidateQQNumber("01234") {
+		t.Fatal("expected invalid QQ starting with 0")
+	}
+	if ValidateQQNumber("1234") {
+		t.Fatal("expected invalid short QQ")
+	}
+}

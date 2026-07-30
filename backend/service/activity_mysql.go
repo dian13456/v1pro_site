@@ -346,19 +346,19 @@ func (m *activityMySQLStore) hasWinnerInfo(ctx context.Context, winnerID string)
 
 func (m *activityMySQLStore) addWinnerInfo(ctx context.Context, info WinnerInfo) error {
 	_, err := m.db.ExecContext(ctx, `
-		INSERT INTO winner_info (id, winner_id, name_enc, phone_enc, wechat_enc, province, city, address_enc, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		info.ID, info.WinnerID, info.NameEnc, info.PhoneEnc, info.WechatEnc, info.Province, info.City, info.AddressEnc, info.CreatedAt,
+		INSERT INTO winner_info (id, winner_id, name_enc, phone_enc, wechat_enc, qq_enc, province, city, address_enc, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		info.ID, info.WinnerID, info.NameEnc, info.PhoneEnc, info.WechatEnc, info.QQEnc, info.Province, info.City, info.AddressEnc, info.CreatedAt,
 	)
 	return err
 }
 
 func (m *activityMySQLStore) getWinnerInfo(ctx context.Context, winnerID string) (WinnerInfo, bool, error) {
 	row := m.db.QueryRowContext(ctx, `
-		SELECT id, winner_id, name_enc, phone_enc, wechat_enc, province, city, address_enc, created_at
+		SELECT id, winner_id, name_enc, phone_enc, wechat_enc, qq_enc, province, city, address_enc, created_at
 		FROM winner_info WHERE winner_id = ?`, winnerID)
 	var info WinnerInfo
-	err := row.Scan(&info.ID, &info.WinnerID, &info.NameEnc, &info.PhoneEnc, &info.WechatEnc, &info.Province, &info.City, &info.AddressEnc, &info.CreatedAt)
+	err := row.Scan(&info.ID, &info.WinnerID, &info.NameEnc, &info.PhoneEnc, &info.WechatEnc, &info.QQEnc, &info.Province, &info.City, &info.AddressEnc, &info.CreatedAt)
 	if err == sql.ErrNoRows {
 		return WinnerInfo{}, false, nil
 	}

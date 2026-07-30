@@ -993,7 +993,7 @@ func main() {
 		return ok
 	})
 	if err := activityService.EnsureDefaultActivity(); err != nil {
-		log.Fatalf("init default activity failed: %v", err)
+		log.Printf("warn: init default activity failed: %v", err)
 	}
 	activityCron := service.NewActivityCron(activityService)
 	activityCron.Start()

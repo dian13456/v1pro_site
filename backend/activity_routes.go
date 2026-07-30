@@ -19,6 +19,7 @@ type activityPrizeInfoRequest struct {
 	Name     string `json:"name"`
 	Phone    string `json:"phone"`
 	Wechat   string `json:"wechat"`
+	QQ       string `json:"qq"`
 	Province string `json:"province"`
 	City     string `json:"city"`
 	Address  string `json:"address"`
@@ -145,6 +146,7 @@ func registerActivityRoutes(router *gin.Engine, deps activityRouteDeps) {
 				Name:     req.Name,
 				Phone:    req.Phone,
 				Wechat:   req.Wechat,
+				QQ:       req.QQ,
 				Province: req.Province,
 				City:     req.City,
 				Address:  req.Address,

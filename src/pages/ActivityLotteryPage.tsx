@@ -147,7 +147,7 @@ export default function ActivityLotteryPage() {
 
           {activity.isWinner && activity.contactStatus === "pending" ? (
             <SiteAlert variant="info">
-              恭喜中奖！请尽快填写收货信息。
+              恭喜中奖！请尽快填写收货地址与 QQ 号。
               <Link to="/activities/prize-info" className="ml-2 underline">
                 去填写
               </Link>

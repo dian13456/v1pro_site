@@ -17,6 +17,7 @@ import { fetchPrizeInfoStatus, submitPrizeInfo } from "../services/activityServi
 import type { PrizeInfoStatus } from "../types/activity";
 
 const PHONE_PATTERN = /^1\d{10}$/;
+const QQ_PATTERN = /^[1-9]\d{4,11}$/;
 
 export default function ActivityPrizeInfoPage() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function ActivityPrizeInfoPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [wechat, setWechat] = useState("");
+  const [qq, setQq] = useState("");
   const [province, setProvince] = useState("");
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
@@ -62,7 +64,11 @@ export default function ActivityPrizeInfoPage() {
       return;
     }
     if (!province.trim() || !city.trim() || !address.trim()) {
-      setErrorMessage("请完整填写收货地址");
+      setErrorMessage("请完整填写收货地址（省份、城市、详细地址）");
+      return;
+    }
+    if (!QQ_PATTERN.test(qq.trim())) {
+      setErrorMessage("请填写正确的 QQ 号");
       return;
     }
     setSubmitting(true);
@@ -74,6 +80,7 @@ export default function ActivityPrizeInfoPage() {
         name: name.trim(),
         phone: phone.trim(),
         wechat: wechat.trim(),
+        qq: qq.trim(),
         province: province.trim(),
         city: city.trim(),
         address: address.trim(),
@@ -111,7 +118,11 @@ export default function ActivityPrizeInfoPage() {
         <SitePanel>
           <SiteSectionTitle
             title="填写中奖信息"
-            description={status.activityTitle ? `活动：${status.activityTitle}` : "请填写真实有效的收货信息，提交后不可修改。"}
+            description={
+              status.activityTitle
+                ? `活动：${status.activityTitle}。请填写真实有效的收货地址与 QQ 号，提交后不可修改。`
+                : "请填写真实有效的收货地址与 QQ 号，提交后不可修改。"
+            }
           />
 
           {submitted ? (
@@ -120,8 +131,9 @@ export default function ActivityPrizeInfoPage() {
             </SiteAlert>
           ) : (
             <div className="mt-4 space-y-3">
-              <SiteInput value={name} onChange={(e) => setName(e.target.value)} placeholder="姓名" disabled={submitting} />
+              <SiteInput value={name} onChange={(e) => setName(e.target.value)} placeholder="收货人姓名" disabled={submitting} />
               <SiteInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="手机号" disabled={submitting} />
+              <SiteInput value={qq} onChange={(e) => setQq(e.target.value)} placeholder="QQ号（必填）" disabled={submitting} />
               <SiteInput value={wechat} onChange={(e) => setWechat(e.target.value)} placeholder="微信号（选填）" disabled={submitting} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <SiteInput value={province} onChange={(e) => setProvince(e.target.value)} placeholder="省份" disabled={submitting} />
@@ -130,7 +142,7 @@ export default function ActivityPrizeInfoPage() {
               <SiteTextarea
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="详细地址"
+                placeholder="详细收货地址"
                 rows={3}
                 disabled={submitting}
               />

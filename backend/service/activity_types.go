@@ -73,21 +73,23 @@ type Winner struct {
 }
 
 type WinnerInfo struct {
-	ID        string `json:"id"`
-	WinnerID  string `json:"winnerId"`
-	NameEnc   string `json:"nameEnc"`
-	PhoneEnc  string `json:"phoneEnc"`
-	WechatEnc string `json:"wechatEnc"`
-	Province  string `json:"province"`
-	City      string `json:"city"`
+	ID         string `json:"id"`
+	WinnerID   string `json:"winnerId"`
+	NameEnc    string `json:"nameEnc"`
+	PhoneEnc   string `json:"phoneEnc"`
+	WechatEnc  string `json:"wechatEnc"`
+	QQEnc      string `json:"qqEnc"`
+	Province   string `json:"province"`
+	City       string `json:"city"`
 	AddressEnc string `json:"addressEnc"`
-	CreatedAt int64  `json:"createdAt"`
+	CreatedAt  int64  `json:"createdAt"`
 }
 
 type WinnerInfoPlain struct {
 	Name     string `json:"name"`
 	Phone    string `json:"phone"`
 	Wechat   string `json:"wechat"`
+	QQ       string `json:"qq"`
 	Province string `json:"province"`
 	City     string `json:"city"`
 	Address  string `json:"address"`

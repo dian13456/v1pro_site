@@ -85,6 +85,22 @@ func ValidateChinaMobilePhone(phone string) bool {
 	return true
 }
 
+func ValidateQQNumber(qq string) bool {
+	qq = strings.TrimSpace(qq)
+	if len(qq) < 5 || len(qq) > 12 {
+		return false
+	}
+	if qq[0] == '0' {
+		return false
+	}
+	for _, r := range qq {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func FormatFullAddress(province, city, address string) string {
 	return fmt.Sprintf("%s %s %s", strings.TrimSpace(province), strings.TrimSpace(city), strings.TrimSpace(address))
 }

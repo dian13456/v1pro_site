@@ -265,6 +265,7 @@ export default function ActivityAdminPage() {
                 <div className="mt-3 rounded-xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm dark:border-emerald-500/20 dark:bg-emerald-500/10">
                   <p>姓名: {contact.name}</p>
                   <p>手机: {contact.phone}</p>
+                  <p>QQ: {contact.qq || "—"}</p>
                   <p>微信: {contact.wechat || "—"}</p>
                   <p>地址: {contact.province} {contact.city} {contact.address}</p>
                 </div>

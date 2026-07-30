@@ -357,6 +357,9 @@ func (s *ActivityService) SubmitPrizeInfo(input SubmitPrizeInfoInput) (SubmitPri
 	if strings.TrimSpace(input.Info.Province) == "" || strings.TrimSpace(input.Info.City) == "" || strings.TrimSpace(input.Info.Address) == "" {
 		return SubmitPrizeInfoResult{}, errors.New("收货地址不完整")
 	}
+	if !ValidateQQNumber(input.Info.QQ) {
+		return SubmitPrizeInfoResult{}, errors.New("QQ号格式不正确")
+	}
 	nameEnc, err := EncryptActivityField(s.secret, input.Info.Name)
 	if err != nil {
 		return SubmitPrizeInfoResult{}, err
@@ -366,6 +369,10 @@ func (s *ActivityService) SubmitPrizeInfo(input SubmitPrizeInfoInput) (SubmitPri
 		return SubmitPrizeInfoResult{}, err
 	}
 	wechatEnc, err := EncryptActivityField(s.secret, input.Info.Wechat)
+	if err != nil {
+		return SubmitPrizeInfoResult{}, err
+	}
+	qqEnc, err := EncryptActivityField(s.secret, input.Info.QQ)
 	if err != nil {
 		return SubmitPrizeInfoResult{}, err
 	}
@@ -379,6 +386,7 @@ func (s *ActivityService) SubmitPrizeInfo(input SubmitPrizeInfoInput) (SubmitPri
 		NameEnc:    nameEnc,
 		PhoneEnc:   phoneEnc,
 		WechatEnc:  wechatEnc,
+		QQEnc:      qqEnc,
 		Province:   strings.TrimSpace(input.Info.Province),
 		City:       strings.TrimSpace(input.Info.City),
 		AddressEnc: addressEnc,
@@ -452,6 +460,10 @@ func (s *ActivityService) DecryptWinnerInfo(winnerID string) (WinnerInfoPlain, e
 	if err != nil {
 		return WinnerInfoPlain{}, err
 	}
+	qq, err := DecryptActivityField(s.secret, info.QQEnc)
+	if err != nil {
+		return WinnerInfoPlain{}, err
+	}
 	address, err := DecryptActivityField(s.secret, info.AddressEnc)
 	if err != nil {
 		return WinnerInfoPlain{}, err
@@ -460,6 +472,7 @@ func (s *ActivityService) DecryptWinnerInfo(winnerID string) (WinnerInfoPlain, e
 		Name:     name,
 		Phone:    phone,
 		Wechat:   wechat,
+		QQ:       qq,
 		Province: info.Province,
 		City:     info.City,
 		Address:  address,

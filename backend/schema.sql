@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS winner_info (
   name_enc TEXT NOT NULL,
   phone_enc TEXT NOT NULL,
   wechat_enc TEXT NOT NULL,
+  qq_enc TEXT NOT NULL,
   province VARCHAR(64) NOT NULL DEFAULT '',
   city VARCHAR(64) NOT NULL DEFAULT '',
   address_enc TEXT NOT NULL,

@@ -88,6 +88,7 @@ export async function submitPrizeInfo(input: {
   name: string;
   phone: string;
   wechat: string;
+  qq: string;
   province: string;
   city: string;
   address: string;

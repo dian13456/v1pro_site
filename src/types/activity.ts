@@ -77,6 +77,7 @@ export interface WinnerContactInfo {
   name: string;
   phone: string;
   wechat: string;
+  qq: string;
   province: string;
   city: string;
   address: string;

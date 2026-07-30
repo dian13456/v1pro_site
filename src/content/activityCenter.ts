@@ -36,7 +36,7 @@ export const ACTIVITIES: ActivityItem[] = [
     id: "device-lottery",
     title: "设备用户专属抽奖",
     summary: "使用设备 SN 码参与，每 24 小时自动开奖。",
-    body: "购买 V1PRO 设备即可使用 SN 编号报名参与抽奖。每个 SN 每 24 小时可参与一次，一个 SN 仅可获得一次中奖资格。中奖后请填写收货信息，我们将安排发货。",
+    body: "购买 V1PRO 设备即可使用 SN 编号报名参与抽奖。每个 SN 每 24 小时可参与一次，一个 SN 仅可获得一次中奖资格。中奖后请填写收货地址与 QQ 号，我们将安排发货。",
     status: "ongoing",
     category: "reward",
     startDate: "2026-07-01",
