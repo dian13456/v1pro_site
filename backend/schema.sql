@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS mall_product (
   title VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
   image_url TEXT NOT NULL,
-  image_urls MEDIUMTEXT NOT NULL,
+  image_urls MEDIUMTEXT NULL,
   price_cents BIGINT NOT NULL DEFAULT 0,
   stock INT NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'on_sale',
