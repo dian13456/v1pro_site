@@ -11,16 +11,17 @@ const (
 )
 
 type MallProduct struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ImageURL    string `json:"imageUrl,omitempty"`
-	PriceCents  int64  `json:"priceCents"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	ImageURL    string   `json:"imageUrl,omitempty"`
+	ImageURLs   []string `json:"imageUrls,omitempty"`
+	PriceCents  int64    `json:"priceCents"`
 	Stock       int    `json:"stock"`
-	Status      string `json:"status"`
+	Status      string   `json:"status"`
 	SortOrder   int    `json:"sortOrder"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
+	CreatedAt   int64    `json:"createdAt"`
+	UpdatedAt   int64    `json:"updatedAt"`
 }
 
 type MallOrderItem struct {
@@ -75,13 +76,14 @@ type MallCreateOrderInput struct {
 }
 
 type MallProductPublic struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ImageURL    string `json:"imageUrl,omitempty"`
-	PriceCents  int64  `json:"priceCents"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	ImageURL    string   `json:"imageUrl,omitempty"`
+	ImageURLs   []string `json:"imageUrls,omitempty"`
+	PriceCents  int64    `json:"priceCents"`
 	Stock       int    `json:"stock"`
-	Status      string `json:"status"`
+	Status      string   `json:"status"`
 }
 
 type MallOrderPublic struct {

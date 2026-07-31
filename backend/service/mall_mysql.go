@@ -44,25 +44,62 @@ func (s *mallMySQLStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *mallMySQLStore) ListProducts(ctx context.Context, includeOffSale bool) ([]MallProduct, error) {
-	query := `SELECT id, title, description, image_url, price_cents, stock, status, sort_order, created_at, updated_at
+func (s *mallMySQLStore) scanProduct(scanner interface {
+	Scan(dest ...any) error
+}, withImageURLs bool) (MallProduct, error) {
+	var p MallProduct
+	var imageURLsRaw sql.NullString
+	if withImageURLs {
+		err := scanner.Scan(
+			&p.ID, &p.Title, &p.Description, &p.ImageURL, &imageURLsRaw, &p.PriceCents, &p.Stock,
+			&p.Status, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
+		)
+		if err != nil {
+			return MallProduct{}, err
+		}
+		p.ImageURLs = DecodeMallImageURLs(imageURLsRaw.String, p.ImageURL)
+	} else {
+		err := scanner.Scan(
+			&p.ID, &p.Title, &p.Description, &p.ImageURL, &p.PriceCents, &p.Stock,
+			&p.Status, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
+		)
+		if err != nil {
+			return MallProduct{}, err
+		}
+		p.ImageURLs = DecodeMallImageURLs("", p.ImageURL)
+	}
+	NormalizeMallProductImages(&p)
+	return p, nil
+}
+
+func (s *mallMySQLStore) listProductsQuery(includeOffSale bool, withImageURLs bool) string {
+	imageCol := ""
+	if withImageURLs {
+		imageCol = ", image_urls"
+	}
+	query := `SELECT id, title, description, image_url` + imageCol + `, price_cents, stock, status, sort_order, created_at, updated_at
 FROM mall_product`
 	if !includeOffSale {
 		query += ` WHERE status='on_sale'`
 	}
-	query += ` ORDER BY sort_order ASC, updated_at DESC`
-	rows, err := s.db.QueryContext(ctx, query)
+	return query + ` ORDER BY sort_order ASC, updated_at DESC`
+}
+
+func (s *mallMySQLStore) ListProducts(ctx context.Context, includeOffSale bool) ([]MallProduct, error) {
+	withImageURLs := true
+	rows, err := s.db.QueryContext(ctx, s.listProductsQuery(includeOffSale, withImageURLs))
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "image_urls") {
+		withImageURLs = false
+		rows, err = s.db.QueryContext(ctx, s.listProductsQuery(includeOffSale, withImageURLs))
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]MallProduct, 0)
 	for rows.Next() {
-		var p MallProduct
-		if err := rows.Scan(
-			&p.ID, &p.Title, &p.Description, &p.ImageURL, &p.PriceCents, &p.Stock,
-			&p.Status, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
-		); err != nil {
+		p, err := s.scanProduct(rows, withImageURLs)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -71,14 +108,25 @@ FROM mall_product`
 }
 
 func (s *mallMySQLStore) GetProduct(ctx context.Context, id string) (MallProduct, bool, error) {
-	var p MallProduct
-	err := s.db.QueryRowContext(ctx,
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, title, description, image_url, image_urls, price_cents, stock, status, sort_order, created_at, updated_at
+FROM mall_product WHERE id=?`, id,
+	)
+	p, err := s.scanProduct(row, true)
+	if err == nil {
+		return p, true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return MallProduct{}, false, nil
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "image_urls") {
+		return MallProduct{}, false, err
+	}
+	row = s.db.QueryRowContext(ctx,
 		`SELECT id, title, description, image_url, price_cents, stock, status, sort_order, created_at, updated_at
 FROM mall_product WHERE id=?`, id,
-	).Scan(
-		&p.ID, &p.Title, &p.Description, &p.ImageURL, &p.PriceCents, &p.Stock,
-		&p.Status, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
 	)
+	p, err = s.scanProduct(row, false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MallProduct{}, false, nil
 	}
@@ -89,7 +137,20 @@ FROM mall_product WHERE id=?`, id,
 }
 
 func (s *mallMySQLStore) UpsertProduct(ctx context.Context, p MallProduct) error {
+	NormalizeMallProductImages(&p)
+	imageURLsJSON := EncodeMallImageURLs(p.ImageURLs)
 	_, err := s.db.ExecContext(ctx, `
+INSERT INTO mall_product
+(id, title, description, image_url, image_urls, price_cents, stock, status, sort_order, created_at, updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON DUPLICATE KEY UPDATE
+title=VALUES(title), description=VALUES(description), image_url=VALUES(image_url), image_urls=VALUES(image_urls),
+price_cents=VALUES(price_cents), stock=VALUES(stock), status=VALUES(status),
+sort_order=VALUES(sort_order), updated_at=VALUES(updated_at)`,
+		p.ID, p.Title, p.Description, p.ImageURL, imageURLsJSON, p.PriceCents, p.Stock, p.Status, p.SortOrder, p.CreatedAt, p.UpdatedAt,
+	)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "image_urls") {
+		_, err = s.db.ExecContext(ctx, `
 INSERT INTO mall_product
 (id, title, description, image_url, price_cents, stock, status, sort_order, created_at, updated_at)
 VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -97,8 +158,9 @@ ON DUPLICATE KEY UPDATE
 title=VALUES(title), description=VALUES(description), image_url=VALUES(image_url),
 price_cents=VALUES(price_cents), stock=VALUES(stock), status=VALUES(status),
 sort_order=VALUES(sort_order), updated_at=VALUES(updated_at)`,
-		p.ID, p.Title, p.Description, p.ImageURL, p.PriceCents, p.Stock, p.Status, p.SortOrder, p.CreatedAt, p.UpdatedAt,
-	)
+			p.ID, p.Title, p.Description, p.ImageURL, p.PriceCents, p.Stock, p.Status, p.SortOrder, p.CreatedAt, p.UpdatedAt,
+		)
+	}
 	return err
 }
 

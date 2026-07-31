@@ -7,12 +7,22 @@ export interface MallProduct {
   title: string;
   description: string;
   imageUrl?: string;
+  imageUrls?: string[];
   priceCents: number;
   stock: number;
   status: MallProductStatus | string;
   sortOrder?: number;
   createdAt?: number;
   updatedAt?: number;
+}
+
+export function getProductImages(product: { imageUrl?: string; imageUrls?: string[] }): string[] {
+  const urls = (product.imageUrls || []).map((item) => item.trim()).filter(Boolean);
+  if (urls.length > 0) {
+    return urls;
+  }
+  const single = (product.imageUrl || "").trim();
+  return single ? [single] : [];
 }
 
 export interface MallOrderItem {

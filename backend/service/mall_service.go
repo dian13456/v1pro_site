@@ -37,8 +37,10 @@ func (s *MallService) ListPublicProducts() ([]MallProductPublic, error) {
 	})
 	out := make([]MallProductPublic, 0, len(items))
 	for _, p := range items {
+		NormalizeMallProductImages(&p)
 		out = append(out, MallProductPublic{
-			ID: p.ID, Title: p.Title, Description: p.Description, ImageURL: p.ImageURL,
+			ID: p.ID, Title: p.Title, Description: p.Description,
+			ImageURL: p.ImageURL, ImageURLs: p.ImageURLs,
 			PriceCents: p.PriceCents, Stock: p.Stock, Status: p.Status,
 		})
 	}
@@ -53,6 +55,9 @@ func (s *MallService) ListAdminProducts() ([]MallProduct, error) {
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].UpdatedAt > items[j].UpdatedAt
 	})
+	for i := range items {
+		NormalizeMallProductImages(&items[i])
+	}
 	return items, nil
 }
 
@@ -76,7 +81,13 @@ func (s *MallService) UpsertProduct(input MallProduct) (MallProduct, error) {
 	if input.Status != MallProductOnSale && input.Status != MallProductOffSale {
 		return MallProduct{}, errors.New("商品状态无效")
 	}
-	return s.repo.UpsertProduct(input)
+	NormalizeMallProductImages(&input)
+	product, err := s.repo.UpsertProduct(input)
+	if err != nil {
+		return MallProduct{}, err
+	}
+	NormalizeMallProductImages(&product)
+	return product, nil
 }
 
 func toPublicOrder(o MallOrder) MallOrderPublic {

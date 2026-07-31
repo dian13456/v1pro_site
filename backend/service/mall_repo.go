@@ -139,7 +139,9 @@ func (r *MallRepo) ListProducts(includeOffSale bool) ([]MallProduct, error) {
 		if !includeOffSale && p.Status != MallProductOnSale {
 			continue
 		}
-		out = append(out, p)
+		item := p
+		NormalizeMallProductImages(&item)
+		out = append(out, item)
 	}
 	return out, nil
 }
@@ -156,6 +158,7 @@ func (r *MallRepo) UpsertProduct(product MallProduct) (MallProduct, error) {
 	if product.Status == "" {
 		product.Status = MallProductOnSale
 	}
+	NormalizeMallProductImages(&product)
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()
 		defer cancel()

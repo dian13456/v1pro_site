@@ -30,13 +30,14 @@ type mallCreateOrderRequest struct {
 }
 
 type mallProductUpsertRequest struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ImageURL    string `json:"imageUrl"`
-	PriceCents  int64  `json:"priceCents"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	ImageURL    string   `json:"imageUrl"`
+	ImageURLs   []string `json:"imageUrls"`
+	PriceCents  int64    `json:"priceCents"`
 	Stock       int    `json:"stock"`
-	Status      string `json:"status"`
+	Status      string   `json:"status"`
 	SortOrder   int    `json:"sortOrder"`
 }
 
@@ -160,7 +161,8 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			return
 		}
 		product, err := deps.mallService.UpsertProduct(service.MallProduct{
-			ID: req.ID, Title: req.Title, Description: req.Description, ImageURL: req.ImageURL,
+			ID: req.ID, Title: req.Title, Description: req.Description,
+			ImageURL: req.ImageURL, ImageURLs: req.ImageURLs,
 			PriceCents: req.PriceCents, Stock: req.Stock, Status: req.Status, SortOrder: req.SortOrder,
 		})
 		if err != nil {

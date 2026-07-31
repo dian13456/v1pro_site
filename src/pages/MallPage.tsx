@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
+import { MallProductGallery } from "../components/MallProductGallery";
 import { MallProductImage } from "../components/MallProductImage";
 import {
   SiteAlert,
@@ -24,7 +25,7 @@ import {
   saveMallCart,
 } from "../services/mallService";
 import type { MallOrder, MallProduct } from "../types/mall";
-import { formatMallPrice, MALL_ORDER_STATUS_LABEL } from "../types/mall";
+import { formatMallPrice, getProductImages, MALL_ORDER_STATUS_LABEL } from "../types/mall";
 
 const PHONE_PATTERN = /^1\d{10}$/;
 const QQ_PATTERN = /^[1-9]\d{4,11}$/;
@@ -187,7 +188,11 @@ export default function MallPage() {
               const inCart = cart[product.id] || 0;
               return (
                 <SitePanel key={product.id} className="flex h-full flex-col">
-                  <MallProductImage imageUrl={product.imageUrl} title={product.title} className="mb-3 h-44 w-full" />
+                  <MallProductGallery
+                    imageUrls={getProductImages(product)}
+                    title={product.title}
+                    className="mb-3 h-44 w-full"
+                  />
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{product.title}</h3>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{product.description}</p>
                   <div className="mt-3 flex items-center justify-between gap-3">
@@ -222,7 +227,7 @@ export default function MallPage() {
                   <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/20 pb-3 last:border-0">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <MallProductImage
-                        imageUrl={product.imageUrl}
+                        imageUrl={getProductImages(product)[0]}
                         title={product.title}
                         className="h-16 w-16 shrink-0"
                       />
