@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
@@ -167,12 +167,6 @@ export default function MallPage() {
             </div>
           }
         />
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          管理入口：
-          <Link className="ml-1 text-violet-600 underline dark:text-violet-300" to="/mall/admin">
-            /mall/admin
-          </Link>
-        </p>
       </SitePanel>
 
       {notice ? (
