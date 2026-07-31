@@ -139,6 +139,7 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 		line := MallOrderItem{
 			ProductID:  product.ID,
 			Title:      product.Title,
+			ImageURL:   product.ImageURL,
 			PriceCents: product.PriceCents,
 			Quantity:   qty,
 		}

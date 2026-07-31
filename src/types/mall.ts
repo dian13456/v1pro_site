@@ -18,6 +18,7 @@ export interface MallProduct {
 export interface MallOrderItem {
   productId: string;
   title: string;
+  imageUrl?: string;
   priceCents: number;
   quantity: number;
 }

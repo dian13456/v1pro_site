@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,6 +50,8 @@ type mallRouteDeps struct {
 	reviewAdminToken string
 	jwtSecret        string
 	tokenTTL         time.Duration
+	imageSigner      *service.COSSigner
+	imagePublicBase  string
 }
 
 func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
@@ -161,6 +168,66 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "product": product})
+	})
+
+	router.POST("/api/admin/mall/upload-image", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, deps.reviewAdminToken) {
+			return
+		}
+		if deps.imageSigner == nil || strings.TrimSpace(deps.imagePublicBase) == "" {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "图片存储未配置"})
+			return
+		}
+		fileHeader, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请选择要上传的图片"})
+			return
+		}
+		if fileHeader.Size <= 0 || fileHeader.Size > 5*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片大小需在 5MB 以内"})
+			return
+		}
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		contentType := ""
+		switch ext {
+		case ".jpg", ".jpeg":
+			contentType = "image/jpeg"
+			ext = ".jpg"
+		case ".png":
+			contentType = "image/png"
+		case ".webp":
+			contentType = "image/webp"
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "仅支持 JPG / PNG / WEBP"})
+			return
+		}
+		file, err := fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "读取图片失败"})
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, 5*1024*1024+1))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "读取图片失败"})
+			return
+		}
+		if len(data) == 0 || len(data) > 5*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片大小需在 5MB 以内"})
+			return
+		}
+		buf := make([]byte, 8)
+		if _, err := rand.Read(buf); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "生成文件名失败"})
+			return
+		}
+		objectKey := fmt.Sprintf("mall/products/%d_%s%s", time.Now().UnixMilli(), hex.EncodeToString(buf), ext)
+		if err := deps.imageSigner.UploadObject(c.Request.Context(), objectKey, contentType, data); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传图片失败"})
+			return
+		}
+		imageURL := strings.TrimRight(deps.imagePublicBase, "/") + "/" + objectKey
+		c.JSON(http.StatusOK, gin.H{"success": true, "imageUrl": imageURL})
 	})
 
 	router.GET("/api/admin/mall/orders", func(c *gin.Context) {

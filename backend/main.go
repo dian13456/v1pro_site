@@ -3280,6 +3280,8 @@ func main() {
 		reviewAdminToken: reviewAdminToken,
 		jwtSecret:        jwtSecret,
 		tokenTTL:         tokenTTL,
+		imageSigner:      imageSigner,
+		imagePublicBase:  imagePublicBase,
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

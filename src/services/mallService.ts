@@ -1,6 +1,6 @@
 import type { MallOrder, MallProduct, MallShippingInput } from "../types/mall";
 import { getAuthState, hasValidLocalAuth } from "./authService";
-import { apiFetch } from "./httpClient";
+import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 
 const CART_KEY = "jiadian_mall_cart_v1";
@@ -121,6 +121,26 @@ export async function adminSaveMallProduct(adminToken: string, product: Partial<
     throw new Error(payload.message || "保存商品失败");
   }
   return payload.product;
+}
+
+export async function adminUploadMallImage(adminToken: string, file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/admin/mall/upload-image`, {
+      method: "POST",
+      headers: adminHeaders(adminToken),
+      body: form,
+    });
+  } catch (err) {
+    throw new Error(formatClientError(err, "上传图片失败"));
+  }
+  const payload = (await response.json()) as { success?: boolean; imageUrl?: string; message?: string };
+  if (!response.ok || !payload.success || !payload.imageUrl) {
+    throw new Error(payload.message || `上传失败（HTTP ${response.status})`);
+  }
+  return payload.imageUrl;
 }
 
 export async function adminFetchMallOrders(adminToken: string): Promise<MallOrder[]> {

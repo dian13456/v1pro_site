@@ -24,10 +24,11 @@ type MallProduct struct {
 }
 
 type MallOrderItem struct {
-	ProductID string `json:"productId"`
-	Title     string `json:"title"`
-	PriceCents int64 `json:"priceCents"`
-	Quantity  int    `json:"quantity"`
+	ProductID  string `json:"productId"`
+	Title      string `json:"title"`
+	ImageURL   string `json:"imageUrl,omitempty"`
+	PriceCents int64  `json:"priceCents"`
+	Quantity   int    `json:"quantity"`
 }
 
 type MallOrder struct {

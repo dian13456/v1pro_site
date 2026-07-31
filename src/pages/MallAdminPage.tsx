@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { MallProductImage } from "../components/MallProductImage";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
@@ -18,6 +19,7 @@ import {
   adminFetchMallProducts,
   adminSaveMallProduct,
   adminUpdateMallOrderStatus,
+  adminUploadMallImage,
 } from "../services/mallService";
 import type { MallOrder, MallProduct } from "../types/mall";
 import { formatMallPrice, MALL_ORDER_STATUS_LABEL } from "../types/mall";
@@ -42,6 +44,8 @@ export default function MallAdminPage() {
   const [editPriceYuan, setEditPriceYuan] = useState("99");
   const [editStock, setEditStock] = useState("10");
   const [editStatus, setEditStatus] = useState("on_sale");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAll = async (token: string) => {
     setLoading(true);
@@ -104,6 +108,24 @@ export default function MallAdminPage() {
       await loadAll(adminToken);
     } catch (err) {
       setErrorMessage((err as Error)?.message || "保存商品失败");
+    }
+  };
+
+  const handleImageUpload = async (file: File | null) => {
+    if (!file || !adminToken) return;
+    setUploadingImage(true);
+    setErrorMessage("");
+    try {
+      const imageUrl = await adminUploadMallImage(adminToken, file);
+      setEditImage(imageUrl);
+      setNotice("图片已上传");
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "上传图片失败");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -173,21 +195,52 @@ export default function MallAdminPage() {
       {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
 
       <SitePanel>
-        <SiteSectionTitle title="编辑商品" description="价格单位为元；保存后立即对用户可见（上架状态）。" />
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <SiteInput placeholder="商品 ID（新建可留空）" value={editId} onChange={(e) => setEditId(e.target.value)} />
-          <SiteInput placeholder="标题" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-          <SiteInput placeholder="价格（元）" value={editPriceYuan} onChange={(e) => setEditPriceYuan(e.target.value)} />
-          <SiteInput placeholder="库存" value={editStock} onChange={(e) => setEditStock(e.target.value)} />
-          <SiteInput placeholder="图片 URL" value={editImage} onChange={(e) => setEditImage(e.target.value)} />
-          <select
-            className="rounded-xl border border-white/30 bg-white/70 px-3 py-2 text-sm dark:border-white/10 dark:bg-slate-950/50"
-            value={editStatus}
-            onChange={(e) => setEditStatus(e.target.value)}
-          >
-            <option value="on_sale">上架</option>
-            <option value="off_sale">下架</option>
-          </select>
+        <SiteSectionTitle title="编辑商品" description="可上传图片或粘贴图片 URL；保存后立即对用户可见（上架状态）。" />
+        <div className="mt-3 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <div>
+            <MallProductImage
+              imageUrl={editImage}
+              title={editTitle || "商品预览"}
+              className="h-44 w-full"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => void handleImageUpload(e.target.files?.[0] || null)}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <SiteButton
+                type="button"
+                variant="secondary"
+                disabled={uploadingImage || !adminToken}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploadingImage ? "上传中…" : "上传图片"}
+              </SiteButton>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SiteInput placeholder="商品 ID（新建可留空）" value={editId} onChange={(e) => setEditId(e.target.value)} />
+            <SiteInput placeholder="标题" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            <SiteInput placeholder="价格（元）" value={editPriceYuan} onChange={(e) => setEditPriceYuan(e.target.value)} />
+            <SiteInput placeholder="库存" value={editStock} onChange={(e) => setEditStock(e.target.value)} />
+            <SiteInput
+              className="sm:col-span-2"
+              placeholder="图片 URL（上传后会自动填入）"
+              value={editImage}
+              onChange={(e) => setEditImage(e.target.value)}
+            />
+            <select
+              className="rounded-xl border border-white/30 bg-white/70 px-3 py-2 text-sm dark:border-white/10 dark:bg-slate-950/50"
+              value={editStatus}
+              onChange={(e) => setEditStatus(e.target.value)}
+            >
+              <option value="on_sale">上架</option>
+              <option value="off_sale">下架</option>
+            </select>
+          </div>
         </div>
         <div className="mt-3">
           <SiteTextarea placeholder="商品说明" rows={3} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
@@ -197,12 +250,15 @@ export default function MallAdminPage() {
             保存商品
           </SiteButton>
         </div>
-        <ul className="mt-4 space-y-2 text-sm">
+        <ul className="mt-4 space-y-3 text-sm">
           {products.map((product) => (
-            <li key={product.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span>
-                {product.title} · {formatMallPrice(product.priceCents)} · 库存 {product.stock} · {product.status}
-              </span>
+            <li key={product.id} className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <MallProductImage imageUrl={product.imageUrl} title={product.title} className="h-14 w-14 shrink-0" />
+                <span>
+                  {product.title} · {formatMallPrice(product.priceCents)} · 库存 {product.stock} · {product.status}
+                </span>
+              </div>
               <SiteButton type="button" variant="secondary" onClick={() => fillProduct(product)}>
                 编辑
               </SiteButton>

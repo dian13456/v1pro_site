@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
+import { MallProductImage } from "../components/MallProductImage";
 import {
   SiteAlert,
   SiteButton,
@@ -181,18 +182,12 @@ export default function MallPage() {
         products.length === 0 ? (
           <SiteEmptyBlock>暂无商品，请稍后再来或联系管理员上架。</SiteEmptyBlock>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => {
               const inCart = cart[product.id] || 0;
               return (
-                <SitePanel key={product.id}>
-                  {product.imageUrl ? (
-                    <img
-                      src={product.imageUrl}
-                      alt={product.title}
-                      className="mb-3 h-40 w-full rounded-xl object-cover"
-                    />
-                  ) : null}
+                <SitePanel key={product.id} className="flex h-full flex-col">
+                  <MallProductImage imageUrl={product.imageUrl} title={product.title} className="mb-3 h-44 w-full" />
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{product.title}</h3>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{product.description}</p>
                   <div className="mt-3 flex items-center justify-between gap-3">
@@ -225,10 +220,17 @@ export default function MallPage() {
               <ul className="space-y-3">
                 {cartLines.map(({ product, quantity }) => (
                   <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/20 pb-3 last:border-0">
-                    <div>
-                      <div className="font-medium text-slate-800 dark:text-slate-100">{product.title}</div>
-                      <div className="text-sm text-slate-500">
-                        {formatMallPrice(product.priceCents)} × {quantity}
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <MallProductImage
+                        imageUrl={product.imageUrl}
+                        title={product.title}
+                        className="h-16 w-16 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">{product.title}</div>
+                        <div className="text-sm text-slate-500">
+                          {formatMallPrice(product.priceCents)} × {quantity}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -295,10 +297,17 @@ export default function MallPage() {
                     <div className="text-sm text-emerald-600 dark:text-emerald-300">快递：{order.trackingNo}</div>
                   ) : null}
                 </div>
-                <ul className="mt-2 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                <ul className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-300">
                   {order.items.map((item) => (
-                    <li key={`${order.id}-${item.productId}`}>
-                      {item.title} × {item.quantity}（{formatMallPrice(item.priceCents)}）
+                    <li key={`${order.id}-${item.productId}`} className="flex items-center gap-3">
+                      <MallProductImage
+                        imageUrl={item.imageUrl}
+                        title={item.title}
+                        className="h-12 w-12 shrink-0"
+                      />
+                      <span>
+                        {item.title} × {item.quantity}（{formatMallPrice(item.priceCents)}）
+                      </span>
                     </li>
                   ))}
                 </ul>
