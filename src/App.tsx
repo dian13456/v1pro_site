@@ -9,6 +9,8 @@ import SharePage from "./pages/SharePage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
 import ShopPage from "./pages/ShopPage.tsx";
+import MallPage from "./pages/MallPage.tsx";
+import MallAdminPage from "./pages/MallAdminPage.tsx";
 import FavoritesPage from "./pages/FavoritesPage.tsx";
 import MessageBoardPage from "./pages/MessageBoardPage.tsx";
 import NotFoundPage from "./pages/NotFoundPage.tsx";
@@ -99,6 +101,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ShopPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mall"
+            element={
+              <ProtectedRoute>
+                <MallPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mall/admin"
+            element={
+              <ProtectedRoute>
+                <MallAdminPage />
               </ProtectedRoute>
             }
           />

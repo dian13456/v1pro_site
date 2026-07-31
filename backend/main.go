@@ -999,6 +999,16 @@ func main() {
 	activityCron.Start()
 	defer activityCron.Stop()
 
+	mallRepo, err := service.NewMallRepo(filepath.Join("config"))
+	if err != nil {
+		log.Fatalf("init mall repo failed: %v", err)
+	}
+	defer mallRepo.Close()
+	mallService := service.NewMallService(mallRepo, jwtSecret)
+	if err := mallService.EnsureSeed(); err != nil {
+		log.Printf("warn: init mall seed products failed: %v", err)
+	}
+
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
 	imagePublicBase := strings.TrimSpace(os.Getenv("IMAGE_COS_PUBLIC_BASE"))
@@ -3264,6 +3274,12 @@ func main() {
 		tokenTTL:             tokenTTL,
 		activityTokenLimiter: activityTokenRateLimiter,
 		activityIPLimiter:    activityIPRateLimiter,
+	})
+	registerMallRoutes(router, mallRouteDeps{
+		mallService:      mallService,
+		reviewAdminToken: reviewAdminToken,
+		jwtSecret:        jwtSecret,
+		tokenTTL:         tokenTTL,
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {
