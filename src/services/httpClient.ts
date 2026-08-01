@@ -35,6 +35,9 @@ export function formatClientError(err: unknown, fallback = "操作失败"): stri
     ) {
       return "网络请求失败，请检查连接后重试";
     }
+    if (message.includes("API 签名已过期")) {
+      return "请求签名已过期，请检查电脑/手机系统时间是否准确（建议开启自动校时），然后按 Ctrl+F5 刷新页面重试";
+    }
     return message;
   }
   return fallback;
@@ -859,7 +862,7 @@ async function performApiFetch<T extends JsonValue>(
       const mocked = createDevMockResponse(path, init);
       if (mocked) return mocked as T;
     }
-    throw new Error(message);
+    throw new Error(formatClientError(new Error(message), message));
   }
 
   return (payload || {}) as T;

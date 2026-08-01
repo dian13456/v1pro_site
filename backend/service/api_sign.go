@@ -190,7 +190,7 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 		}
 		now := time.Now().Unix()
 		if delta := now - ts; delta > int64(v.maxSkew.Seconds()) || delta < -int64(v.maxSkew.Seconds()) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API 签名已过期"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API 签名已过期，请校准设备系统时间后重试"})
 			return
 		}
 
