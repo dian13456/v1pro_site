@@ -66,12 +66,12 @@ export default function ActivityPromoPage() {
 
   const handleSubmit = async () => {
     if (!selectedCampaign || submitting || locked) return;
-    if (!orderNo.trim()) {
-      setErrorMessage("请填写订单号");
-      return;
-    }
     if (!orderScreenshotUrl.trim()) {
       setErrorMessage("请上传订单截图");
+      return;
+    }
+    if (selectedCampaign !== "cnc-repurchase-bonus" && !orderNo.trim()) {
+      setErrorMessage("请填写订单号");
       return;
     }
     if (selectedCampaign === "cnc-repurchase-bonus") {
@@ -182,7 +182,9 @@ export default function ActivityPromoPage() {
                   >
                     <p className="font-semibold text-slate-900 dark:text-slate-100">{campaign.title}</p>
                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{campaign.summary}</p>
-                    <p className="mt-2 text-sm leading-7 text-slate-700 dark:text-slate-300">{campaign.description}</p>
+                    <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">
+                      {campaign.description}
+                    </p>
                   </button>
                 );
               })}
@@ -193,16 +195,28 @@ export default function ActivityPromoPage() {
             <SitePanel>
               <SiteSectionTitle
                 title={`填写资料 · ${selectedMeta.title}`}
-                description="请确保信息真实有效，便于工作人员审核与发货/退款。"
+                description={
+                  selectedCampaign === "cnc-repurchase-bonus"
+                    ? "请填写 CNC 订单号（直购用户可留空并上传支付截图）、订单截图、颜色备注与收货地址。"
+                    : "请确保信息真实有效，便于工作人员审核与退款。"
+                }
               />
               <div className="mt-4 grid gap-4">
                 <SiteInput
-                  placeholder={selectedCampaign === "cnc-repurchase-bonus" ? "CNC 订单号" : "订单号"}
+                  placeholder={
+                    selectedCampaign === "cnc-repurchase-bonus"
+                      ? "CNC 订单号（直购用户可留空）"
+                      : "订单号"
+                  }
                   value={orderNo}
                   onChange={(e) => setOrderNo(e.target.value)}
                 />
                 <PromoImageUpload
-                  label="订单截图"
+                  label={
+                    selectedCampaign === "cnc-repurchase-bonus"
+                      ? "订单截图（直购用户请上传支付截图）"
+                      : "订单截图"
+                  }
                   imageUrl={orderScreenshotUrl}
                   onChange={setOrderScreenshotUrl}
                 />

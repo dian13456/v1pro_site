@@ -33,8 +33,9 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
         {
           id: "cnc-repurchase-bonus",
           title: "CNC用户复购加送注塑V1PRO",
-          summary: "复购 CNC 喵喵壳子，加送一个注塑 V1PRO。",
-          description: "提交 CNC 订单号、订单截图、注塑颜色备注与收货地址。",
+          summary: "原有 CNC 用户复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。",
+          description:
+            "活动说明：原有 CNC 用户，复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。\n\n资料填写：CNC 订单号（直购用户发支付截图）、订单截图、注塑 V1PRO 颜色备注和收货地址。审核通过后安排加送发货。",
           choiceGroup: "promo-choice-2026-spring",
           status: "active",
           startTime: now - 86400000,

@@ -96,8 +96,8 @@ func DefaultPromoCampaigns(now time.Time) []PromoCampaignDefinition {
 		{
 			ID:          PromoCampaignCNCRrepurchase,
 			Title:       "CNC用户复购加送注塑V1PRO",
-			Summary:     "复购 CNC 喵喵壳子，加送一个注塑 V1PRO。",
-			Description: "面向 CNC 壳子复购用户：提交 CNC 订单号、订单截图、注塑 V1PRO 颜色备注与收货地址，审核通过后安排加送发货。",
+			Summary:     "原有 CNC 用户复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。",
+			Description: "活动说明：原有 CNC 用户，复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。\n\n资料填写：CNC 订单号（直购用户发支付截图）、订单截图、注塑 V1PRO 颜色备注和收货地址。审核通过后安排加送发货。",
 			ChoiceGroup: PromoChoiceGroupSpring2026,
 			Status:      ActivityStatusActive,
 			StartTime:   start.UnixMilli(),

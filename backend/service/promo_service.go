@@ -61,11 +61,11 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 
 	orderNo := strings.TrimSpace(input.OrderNo)
 	orderScreenshot := strings.TrimSpace(input.OrderScreenshotURL)
-	if orderNo == "" {
-		return PromoUserSubmissionView{}, errors.New("请填写订单号")
-	}
 	if orderScreenshot == "" {
 		return PromoUserSubmissionView{}, errors.New("请上传订单截图")
+	}
+	if orderNo == "" && campaign.ID != PromoCampaignCNCRrepurchase {
+		return PromoUserSubmissionView{}, errors.New("请填写订单号")
 	}
 
 	item := PromoSubmission{
