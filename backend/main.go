@@ -495,7 +495,7 @@ func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 		case origin == "" && wildcard:
 			c.Header("Access-Control-Allow-Origin", "*")
 		}
-		c.Header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token, X-Api-Timestamp, X-Api-Nonce, X-Api-Signature")
 		c.Header("Access-Control-Allow-Credentials", "false")
 		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
