@@ -72,6 +72,8 @@ export default function ActivityLotteryPage() {
     return () => window.clearInterval(timer);
   }, [activity?.nextDrawAt]);
 
+  const registrationOpen = activity?.registrationOpen !== false;
+
   const handleJoin = async () => {
     if (!activity || submitting) return;
     setSubmitting(true);
@@ -101,7 +103,7 @@ export default function ActivityLotteryPage() {
 
   return (
     <SitePageLayout
-      subtitle="抽奖活动 · SN 码参与，每日自动开奖"
+      subtitle="抽奖活动 · 每天 0:00 报名刷新，15:00 开奖"
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
@@ -111,7 +113,7 @@ export default function ActivityLotteryPage() {
           <p className="text-xs uppercase tracking-[0.28em] text-white/80">V1PRO Lottery</p>
           <h1 className="mt-2 text-2xl font-semibold md:text-3xl">{activity?.title || "设备用户专属抽奖活动"}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">
-            {activity?.description || "购买设备即可使用 SN 码参与"} · 每天 {activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "20:00"} 自动开奖
+            {activity?.description || "购买设备即可使用 SN 码参与"} · 每天 0:00 报名刷新 · 每天 {activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "15:00"} 开奖
           </p>
         </div>
         <div className="grid gap-4 p-6 md:grid-cols-3">
@@ -130,7 +132,15 @@ export default function ActivityLotteryPage() {
           <div className="rounded-2xl border border-white/25 bg-white/55 p-4 text-center dark:border-white/10 dark:bg-slate-900/45">
             <p className="text-xs text-slate-500 dark:text-slate-400">我的状态</p>
             <p className="mt-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-              {loading ? "—" : activity?.isWinner ? "已中奖" : activity?.hasJoined ? "已报名" : "未报名"}
+              {loading
+                ? "—"
+                : activity?.isWinner
+                  ? "已中奖"
+                  : activity?.hasJoined
+                    ? "已报名"
+                    : !registrationOpen
+                      ? "报名已截止"
+                      : "未报名"}
             </p>
           </div>
         </div>
@@ -154,25 +164,35 @@ export default function ActivityLotteryPage() {
             </SiteAlert>
           ) : null}
 
+          {!registrationOpen && activity.registrationMessage ? (
+            <SiteAlert variant="info">{activity.registrationMessage}</SiteAlert>
+          ) : null}
+
           <SitePanel>
             <SiteSectionTitle
               title="SN 码报名"
-              description="输入设备 SN 编号参与本期抽奖。每个 SN 每 24 小时仅可参与一次。"
+              description="每天 0:00 起可报名当日抽奖，15:00 截止报名并开奖。每个 SN 每天仅可参与一次。"
             />
             <div className="mt-4 space-y-3">
               <SiteInput
                 value={sn}
                 onChange={(e) => setSn(e.target.value)}
                 placeholder="请输入设备 SN 编号"
-                disabled={activity.hasJoined || submitting}
+                disabled={activity.hasJoined || submitting || !registrationOpen}
               />
               <SiteButton
                 type="button"
-                disabled={!sn.trim() || activity.hasJoined || submitting}
+                disabled={!sn.trim() || activity.hasJoined || submitting || !registrationOpen}
                 onClick={() => void handleJoin()}
                 className="w-full sm:w-auto"
               >
-                {activity.hasJoined ? "今日已报名" : submitting ? "提交中…" : "立即报名"}
+                {!registrationOpen
+                  ? "今日报名已截止"
+                  : activity.hasJoined
+                    ? "今日已报名"
+                    : submitting
+                      ? "提交中…"
+                      : "立即报名"}
               </SiteButton>
               {activity.hasJoined && activity.joinedSn ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">已报名 SN：{activity.joinedSn}</p>

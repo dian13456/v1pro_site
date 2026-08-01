@@ -54,6 +54,16 @@ func (c *ActivityCron) tick(now time.Time) {
 	if !ok {
 		return
 	}
+
+	if now.Hour() == 0 && now.Minute() == 0 {
+		removed, resetErr := c.service.ResetDailyJoins(activity.ID, now)
+		if resetErr != nil {
+			log.Printf("[activity-cron] reset joins failed activity=%s err=%v", activity.ID, resetErr)
+		} else if removed > 0 {
+			log.Printf("[activity-cron] reset joins activity=%s period=%s removed=%d", activity.ID, DrawPeriodKey(now), removed)
+		}
+	}
+
 	if now.Hour() != activity.DrawHour || now.Minute() != activity.DrawMinute {
 		return
 	}

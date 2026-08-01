@@ -26,6 +26,7 @@ const (
 	JoinErrorSNFormat       = "SN格式错误"
 	JoinErrorActivityEnded  = "活动已结束"
 	JoinErrorActivityNotYet = "活动尚未开始"
+	JoinErrorRegistrationClosed = "今日报名已截止，请明日 0:00 后再参与"
 )
 
 type Activity struct {
@@ -138,9 +139,11 @@ type ActivityAdminUpsertInput struct {
 
 type ActivityPublicView struct {
 	Activity
-	ParticipantCount int64 `json:"participantCount"`
-	NextDrawAt     int64 `json:"nextDrawAt"`
-	HasJoined      bool  `json:"hasJoined,omitempty"`
+	ParticipantCount    int64  `json:"participantCount"`
+	NextDrawAt          int64  `json:"nextDrawAt"`
+	RegistrationOpen    bool   `json:"registrationOpen"`
+	RegistrationMessage string `json:"registrationMessage,omitempty"`
+	HasJoined           bool   `json:"hasJoined,omitempty"`
 	JoinedSN       string `json:"joinedSn,omitempty"`
 	IsWinner       bool  `json:"isWinner,omitempty"`
 	WinnerID       string `json:"winnerId,omitempty"`
@@ -211,6 +214,15 @@ func DrawPeriodKey(t time.Time) string {
 	return t.Format("2006-01-02")
 }
 
+func LotteryDrawCutoff(activity Activity, now time.Time) time.Time {
+	loc := now.Location()
+	return time.Date(now.Year(), now.Month(), now.Day(), activity.DrawHour, activity.DrawMinute, 0, 0, loc)
+}
+
+func LotteryRegistrationOpen(activity Activity, now time.Time) bool {
+	return now.Before(LotteryDrawCutoff(activity, now))
+}
+
 func NextDrawTime(activity Activity, now time.Time) time.Time {
 	loc := now.Location()
 	candidate := time.Date(now.Year(), now.Month(), now.Day(), activity.DrawHour, activity.DrawMinute, 0, 0, loc)
@@ -226,13 +238,13 @@ func DefaultActivity() Activity {
 		ID:               "lottery-default",
 		Title:            "设备用户专属抽奖活动",
 		Description:      "购买设备即可使用 SN 码参与",
-		Rule:             "每24小时自动开奖一次；每个有效设备 SN 每24小时只能参与一次；一个 SN 只能获得一次中奖资格。",
+		Rule:             "每天 0:00 起开放报名，原报名信息清零；每天 15:00 自动开奖。每个 SN 每天仅能报名一次；一个 SN 只能获得一次中奖资格。",
 		StartTime:        now.Add(-24 * time.Hour).UnixMilli(),
 		EndTime:          now.Add(365 * 24 * time.Hour).UnixMilli(),
 		Status:           ActivityStatusActive,
 		PrizeTitle:       "V1PRO 限定周边礼包",
 		PrizeDescription: "含定制壳子、贴纸与品牌周边，具体以活动页展示为准。",
-		DrawHour:         20,
+		DrawHour:         15,
 		DrawMinute:       0,
 		WinnersPerDraw:   1,
 		ShippingDays:     7,

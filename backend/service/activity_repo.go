@@ -223,21 +223,47 @@ func (r *ActivityRepo) SaveActivity(activity Activity) error {
 }
 
 func (r *ActivityRepo) CountJoins(activityID string) (int64, error) {
+	return r.CountJoinsByPeriod(activityID, DrawPeriodKey(time.Now()))
+}
+
+func (r *ActivityRepo) CountJoinsByPeriod(activityID, period string) (int64, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()
 		defer cancel()
-		return r.mysql.countJoins(ctx, activityID)
+		return r.mysql.countJoinsByPeriod(ctx, activityID, period)
 	}
 	var count int64
 	err := r.withJSON(func(store *ActivityDataStore) error {
 		for _, join := range store.Joins {
-			if join.ActivityID == activityID {
+			if join.ActivityID == activityID && join.DrawPeriod == period {
 				count++
 			}
 		}
 		return nil
 	})
 	return count, err
+}
+
+func (r *ActivityRepo) ClearJoinsExceptPeriod(activityID, period string) (int64, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.clearJoinsExceptPeriod(ctx, activityID, period)
+	}
+	var removed int64
+	err := r.withJSON(func(store *ActivityDataStore) error {
+		kept := make([]ActivityJoin, 0, len(store.Joins))
+		for _, join := range store.Joins {
+			if join.ActivityID == activityID && join.DrawPeriod != period {
+				removed++
+				continue
+			}
+			kept = append(kept, join)
+		}
+		store.Joins = kept
+		return nil
+	})
+	return removed, err
 }
 
 func (r *ActivityRepo) HasJoinInPeriod(activityID, sn, period string) (bool, error) {

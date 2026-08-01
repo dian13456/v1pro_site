@@ -15,6 +15,8 @@ export interface LotteryActivity {
   shippingDays: number;
   participantCount: number;
   nextDrawAt: number;
+  registrationOpen?: boolean;
+  registrationMessage?: string;
   hasJoined?: boolean;
   joinedSn?: string;
   isWinner?: boolean;

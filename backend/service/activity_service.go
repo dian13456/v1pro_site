@@ -54,9 +54,14 @@ func (s *ActivityService) buildPublicView(activity Activity, userSerial string) 
 	}
 	now := time.Now()
 	view := ActivityPublicView{
-		Activity:         activity,
-		ParticipantCount: count,
-		NextDrawAt:       NextDrawTime(activity, now).UnixMilli(),
+		Activity:            activity,
+		ParticipantCount:    count,
+		NextDrawAt:          NextDrawTime(activity, now).UnixMilli(),
+		RegistrationOpen:    LotteryRegistrationOpen(activity, now),
+		RegistrationMessage: "",
+	}
+	if !view.RegistrationOpen {
+		view.RegistrationMessage = JoinErrorRegistrationClosed
 	}
 	if userSerial == "" {
 		return view, nil
@@ -120,10 +125,20 @@ func (s *ActivityService) Join(input JoinActivityInput) (JoinActivityResult, err
 	if activity.Status != ActivityStatusActive {
 		return JoinActivityResult{}, errors.New(JoinErrorActivityEnded)
 	}
+	if !LotteryRegistrationOpen(activity, now) {
+		return JoinActivityResult{}, errors.New(JoinErrorRegistrationClosed)
+	}
+	period := DrawPeriodKey(now)
+	drawn, err := s.repo.HasDrawnPeriod(activity.ID, period)
+	if err != nil {
+		return JoinActivityResult{}, err
+	}
+	if drawn {
+		return JoinActivityResult{}, errors.New(JoinErrorRegistrationClosed)
+	}
 	if !s.isKnownDevice(sn, input.UserSerial) {
 		return JoinActivityResult{}, errors.New(JoinErrorSNNotFound)
 	}
-	period := DrawPeriodKey(now)
 	has, err := s.repo.HasJoinInPeriod(activity.ID, sn, period)
 	if err != nil {
 		return JoinActivityResult{}, err
@@ -499,10 +514,44 @@ func (s *ActivityService) EnsureDefaultActivity() error {
 		return err
 	}
 	if ok {
-		return nil
+		return s.EnsureLotterySchedule()
 	}
 	activity := DefaultActivity()
+	if err := s.repo.SaveActivity(activity); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ActivityService) EnsureLotterySchedule() error {
+	activity, ok, err := s.repo.GetActiveActivity()
+	if err != nil || !ok {
+		return err
+	}
+	defaults := DefaultActivity()
+	changed := false
+	if activity.DrawHour != defaults.DrawHour {
+		activity.DrawHour = defaults.DrawHour
+		changed = true
+	}
+	if activity.DrawMinute != defaults.DrawMinute {
+		activity.DrawMinute = defaults.DrawMinute
+		changed = true
+	}
+	if strings.TrimSpace(activity.Rule) != defaults.Rule {
+		activity.Rule = defaults.Rule
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	activity.UpdatedAt = time.Now().UnixMilli()
 	return s.repo.SaveActivity(activity)
+}
+
+func (s *ActivityService) ResetDailyJoins(activityID string, now time.Time) (int64, error) {
+	period := DrawPeriodKey(now)
+	return s.repo.ClearJoinsExceptPeriod(activityID, period)
 }
 
 func (s *ActivityService) RegisterAuthenticatedDevice(serial, source string) error {

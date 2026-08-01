@@ -142,9 +142,22 @@ func (m *activityMySQLStore) saveActivity(ctx context.Context, activity Activity
 }
 
 func (m *activityMySQLStore) countJoins(ctx context.Context, activityID string) (int64, error) {
+	return m.countJoinsByPeriod(ctx, activityID, DrawPeriodKey(time.Now()))
+}
+
+func (m *activityMySQLStore) countJoinsByPeriod(ctx context.Context, activityID, period string) (int64, error) {
 	var count int64
-	err := m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM activity_join WHERE activity_id = ?`, activityID).Scan(&count)
+	err := m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM activity_join WHERE activity_id = ? AND draw_period = ?`, activityID, period).Scan(&count)
 	return count, err
+}
+
+func (m *activityMySQLStore) clearJoinsExceptPeriod(ctx context.Context, activityID, period string) (int64, error) {
+	res, err := m.db.ExecContext(ctx, `DELETE FROM activity_join WHERE activity_id = ? AND draw_period <> ?`, activityID, period)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
 }
 
 func (m *activityMySQLStore) hasJoinInPeriod(ctx context.Context, activityID, sn, period string) (bool, error) {
