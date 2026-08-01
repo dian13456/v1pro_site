@@ -281,12 +281,29 @@ FROM mall_order WHERE id=?`, id)
 	return o, true, nil
 }
 
-func (s *mallMySQLStore) UpdateOrder(ctx context.Context, order MallOrder, restoreStock map[string]int) error {
+func (s *mallMySQLStore) UpdateOrder(ctx context.Context, order MallOrder, stockDelta map[string]int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	for pid, delta := range stockDelta {
+		if delta == 0 {
+			continue
+		}
+		res, err := tx.ExecContext(ctx,
+			`UPDATE mall_product SET stock=stock+?, updated_at=? WHERE id=? AND stock+?>=0`,
+			delta, time.Now().UnixMilli(), pid, delta,
+		)
+		if err != nil {
+			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return fmt.Errorf("商品库存不足或不存在：%s", pid)
+		}
+	}
 
 	itemsJSON, err := json.Marshal(order.Items)
 	if err != nil {
@@ -304,14 +321,6 @@ UPDATE mall_order SET status=?, items_json=?, total_cents=?, tracking_no=?, rema
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
 		return errors.New("订单不存在")
-	}
-	for pid, delta := range restoreStock {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE mall_product SET stock=stock+?, updated_at=? WHERE id=?`,
-			delta, time.Now().UnixMilli(), pid,
-		); err != nil {
-			return err
-		}
 	}
 	return tx.Commit()
 }

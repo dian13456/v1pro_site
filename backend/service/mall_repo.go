@@ -301,13 +301,13 @@ func (r *MallRepo) GetOrder(id string) (MallOrder, bool, error) {
 	return MallOrder{}, false, nil
 }
 
-func (r *MallRepo) UpdateOrder(order MallOrder, restoreStock map[string]int) error {
+func (r *MallRepo) UpdateOrder(order MallOrder, stockDelta map[string]int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()
 		defer cancel()
-		return r.mysql.UpdateOrder(ctx, order, restoreStock)
+		return r.mysql.UpdateOrder(ctx, order, stockDelta)
 	}
 	if err := r.loadJSONLocked(); err != nil {
 		return err
@@ -323,13 +323,26 @@ func (r *MallRepo) UpdateOrder(order MallOrder, restoreStock map[string]int) err
 	if !found {
 		return errors.New("订单不存在")
 	}
-	for pid, delta := range restoreStock {
+	for pid, delta := range stockDelta {
+		if delta == 0 {
+			continue
+		}
+		productFound := false
 		for i, p := range r.cache.Products {
-			if p.ID == pid {
-				r.cache.Products[i].Stock += delta
-				r.cache.Products[i].UpdatedAt = time.Now().UnixMilli()
-				break
+			if p.ID != pid {
+				continue
 			}
+			next := p.Stock + delta
+			if next < 0 {
+				return fmt.Errorf("商品「%s」库存不足", p.Title)
+			}
+			r.cache.Products[i].Stock = next
+			r.cache.Products[i].UpdatedAt = time.Now().UnixMilli()
+			productFound = true
+			break
+		}
+		if !productFound {
+			return fmt.Errorf("商品不存在：%s", pid)
 		}
 	}
 	return r.saveJSONLocked()

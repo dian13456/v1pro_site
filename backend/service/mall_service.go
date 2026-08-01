@@ -134,7 +134,6 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	}
 
 	resolved := make([]MallOrderItem, 0, len(merged))
-	stockDelta := map[string]int{}
 	var total int64
 	for pid, qty := range merged {
 		product, ok, err := s.repo.GetProduct(pid)
@@ -156,7 +155,6 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 		}
 		resolved = append(resolved, line)
 		total += product.PriceCents * int64(qty)
-		stockDelta[pid] = -qty
 	}
 
 	nameEnc, err := EncryptActivityField(s.secret, name)
@@ -198,7 +196,7 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	if err := s.repo.CreateOrder(order, stockDelta); err != nil {
+	if err := s.repo.CreateOrder(order, nil); err != nil {
 		return MallOrderPublic{}, err
 	}
 	return toPublicOrder(order), nil
@@ -286,26 +284,49 @@ func (s *MallService) UpdateOrderStatus(orderID, status, trackingNo string) (Mal
 	status = strings.TrimSpace(status)
 	trackingNo = strings.TrimSpace(trackingNo)
 	now := time.Now().UnixMilli()
-	restore := map[string]int{}
+	prevStatus := order.Status
+	stockDelta := map[string]int{}
 
 	switch status {
 	case MallOrderPendingPay, MallOrderPaid, MallOrderShipped, MallOrderCancelled:
 	default:
 		return MallOrderPublic{}, errors.New("订单状态无效")
 	}
-	if order.Status == MallOrderCancelled && status != MallOrderCancelled {
+	if prevStatus == MallOrderCancelled && status != MallOrderCancelled {
 		return MallOrderPublic{}, errors.New("已取消订单不可再改状态")
 	}
-	if status == MallOrderCancelled && order.Status != MallOrderCancelled {
+	if status == MallOrderCancelled && prevStatus != MallOrderCancelled {
+		if prevStatus == MallOrderPaid || prevStatus == MallOrderShipped {
+			for _, item := range order.Items {
+				stockDelta[item.ProductID] += item.Quantity
+			}
+		}
+	}
+	if (status == MallOrderPaid || status == MallOrderShipped) && prevStatus == MallOrderPendingPay {
 		for _, item := range order.Items {
-			restore[item.ProductID] += item.Quantity
+			stockDelta[item.ProductID] -= item.Quantity
+		}
+		for pid, delta := range stockDelta {
+			if delta >= 0 {
+				continue
+			}
+			product, found, err := s.repo.GetProduct(pid)
+			if err != nil {
+				return MallOrderPublic{}, err
+			}
+			if !found {
+				return MallOrderPublic{}, fmt.Errorf("商品不存在：%s", pid)
+			}
+			if product.Stock < -delta {
+				return MallOrderPublic{}, fmt.Errorf("「%s」库存不足（剩余 %d）", product.Title, product.Stock)
+			}
 		}
 	}
 	if status == MallOrderPaid && order.PaidAt <= 0 {
 		order.PaidAt = now
 	}
 	if status == MallOrderShipped {
-		if order.Status != MallOrderPaid && order.Status != MallOrderShipped {
+		if prevStatus != MallOrderPaid && prevStatus != MallOrderShipped && prevStatus != MallOrderPendingPay {
 			return MallOrderPublic{}, errors.New("请先确认收款，再标记发货")
 		}
 		if trackingNo == "" && order.TrackingNo == "" {
@@ -323,7 +344,7 @@ func (s *MallService) UpdateOrderStatus(orderID, status, trackingNo string) (Mal
 		order.TrackingNo = trackingNo
 	}
 	order.UpdatedAt = now
-	if err := s.repo.UpdateOrder(order, restore); err != nil {
+	if err := s.repo.UpdateOrder(order, stockDelta); err != nil {
 		return MallOrderPublic{}, err
 	}
 	return toPublicOrder(order), nil
