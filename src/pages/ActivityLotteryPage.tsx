@@ -103,7 +103,7 @@ export default function ActivityLotteryPage() {
 
   return (
     <SitePageLayout
-      subtitle="抽奖活动 · 每天 0:00 报名刷新，15:00 开奖"
+      subtitle="抽奖活动 · 每天 0:00 报名刷新，晚上 7:00 开奖"
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
@@ -113,7 +113,7 @@ export default function ActivityLotteryPage() {
           <p className="text-xs uppercase tracking-[0.28em] text-white/80">V1PRO Lottery</p>
           <h1 className="mt-2 text-2xl font-semibold md:text-3xl">{activity?.title || "设备用户专属抽奖活动"}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">
-            {activity?.description || "购买设备即可使用 SN 码参与"} · 每天 0:00 报名刷新 · 每天 {activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "15:00"} 开奖
+            {activity?.description || "购买设备即可使用 SN 码参与"} · 每天 0:00 报名刷新 · 每天 {activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "19:00"} 开奖
           </p>
         </div>
         <div className="grid gap-4 p-6 md:grid-cols-3">
@@ -171,7 +171,7 @@ export default function ActivityLotteryPage() {
           <SitePanel>
             <SiteSectionTitle
               title="SN 码报名"
-              description="每天 0:00 起可报名当日抽奖，15:00 截止报名并开奖。每个 SN 每天仅可参与一次。"
+              description="每天 0:00 起可报名当日抽奖，晚上 7:00 截止报名并开奖。每个 SN 每天仅可参与一次。"
             />
             <div className="mt-4 space-y-3">
               <SiteInput
