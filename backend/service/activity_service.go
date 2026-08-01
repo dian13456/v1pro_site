@@ -515,6 +515,35 @@ func (s *ActivityService) RepoListWinners(activityID string) ([]Winner, error) {
 	return s.repo.ListWinners(activityID)
 }
 
+func (s *ActivityService) ListPublicWinners(activityID string) (PublicWinnersView, error) {
+	activity, ok, err := s.resolveActivity(activityID)
+	if err != nil {
+		return PublicWinnersView{}, err
+	}
+	if !ok {
+		return PublicWinnersView{}, errors.New("活动不存在")
+	}
+	winners, err := s.repo.ListWinners(activity.ID)
+	if err != nil {
+		return PublicWinnersView{}, err
+	}
+	records := make([]WinnerPublicRecord, 0, len(winners))
+	for _, winner := range winners {
+		records = append(records, WinnerPublicRecord{
+			DrawPeriod: winner.DrawPeriod,
+			SNMasked:   MaskSNForPublic(winner.SN),
+			PrizeTitle: activity.PrizeTitle,
+			WinnerTime: winner.WinnerTime,
+		})
+	}
+	return PublicWinnersView{
+		ActivityID:    activity.ID,
+		ActivityTitle: activity.Title,
+		PrizeTitle:    activity.PrizeTitle,
+		Winners:       records,
+	}, nil
+}
+
 func (s *ActivityService) RepoUpdateWinnerShipping(winnerID, status string) error {
 	return s.repo.UpdateWinnerShipping(winnerID, status)
 }

@@ -147,6 +147,20 @@ type ActivityPublicView struct {
 	ContactStatus  string `json:"contactStatus,omitempty"`
 }
 
+type WinnerPublicRecord struct {
+	DrawPeriod string `json:"drawPeriod"`
+	SNMasked   string `json:"snMasked"`
+	PrizeTitle string `json:"prizeTitle"`
+	WinnerTime int64  `json:"winnerTime"`
+}
+
+type PublicWinnersView struct {
+	ActivityID    string               `json:"activityId"`
+	ActivityTitle string               `json:"activityTitle"`
+	PrizeTitle    string               `json:"prizeTitle"`
+	Winners       []WinnerPublicRecord `json:"winners"`
+}
+
 func NormalizeSN(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -175,6 +189,21 @@ func ValidateSNFormat(sn string) bool {
 		}
 	}
 	return true
+}
+
+func MaskSNForPublic(sn string) string {
+	sn = NormalizeSN(sn)
+	if sn == "" {
+		return "***"
+	}
+	n := len(sn)
+	if n <= 4 {
+		return sn[:1] + "***"
+	}
+	if n <= 6 {
+		return sn[:2] + "***" + sn[n-1:]
+	}
+	return sn[:3] + "***" + sn[n-2:]
 }
 
 func DrawPeriodKey(t time.Time) string {

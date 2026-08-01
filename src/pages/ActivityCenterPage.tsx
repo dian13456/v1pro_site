@@ -71,9 +71,21 @@ function ActivityCard({ item }: { item: ActivityItem }) {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/25 pt-4 dark:border-white/10">
         <p className="text-xs text-slate-500 dark:text-slate-400">{formatActivityRange(item)}</p>
         {item.linkTo && item.linkLabel ? (
-          <Link to={item.linkTo}>
-            <SiteButton type="button">{item.linkLabel}</SiteButton>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to={item.linkTo}>
+              <SiteButton type="button">{item.linkLabel}</SiteButton>
+            </Link>
+            {item.id === "device-lottery" ? (
+              <Link to="/activities/winners">
+                <SiteButton
+                  type="button"
+                  className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600"
+                >
+                  中奖名单公示
+                </SiteButton>
+              </Link>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </SiteCard>
@@ -131,9 +143,19 @@ export default function ActivityCenterPage() {
             </div>
             <p className="text-sm leading-7 text-slate-700 dark:text-slate-300">{featured.body}</p>
             {featured.linkTo && featured.linkLabel ? (
-              <Link to={featured.linkTo}>
-                <SiteButton type="button">{featured.linkLabel}</SiteButton>
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                <Link to={featured.linkTo}>
+                  <SiteButton type="button">{featured.linkLabel}</SiteButton>
+                </Link>
+                <Link to="/activities/winners">
+                  <SiteButton
+                    type="button"
+                    className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600"
+                  >
+                    中奖名单公示
+                  </SiteButton>
+                </Link>
+              </div>
             ) : null}
           </div>
         </SitePanel>

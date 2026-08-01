@@ -6,6 +6,7 @@ import type {
   LotteryJoinResult,
   PrizeInfoStatus,
   PrizeInfoSubmitResult,
+  PublicWinnersView,
   WinnerContactInfo,
 } from "../types/activity";
 import { getAuthState, hasValidLocalAuth } from "./authService";
@@ -67,6 +68,29 @@ export async function joinLotteryActivity(sn: string, activityId?: string): Prom
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ sn, activityId }),
   });
+}
+
+export async function fetchPublicWinners(activityId?: string): Promise<PublicWinnersView> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  if (isStaticMode()) {
+    return {
+      activityId: "lottery-default",
+      activityTitle: "设备用户专属抽奖活动",
+      prizeTitle: "V1PRO 限定周边礼包",
+      winners: [],
+    };
+  }
+  const query = activityId ? `?activityId=${encodeURIComponent(activityId)}` : "";
+  const payload = await apiFetch<{ success: boolean; data: PublicWinnersView; message?: string }>(
+    `/api/activity/lottery/winners${query}`,
+    { method: "GET", headers: authHeaders() },
+  );
+  if (!payload.success || !payload.data) {
+    throw new Error(payload.message || "加载中奖名单失败");
+  }
+  return payload.data;
 }
 
 export async function fetchPrizeInfoStatus(): Promise<PrizeInfoStatus> {

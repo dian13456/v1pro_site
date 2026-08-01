@@ -73,6 +73,20 @@ export interface ActivityWinnerRecord {
   drawPeriod: string;
 }
 
+export interface PublicWinnerRecord {
+  drawPeriod: string;
+  snMasked: string;
+  prizeTitle: string;
+  winnerTime: number;
+}
+
+export interface PublicWinnersView {
+  activityId: string;
+  activityTitle: string;
+  prizeTitle: string;
+  winners: PublicWinnerRecord[];
+}
+
 export interface WinnerContactInfo {
   name: string;
   phone: string;

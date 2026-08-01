@@ -18,6 +18,7 @@ import ResourcesPage from "./pages/ResourcesPage.tsx";
 import ActivityCenterPage from "./pages/ActivityCenterPage.tsx";
 import ActivityLotteryPage from "./pages/ActivityLotteryPage.tsx";
 import ActivityPrizeInfoPage from "./pages/ActivityPrizeInfoPage.tsx";
+import ActivityWinnerListPage from "./pages/ActivityWinnerListPage.tsx";
 import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 
@@ -142,6 +143,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ActivityPrizeInfoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities/winners"
+            element={
+              <ProtectedRoute>
+                <ActivityWinnerListPage />
               </ProtectedRoute>
             }
           />

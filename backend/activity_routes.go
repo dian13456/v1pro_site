@@ -109,6 +109,21 @@ func registerActivityRoutes(router *gin.Engine, deps activityRouteDeps) {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": result.Message, "joinId": result.JoinID, "drawPeriod": result.DrawPeriod})
 	})
 
+	router.GET("/api/activity/lottery/winners", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		_, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		view, err := deps.activityService.ListPublicWinners(strings.TrimSpace(c.Query("activityId")))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
+	})
+
 	router.GET("/api/activity/lottery/prize-info", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)

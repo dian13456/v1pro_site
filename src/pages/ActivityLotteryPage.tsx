@@ -186,6 +186,9 @@ export default function ActivityLotteryPage() {
       {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
       <div className="flex flex-wrap gap-3">
+        <Link to="/activities/winners">
+          <SiteButton type="button">查看中奖名单公示</SiteButton>
+        </Link>
         <Link to="/activities">
           <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">
             返回活动中心
