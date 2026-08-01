@@ -141,6 +141,9 @@ func (v *APISignVerifier) shouldVerify(path string) bool {
 	if path == "/api/user-gif/upload" || path == "/api/user-video/upload" {
 		return false
 	}
+	if path == "/api/mall/image-data" {
+		return false
+	}
 	return true
 }
 

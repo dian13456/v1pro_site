@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { resolveMallImageUrl } from "../services/mallService";
+import { fetchMallImageBlobUrl } from "../services/mallService";
 
 interface MallProductImageProps {
   imageUrl?: string;
@@ -16,24 +16,48 @@ export function MallProductImage({
 }: MallProductImageProps) {
   const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl = "";
     setFailed(false);
     const raw = (imageUrl || "").trim();
     if (!raw) {
       setSrc("");
+      setLoading(false);
       return;
     }
 
-    void resolveMallImageUrl(raw, adminToken).then((resolved) => {
-      if (!cancelled) {
-        setSrc(resolved.trim());
-      }
-    });
+    setLoading(true);
+    void fetchMallImageBlobUrl(raw, adminToken)
+      .then((resolved) => {
+        if (cancelled) {
+          if (resolved.startsWith("blob:")) {
+            URL.revokeObjectURL(resolved);
+          }
+          return;
+        }
+        objectUrl = resolved;
+        setSrc(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFailed(true);
+          setSrc("");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
+      if (objectUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
   }, [imageUrl, adminToken]);
 
@@ -42,7 +66,7 @@ export function MallProductImage({
       <div
         className={`flex items-center justify-center rounded-xl border border-dashed border-white/30 bg-white/40 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-400 ${className}`}
       >
-        暂无商品图
+        {loading ? "加载中…" : "暂无商品图"}
       </div>
     );
   }

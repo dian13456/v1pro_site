@@ -3286,6 +3286,7 @@ func main() {
 		jwtSecret:        jwtSecret,
 		tokenTTL:         tokenTTL,
 		imageSigner:      imageSigner,
+		imageCOSBucket:   imageCOSBucket,
 		imagePublicBase:  imagePublicBase,
 		imageSignTTL:     imageSignTTL,
 	})

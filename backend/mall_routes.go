@@ -52,6 +52,7 @@ type mallRouteDeps struct {
 	jwtSecret        string
 	tokenTTL         time.Duration
 	imageSigner      *service.COSSigner
+	imageCOSBucket   string
 	imagePublicBase  string
 	imageSignTTL     time.Duration
 }
@@ -68,7 +69,7 @@ func signMallProductsForResponse(c *gin.Context, deps mallRouteDeps, items []ser
 	out := make([]service.MallProduct, len(items))
 	copy(out, items)
 	for i := range out {
-		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &out[i])
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, deps.imageSignTTL, &out[i])
 	}
 	return out
 }
@@ -81,7 +82,7 @@ func signMallPublicProductsForResponse(c *gin.Context, deps mallRouteDeps, items
 			ImageURL:  out[i].ImageURL,
 			ImageURLs: out[i].ImageURLs,
 		}
-		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &product)
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, deps.imageSignTTL, &product)
 		out[i].ImageURL = product.ImageURL
 		out[i].ImageURLs = product.ImageURLs
 	}
@@ -202,7 +203,7 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
 		}
-		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &product)
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, deps.imageSignTTL, &product)
 		c.JSON(http.StatusOK, gin.H{"success": true, "product": product})
 	})
 
@@ -275,7 +276,7 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 		}
 		imageURL := strings.TrimRight(deps.imagePublicBase, "/") + "/" + objectKey
 		displayURL := imageURL
-		if signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, imageURL, deps.imageSignTTL); err == nil && signed != "" {
+		if signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, imageURL, deps.imageSignTTL); err == nil && signed != "" {
 			displayURL = signed
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "imageUrl": imageURL, "displayUrl": displayURL})
@@ -290,12 +291,37 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少图片地址"})
 			return
 		}
-		signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, rawURL, deps.imageSignTTL)
+		signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, rawURL, deps.imageSignTTL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "生成图片访问链接失败"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "url": signed})
+	})
+
+	router.GET("/api/mall/image-data", func(c *gin.Context) {
+		if !ensureMallImageAccess(c, deps) {
+			return
+		}
+		if deps.imageSigner == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "图片存储未配置"})
+			return
+		}
+		rawURL := strings.TrimSpace(c.Query("url"))
+		if rawURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少图片地址"})
+			return
+		}
+		data, contentType, err := service.LoadMallImageObject(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageCOSBucket, rawURL)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "读取商品图片失败"})
+			return
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		c.Header("Cache-Control", "private, max-age=300")
+		c.Data(http.StatusOK, contentType, data)
 	})
 
 	router.GET("/api/admin/mall/orders", func(c *gin.Context) {

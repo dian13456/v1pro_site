@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MallProductImage } from "./MallProductImage";
-import { resolveMallImageUrl } from "../services/mallService";
+import { fetchMallImageBlobUrl } from "../services/mallService";
 
 interface MallProductGalleryProps {
   imageUrls: string[];
@@ -35,13 +35,28 @@ export function MallProductGallery({
       return;
     }
     let cancelled = false;
-    void resolveMallImageUrl(active, adminToken).then((resolved) => {
-      if (!cancelled) {
-        setLightboxSrc(resolved.trim());
-      }
-    });
+    let objectUrl = "";
+    void fetchMallImageBlobUrl(active, adminToken)
+      .then((resolved) => {
+        if (cancelled) {
+          if (resolved.startsWith("blob:")) {
+            URL.revokeObjectURL(resolved);
+          }
+          return;
+        }
+        objectUrl = resolved;
+        setLightboxSrc(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLightboxSrc("");
+        }
+      });
     return () => {
       cancelled = true;
+      if (objectUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
   }, [lightboxOpen, active, adminToken]);
 

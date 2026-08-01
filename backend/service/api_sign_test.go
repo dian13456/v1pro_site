@@ -76,6 +76,23 @@ func TestAPISignMiddlewareAcceptsValidSignature(t *testing.T) {
 	}
 }
 
+func TestAPISignMiddlewareSkipsMallImageData(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)
+	r := gin.New()
+	r.Use(verifier.Middleware())
+	r.GET("/api/mall/image-data", func(c *gin.Context) {
+		c.Status(204)
+	})
+
+	req := httptest.NewRequest("GET", "/api/mall/image-data?url=https%3A%2F%2Fexample.com%2Fa.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 204 {
+		t.Fatalf("expected mall image-data without signature, got %d", rec.Code)
+	}
+}
+
 func TestAPISignMiddlewareSkipsAdminRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)

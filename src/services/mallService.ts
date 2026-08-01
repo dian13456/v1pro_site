@@ -2,6 +2,7 @@ import type { MallOrder, MallProduct, MallShippingInput } from "../types/mall";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
+import { withApiSignature } from "./apiSign";
 
 const CART_KEY = "jiadian_mall_cart_v1";
 
@@ -162,8 +163,19 @@ export async function adminUploadMallImage(adminToken: string, file: File): Prom
 }
 
 export async function resolveMallImageUrl(imageUrl: string, adminToken?: string): Promise<string> {
+  return fetchMallImageBlobUrl(imageUrl, adminToken);
+}
+
+export function isCosMallImageUrl(imageUrl: string): boolean {
+  return /\.cos\.[a-z0-9-]+\.myqcloud\.com\//i.test(imageUrl.trim());
+}
+
+export async function fetchMallImageBlobUrl(imageUrl: string, adminToken?: string): Promise<string> {
   const raw = imageUrl.trim();
   if (!raw || isStaticMode()) {
+    return raw;
+  }
+  if (!isCosMallImageUrl(raw)) {
     return raw;
   }
 
@@ -176,15 +188,22 @@ export async function resolveMallImageUrl(imageUrl: string, adminToken?: string)
     return raw;
   }
 
+  const path = `/api/mall/image-data?url=${encodeURIComponent(raw)}`;
+  const signedInit = await withApiSignature(path, { method: "GET", headers });
+  let response: Response;
   try {
-    const payload = await apiFetch<{ success: boolean; url?: string }>(
-      `/api/mall/image?url=${encodeURIComponent(raw)}`,
-      { method: "GET", headers },
-    );
-    return payload.url?.trim() || raw;
-  } catch {
-    return raw;
+    response = await fetch(`${API_BASE}${path}`, signedInit);
+  } catch (err) {
+    throw new Error(formatClientError(err, "读取商品图片失败"));
   }
+  if (!response.ok) {
+    throw new Error(`读取商品图片失败（HTTP ${response.status}）`);
+  }
+  const blob = await response.blob();
+  if (!blob.size) {
+    throw new Error("商品图片为空");
+  }
+  return URL.createObjectURL(blob);
 }
 
 export async function adminFetchMallOrders(adminToken: string): Promise<MallOrder[]> {

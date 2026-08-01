@@ -18,7 +18,7 @@ func TestMallImageObjectKey(t *testing.T) {
 }
 
 func TestSignMallImageURLIfOwnedExternalPassthrough(t *testing.T) {
-	got, err := SignMallImageURLIfOwned(context.Background(), nil, "https://bucket.cos.region.myqcloud.com", "https://cdn.example.com/a.jpg", 0)
+	got, err := SignMallImageURLIfOwned(context.Background(), nil, "https://bucket.cos.region.myqcloud.com", "bucket", "https://cdn.example.com/a.jpg", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
