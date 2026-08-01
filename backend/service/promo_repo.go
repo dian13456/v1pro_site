@@ -169,6 +169,30 @@ func (r *PromoRepo) CreateSubmission(item PromoSubmission) (PromoSubmission, err
 	return item, nil
 }
 
+func (r *PromoRepo) CountSubmissionsByCampaign(campaignID string) (int64, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return 0, nil
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.countSubmissionsByCampaign(ctx, campaignID)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.loadJSONLocked(); err != nil {
+		return 0, err
+	}
+	var count int64
+	for _, item := range r.cache.Submissions {
+		if item.CampaignID == campaignID {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (r *PromoRepo) ListSubmissions(campaignID, status string) ([]PromoSubmission, error) {
 	campaignID = strings.TrimSpace(campaignID)
 	status = strings.TrimSpace(status)

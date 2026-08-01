@@ -28,7 +28,7 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
     const now = Date.now();
     return {
       choiceGroup: "promo-choice-2026-spring",
-      rule: "以下两个活动只能二选一参与。",
+      rule: "以下两个活动只能二选一参与。各活动限 260 份，报满即止。",
       campaigns: [
         {
           id: "cnc-repurchase-bonus",
@@ -40,6 +40,9 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
           status: "active",
           startTime: now - 86400000,
           endTime: now + 86400000 * 120,
+          quotaLimit: 260,
+          submittedCount: 0,
+          quotaFull: false,
         },
         {
           id: "video-like-free-order",
@@ -50,6 +53,9 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
           status: "active",
           startTime: now - 86400000,
           endTime: now + 86400000 * 120,
+          quotaLimit: 260,
+          submittedCount: 0,
+          quotaFull: false,
         },
       ],
     };

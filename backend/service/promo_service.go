@@ -16,13 +16,29 @@ func NewPromoService(repo *PromoRepo, jwtSecret string) *PromoService {
 	return &PromoService{repo: repo, jwtSecret: jwtSecret}
 }
 
+func (s *PromoService) loadCampaignsWithStats(now time.Time) ([]PromoCampaignDefinition, error) {
+	campaigns := DefaultPromoCampaigns(now)
+	out := make([]PromoCampaignDefinition, 0, len(campaigns))
+	for _, campaign := range campaigns {
+		count, err := s.repo.CountSubmissionsByCampaign(campaign.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, PromoCampaignWithStats(campaign, count))
+	}
+	return out, nil
+}
+
 func (s *PromoService) GetOverview(userSerial string) (PromoOverview, error) {
 	now := time.Now()
-	campaigns := DefaultPromoCampaigns(now)
+	campaigns, err := s.loadCampaignsWithStats(now)
+	if err != nil {
+		return PromoOverview{}, err
+	}
 	choiceGroup := PromoChoiceGroupSpring2026
 	overview := PromoOverview{
 		ChoiceGroup: choiceGroup,
-		Rule:        "以下两个活动只能二选一参与，提交后不可更改或同时报名另一个活动。",
+		Rule:        "以下两个活动只能二选一参与，提交后不可更改或同时报名另一个活动。各活动限 260 份，报满即止。",
 		Campaigns:   campaigns,
 	}
 	existing, err := s.repo.FindByUserAndGroup(userSerial, choiceGroup)
@@ -57,6 +73,13 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 	}
 	if existing != nil {
 		return PromoUserSubmissionView{}, errors.New("你已参与本组活动，不可重复报名或改选另一活动")
+	}
+	count, err := s.repo.CountSubmissionsByCampaign(campaign.ID)
+	if err != nil {
+		return PromoUserSubmissionView{}, err
+	}
+	if count >= PromoCampaignQuotaLimit {
+		return PromoUserSubmissionView{}, errors.New("该活动报名人数已满（260份），请选择另一活动或稍后再试")
 	}
 
 	orderNo := strings.TrimSpace(input.OrderNo)

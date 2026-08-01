@@ -6,6 +6,7 @@ const (
 	PromoCampaignCNCRrepurchase      = "cnc-repurchase-bonus"
 	PromoCampaignVideoLikeFreeOrder    = "video-like-free-order"
 	PromoChoiceGroupSpring2026       = "promo-choice-2026-spring"
+	PromoCampaignQuotaLimit          = 260
 
 	PromoStatusPending  = "pending"
 	PromoStatusApproved = "approved"
@@ -19,8 +20,11 @@ type PromoCampaignDefinition struct {
 	Description string `json:"description"`
 	ChoiceGroup string `json:"choiceGroup"`
 	Status      string `json:"status"`
-	StartTime   int64  `json:"startTime"`
-	EndTime     int64  `json:"endTime"`
+	StartTime      int64  `json:"startTime"`
+	EndTime        int64  `json:"endTime"`
+	QuotaLimit     int    `json:"quotaLimit"`
+	SubmittedCount int    `json:"submittedCount"`
+	QuotaFull      bool   `json:"quotaFull"`
 }
 
 type PromoSubmission struct {
@@ -114,6 +118,16 @@ func DefaultPromoCampaigns(now time.Time) []PromoCampaignDefinition {
 			EndTime:     end.UnixMilli(),
 		},
 	}
+}
+
+func PromoCampaignWithStats(campaign PromoCampaignDefinition, submittedCount int64) PromoCampaignDefinition {
+	campaign.QuotaLimit = PromoCampaignQuotaLimit
+	if submittedCount < 0 {
+		submittedCount = 0
+	}
+	campaign.SubmittedCount = int(submittedCount)
+	campaign.QuotaFull = submittedCount >= PromoCampaignQuotaLimit
+	return campaign
 }
 
 func FindPromoCampaign(id string) (PromoCampaignDefinition, bool) {

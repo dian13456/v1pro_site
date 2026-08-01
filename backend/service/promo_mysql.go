@@ -115,6 +115,12 @@ INSERT INTO promo_submission (
 	return item, err
 }
 
+func (s *promoMySQLStore) countSubmissionsByCampaign(ctx context.Context, campaignID string) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM promo_submission WHERE campaign_id = ?`, campaignID).Scan(&count)
+	return count, err
+}
+
 func (s *promoMySQLStore) listSubmissions(ctx context.Context, campaignID, status string) ([]PromoSubmission, error) {
 	query := `
 SELECT id, campaign_id, choice_group, user_serial, order_no, order_screenshot_url,

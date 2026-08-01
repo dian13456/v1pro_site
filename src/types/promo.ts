@@ -11,6 +11,9 @@ export interface PromoCampaign {
   status: string;
   startTime: number;
   endTime: number;
+  quotaLimit: number;
+  submittedCount: number;
+  quotaFull: boolean;
 }
 
 export interface PromoUserSubmission {
@@ -52,6 +55,8 @@ export const PROMO_STATUS_LABEL: Record<PromoSubmissionStatus, string> = {
   approved: "已通过",
   rejected: "已拒绝",
 };
+
+export const PROMO_CAMPAIGN_QUOTA_LIMIT = 260;
 
 export const PROMO_CAMPAIGN_LABEL: Record<PromoCampaignId, string> = {
   "cnc-repurchase-bonus": "CNC复购加送注塑V1PRO",

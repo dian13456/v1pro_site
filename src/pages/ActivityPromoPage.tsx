@@ -53,8 +53,13 @@ export default function ActivityPromoPage() {
         setOverview(data);
         if (data.current?.campaignId) {
           setSelectedCampaign(data.current.campaignId);
-        } else if (data.campaigns[0]) {
-          setSelectedCampaign(data.campaigns[0].id);
+        } else {
+          const available = data.campaigns.find((item) => !item.quotaFull);
+          if (available) {
+            setSelectedCampaign(available.id);
+          } else if (data.campaigns[0]) {
+            setSelectedCampaign(data.campaigns[0].id);
+          }
         }
       } catch (err) {
         setErrorMessage((err as Error)?.message || "加载活动失败");
@@ -66,6 +71,10 @@ export default function ActivityPromoPage() {
 
   const handleSubmit = async () => {
     if (!selectedCampaign || submitting || locked) return;
+    if (selectedMeta?.quotaFull) {
+      setErrorMessage("该活动报名人数已满（260份），请选择另一活动");
+      return;
+    }
     if (!orderScreenshotUrl.trim()) {
       setErrorMessage("请上传订单截图");
       return;
@@ -162,10 +171,14 @@ export default function ActivityPromoPage() {
         </SitePanel>
       ) : null}
 
+      {!loading && overview && !overview.current && overview.campaigns.every((item) => item.quotaFull) ? (
+        <SiteAlert variant="info">两个活动报名人数均已满（各 260 份），报名已截止。</SiteAlert>
+      ) : null}
+
       {!loading && overview && !overview.current ? (
         <>
           <SitePanel>
-            <SiteSectionTitle title="选择参与的活动" description="请先选择你要报名的活动，再填写对应资料。" />
+            <SiteSectionTitle title="选择参与的活动" description="请先选择你要报名的活动，再填写对应资料。各活动限 260 份，报满即止。" />
             <div className="mt-4 grid gap-3">
               {overview.campaigns.map((campaign) => {
                 const active = selectedCampaign === campaign.id;
@@ -173,14 +186,33 @@ export default function ActivityPromoPage() {
                   <button
                     key={campaign.id}
                     type="button"
+                    disabled={campaign.quotaFull}
                     className={`rounded-2xl border p-4 text-left transition ${
-                      active
-                        ? "border-violet-500 bg-violet-50/80 dark:border-violet-400 dark:bg-violet-500/10"
-                        : "border-white/25 bg-white/40 hover:bg-white/60 dark:border-white/10 dark:bg-slate-950/30"
+                      campaign.quotaFull
+                        ? "cursor-not-allowed border-slate-200/80 bg-slate-100/70 opacity-75 dark:border-slate-600/40 dark:bg-slate-900/50"
+                        : active
+                          ? "border-violet-500 bg-violet-50/80 dark:border-violet-400 dark:bg-violet-500/10"
+                          : "border-white/25 bg-white/40 hover:bg-white/60 dark:border-white/10 dark:bg-slate-950/30"
                     }`}
-                    onClick={() => setSelectedCampaign(campaign.id)}
+                    onClick={() => {
+                      if (!campaign.quotaFull) {
+                        setSelectedCampaign(campaign.id);
+                      }
+                    }}
                   >
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">{campaign.title}</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">{campaign.title}</p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          campaign.quotaFull
+                            ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
+                            : "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200"
+                        }`}
+                      >
+                        已填报 {campaign.submittedCount} / {campaign.quotaLimit}
+                        {campaign.quotaFull ? " · 已满" : ""}
+                      </span>
+                    </div>
                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{campaign.summary}</p>
                     <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">
                       {campaign.description}
@@ -196,11 +228,18 @@ export default function ActivityPromoPage() {
               <SiteSectionTitle
                 title={`填写资料 · ${selectedMeta.title}`}
                 description={
-                  selectedCampaign === "cnc-repurchase-bonus"
-                    ? "请填写 CNC 订单号（直购用户可留空并上传支付截图）、订单截图、颜色备注与收货地址。"
-                    : "请确保信息真实有效，便于工作人员审核与退款。"
+                  selectedMeta.quotaFull
+                    ? "该活动报名人数已满（260份），请选择另一活动。"
+                    : selectedCampaign === "cnc-repurchase-bonus"
+                      ? "请填写 CNC 订单号（直购用户可留空并上传支付截图）、订单截图、颜色备注与收货地址。"
+                      : "请确保信息真实有效，便于工作人员审核与退款。"
                 }
               />
+              {selectedMeta.quotaFull ? (
+                <SiteAlert variant="info" className="mt-4">
+                  已填报 {selectedMeta.submittedCount} / {selectedMeta.quotaLimit} 份，该活动已截止报名。
+                </SiteAlert>
+              ) : (
               <div className="mt-4 grid gap-4">
                 <SiteInput
                   placeholder={
@@ -252,10 +291,15 @@ export default function ActivityPromoPage() {
                   </>
                 ) : null}
 
-                <SiteButton type="button" disabled={submitting} onClick={() => void handleSubmit()}>
+                <SiteButton
+                  type="button"
+                  disabled={submitting || selectedMeta.quotaFull}
+                  onClick={() => void handleSubmit()}
+                >
                   {submitting ? "提交中…" : "确认提交"}
                 </SiteButton>
               </div>
+              )}
             </SitePanel>
           ) : null}
         </>
