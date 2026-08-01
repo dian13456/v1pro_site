@@ -164,6 +164,43 @@ sort_order=VALUES(sort_order), updated_at=VALUES(updated_at)`,
 	return err
 }
 
+func (s *mallMySQLStore) HasPendingOrdersForProduct(ctx context.Context, productID string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT items_json FROM mall_order WHERE status=? LIMIT 500`, MallOrderPendingPay)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var itemsJSON string
+		if err := rows.Scan(&itemsJSON); err != nil {
+			return false, err
+		}
+		var items []MallOrderItem
+		if err := json.Unmarshal([]byte(itemsJSON), &items); err != nil {
+			continue
+		}
+		for _, item := range items {
+			if item.ProductID == productID {
+				return true, nil
+			}
+		}
+	}
+	return false, rows.Err()
+}
+
+func (s *mallMySQLStore) DeleteProduct(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM mall_product WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return errors.New("商品不存在")
+	}
+	return nil
+}
+
 func (s *mallMySQLStore) CreateOrder(ctx context.Context, order MallOrder, stockDelta map[string]int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

@@ -123,6 +123,19 @@ export async function adminSaveMallProduct(adminToken: string, product: Partial<
   return payload.product;
 }
 
+export async function adminDeleteMallProduct(adminToken: string, productId: string): Promise<void> {
+  const payload = await apiFetch<{ success: boolean; message?: string }>(
+    `/api/admin/mall/products/${encodeURIComponent(productId)}`,
+    {
+      method: "DELETE",
+      headers: adminHeaders(adminToken),
+    },
+  );
+  if (!payload.success) {
+    throw new Error(payload.message || "删除商品失败");
+  }
+}
+
 export async function adminUploadMallImage(adminToken: string, file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);

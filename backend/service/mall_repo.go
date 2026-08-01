@@ -193,6 +193,65 @@ func (r *MallRepo) UpsertProduct(product MallProduct) (MallProduct, error) {
 	return product, nil
 }
 
+func (r *MallRepo) HasPendingOrdersForProduct(productID string) (bool, error) {
+	productID = strings.TrimSpace(productID)
+	if productID == "" {
+		return false, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.HasPendingOrdersForProduct(ctx, productID)
+	}
+	if err := r.loadJSONLocked(); err != nil {
+		return false, err
+	}
+	for _, o := range r.cache.Orders {
+		if o.Status != MallOrderPendingPay {
+			continue
+		}
+		for _, item := range o.Items {
+			if item.ProductID == productID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (r *MallRepo) DeleteProduct(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("商品 ID 不能为空")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.DeleteProduct(ctx, id)
+	}
+	if err := r.loadJSONLocked(); err != nil {
+		return err
+	}
+	next := make([]MallProduct, 0, len(r.cache.Products))
+	found := false
+	for _, p := range r.cache.Products {
+		if p.ID == id {
+			found = true
+			continue
+		}
+		next = append(next, p)
+	}
+	if !found {
+		return errors.New("商品不存在")
+	}
+	r.cache.Products = next
+	return r.saveJSONLocked()
+}
+
 func (r *MallRepo) GetProduct(id string) (MallProduct, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -90,6 +90,28 @@ func (s *MallService) UpsertProduct(input MallProduct) (MallProduct, error) {
 	return product, nil
 }
 
+func (s *MallService) DeleteProduct(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("商品 ID 不能为空")
+	}
+	_, ok, err := s.repo.GetProduct(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("商品不存在")
+	}
+	hasPending, err := s.repo.HasPendingOrdersForProduct(id)
+	if err != nil {
+		return err
+	}
+	if hasPending {
+		return errors.New("该商品有待确认收款订单，无法删除。可先下架或处理完订单后再删")
+	}
+	return s.repo.DeleteProduct(id)
+}
+
 func toPublicOrder(o MallOrder) MallOrderPublic {
 	return MallOrderPublic{
 		ID: o.ID, Status: o.Status, Items: o.Items, TotalCents: o.TotalCents,

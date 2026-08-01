@@ -18,6 +18,7 @@ import { useAdminSession } from "../hooks/useAdminSession";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { getAdminToken } from "../services/adminAuthService";
 import {
+  adminDeleteMallProduct,
   adminFetchMallOrderContact,
   adminFetchMallOrders,
   adminFetchMallProducts,
@@ -95,6 +96,33 @@ export default function MallAdminPage() {
     setEditPriceYuan((product.priceCents / 100).toFixed(2));
     setEditStock(String(product.stock));
     setEditStatus(product.status || "on_sale");
+  };
+
+  const resetProductForm = () => {
+    setEditId("");
+    setEditTitle("");
+    setEditDesc("");
+    setEditImages([]);
+    setManualImageUrl("");
+    setEditPriceYuan("99");
+    setEditStock("10");
+    setEditStatus("on_sale");
+  };
+
+  const handleDeleteProduct = async (product: MallProduct) => {
+    if (!adminToken) return;
+    const confirmed = window.confirm(`确定删除商品「${product.title}」吗？\n已有订单记录不会受影响，但待确认收款的订单会阻止删除。`);
+    if (!confirmed) return;
+    try {
+      await adminDeleteMallProduct(adminToken, product.id);
+      if (editId === product.id) {
+        resetProductForm();
+      }
+      setNotice(`商品「${product.title}」已删除`);
+      await loadAll(adminToken);
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "删除商品失败");
+    }
   };
 
   const handleSaveProduct = async () => {
@@ -319,9 +347,12 @@ export default function MallAdminPage() {
         <div className="mt-3">
           <SiteTextarea placeholder="商品说明" rows={3} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
         </div>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
           <SiteButton type="button" onClick={() => void handleSaveProduct()}>
             保存商品
+          </SiteButton>
+          <SiteButton type="button" variant="secondary" onClick={resetProductForm}>
+            新建商品
           </SiteButton>
         </div>
         <ul className="mt-4 space-y-3 text-sm">
@@ -334,9 +365,14 @@ export default function MallAdminPage() {
                   {product.stock} · {product.status}
                 </span>
               </div>
-              <SiteButton type="button" variant="secondary" onClick={() => fillProduct(product)}>
-                编辑
-              </SiteButton>
+              <div className="flex flex-wrap gap-2">
+                <SiteButton type="button" variant="secondary" onClick={() => fillProduct(product)}>
+                  编辑
+                </SiteButton>
+                <SiteButton type="button" variant="secondary" onClick={() => void handleDeleteProduct(product)}>
+                  删除
+                </SiteButton>
+              </div>
             </li>
           ))}
         </ul>

@@ -206,6 +206,17 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 		c.JSON(http.StatusOK, gin.H{"success": true, "product": product})
 	})
 
+	router.DELETE("/api/admin/mall/products/:id", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, deps.reviewAdminToken) {
+			return
+		}
+		if err := deps.mallService.DeleteProduct(c.Param("id")); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "商品已删除"})
+	})
+
 	router.POST("/api/admin/mall/upload-image", func(c *gin.Context) {
 		if !ensureReviewAdmin(c, deps.reviewAdminToken) {
 			return
