@@ -914,7 +914,6 @@ func main() {
 	gifUploadSessionStore := service.NewGifUploadSessionStore()
 	videoUploadSessionStore := service.NewVideoUploadSessionStore()
 	reviewAdminToken := strings.TrimSpace(os.Getenv("REVIEW_ADMIN_TOKEN"))
-	adminPanelPassword := strings.TrimSpace(os.Getenv("ADMIN_PANEL_PASSWORD"))
 
 	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
 	if err != nil {
@@ -3268,7 +3267,7 @@ func main() {
 		})
 	})
 
-	registerAdminRoutes(router, reviewAdminToken, adminPanelPassword)
+	registerAdminRoutes(router, reviewAdminToken)
 	registerActivityRoutes(router, activityRouteDeps{
 		activityService:      activityService,
 		reviewAdminToken:     reviewAdminToken,
