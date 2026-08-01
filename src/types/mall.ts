@@ -61,6 +61,13 @@ export interface MallShippingInput {
   remark?: string;
 }
 
+export interface MallSavedAddress extends MallShippingInput {
+  id: string;
+  updatedAt: number;
+}
+
+export const MALL_MAX_SAVED_ADDRESSES = 5;
+
 export interface MallCartLine {
   productId: string;
   title: string;

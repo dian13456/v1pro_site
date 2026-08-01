@@ -136,11 +136,42 @@ export async function adminUploadMallImage(adminToken: string, file: File): Prom
   } catch (err) {
     throw new Error(formatClientError(err, "上传图片失败"));
   }
-  const payload = (await response.json()) as { success?: boolean; imageUrl?: string; message?: string };
+  const payload = (await response.json()) as {
+    success?: boolean;
+    imageUrl?: string;
+    displayUrl?: string;
+    message?: string;
+  };
   if (!response.ok || !payload.success || !payload.imageUrl) {
     throw new Error(payload.message || `上传失败（HTTP ${response.status})`);
   }
   return payload.imageUrl;
+}
+
+export async function resolveMallImageUrl(imageUrl: string, adminToken?: string): Promise<string> {
+  const raw = imageUrl.trim();
+  if (!raw || isStaticMode()) {
+    return raw;
+  }
+
+  const headers: Record<string, string> = {};
+  if (adminToken) {
+    headers["X-Review-Admin-Token"] = adminToken;
+  } else if (hasValidLocalAuth()) {
+    Object.assign(headers, authHeaders());
+  } else {
+    return raw;
+  }
+
+  try {
+    const payload = await apiFetch<{ success: boolean; url?: string }>(
+      `/api/mall/image?url=${encodeURIComponent(raw)}`,
+      { method: "GET", headers },
+    );
+    return payload.url?.trim() || raw;
+  } catch {
+    return raw;
+  }
 }
 
 export async function adminFetchMallOrders(adminToken: string): Promise<MallOrder[]> {

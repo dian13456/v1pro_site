@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import { MallProductGallery } from "../components/MallProductGallery";
@@ -24,8 +24,14 @@ import {
   loadMallCart,
   saveMallCart,
 } from "../services/mallService";
-import type { MallOrder, MallProduct } from "../types/mall";
-import { formatMallPrice, getProductImages, MALL_ORDER_STATUS_LABEL } from "../types/mall";
+import {
+  deleteMallAddress,
+  loadMallAddresses,
+  saveMallAddress,
+  toShippingInput,
+} from "../services/mallAddressBook";
+import type { MallOrder, MallProduct, MallSavedAddress } from "../types/mall";
+import { formatMallPrice, getProductImages, MALL_MAX_SAVED_ADDRESSES, MALL_ORDER_STATUS_LABEL } from "../types/mall";
 
 const PHONE_PATTERN = /^1\d{10}$/;
 const QQ_PATTERN = /^[1-9]\d{4,11}$/;
@@ -52,6 +58,21 @@ export default function MallPage() {
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [remark, setRemark] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<MallSavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const autoFilledAddressRef = useRef(false);
+
+  const applySavedAddress = (entry: MallSavedAddress) => {
+    const shipping = toShippingInput(entry);
+    setName(shipping.name);
+    setPhone(shipping.phone);
+    setWechat(shipping.wechat || "");
+    setQq(shipping.qq);
+    setProvince(shipping.province);
+    setCity(shipping.city);
+    setAddress(shipping.address);
+    setSelectedAddressId(entry.id);
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -79,6 +100,19 @@ export default function MallPage() {
     saveMallCart(cart);
   }, [cart]);
 
+  useEffect(() => {
+    if (tab !== "cart") {
+      autoFilledAddressRef.current = false;
+      return;
+    }
+    const addresses = loadMallAddresses();
+    setSavedAddresses(addresses);
+    if (!autoFilledAddressRef.current && addresses.length > 0) {
+      applySavedAddress(addresses[0]);
+      autoFilledAddressRef.current = true;
+    }
+  }, [tab]);
+
   const cartLines = useMemo(() => {
     return products
       .map((product) => {
@@ -102,6 +136,42 @@ export default function MallPage() {
       }
       return next;
     });
+  };
+
+  const handleSaveAddress = () => {
+    if (!name.trim() || !phone.trim() || !qq.trim() || !province.trim() || !city.trim() || !address.trim()) {
+      setErrorMessage("请先完整填写收货信息再保存");
+      return;
+    }
+    if (!PHONE_PATTERN.test(phone.trim())) {
+      setErrorMessage("手机号格式不正确");
+      return;
+    }
+    if (!QQ_PATTERN.test(qq.trim())) {
+      setErrorMessage("QQ 号格式不正确");
+      return;
+    }
+    try {
+      const result = saveMallAddress(
+        { name, phone, wechat, qq, province, city, address },
+        selectedAddressId || undefined,
+      );
+      setSavedAddresses(result.addresses);
+      setSelectedAddressId(result.address.id);
+      setNotice(`地址已保存（${result.addresses.length}/${MALL_MAX_SAVED_ADDRESSES}）`);
+      setErrorMessage("");
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "保存地址失败");
+    }
+  };
+
+  const handleDeleteAddress = (id: string) => {
+    const next = deleteMallAddress(id);
+    setSavedAddresses(next);
+    if (selectedAddressId === id) {
+      setSelectedAddressId("");
+    }
+    setNotice(`地址已删除（${next.length}/${MALL_MAX_SAVED_ADDRESSES}）`);
   };
 
   const handleCheckout = async () => {
@@ -130,6 +200,16 @@ export default function MallPage() {
         cartLines.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
         { name, phone, wechat, qq, province, city, address, remark },
       );
+      try {
+        const saved = saveMallAddress(
+          { name, phone, wechat, qq, province, city, address },
+          selectedAddressId || undefined,
+        );
+        setSavedAddresses(saved.addresses);
+        setSelectedAddressId(saved.address.id);
+      } catch {
+        // 下单成功优先；地址簿已满时不阻断订单
+      }
       clearMallCart();
       setCart({});
       setNotice(
@@ -260,17 +340,68 @@ export default function MallPage() {
           )}
 
           <SitePanel>
-            <SiteSectionTitle title="收货信息" description="姓名、手机、QQ、省市与详细地址必填。" />
+            <SiteSectionTitle
+              title="收货信息"
+              description={`姓名、手机、QQ、省市与详细地址必填。可保存常用地址，最多 ${MALL_MAX_SAVED_ADDRESSES} 条。`}
+              action={
+                <SiteButton type="button" variant="secondary" onClick={handleSaveAddress}>
+                  保存当前地址
+                </SiteButton>
+              }
+            />
+
+            {savedAddresses.length > 0 ? (
+              <div className="mb-4 space-y-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  已保存地址 {savedAddresses.length}/{MALL_MAX_SAVED_ADDRESSES}，点击可快速填入
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {savedAddresses.map((entry) => {
+                    const active = entry.id === selectedAddressId;
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`rounded-xl border p-3 text-sm transition ${
+                          active
+                            ? "border-violet-500 bg-violet-50/80 dark:border-violet-400 dark:bg-violet-950/30"
+                            : "border-white/30 bg-white/50 dark:border-white/10 dark:bg-slate-950/30"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className="w-full text-left"
+                          onClick={() => applySavedAddress(entry)}
+                        >
+                          <div className="font-medium text-slate-800 dark:text-slate-100">
+                            {entry.name} · {entry.phone}
+                          </div>
+                          <div className="mt-1 text-slate-600 dark:text-slate-300">
+                            {entry.province} {entry.city}
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-slate-500 dark:text-slate-400">{entry.address}</div>
+                        </button>
+                        <div className="mt-2 flex justify-end">
+                          <SiteButton type="button" variant="secondary" onClick={() => handleDeleteAddress(entry.id)}>
+                            删除
+                          </SiteButton>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid gap-3 sm:grid-cols-2">
-              <SiteInput placeholder="收件人" value={name} onChange={(e) => setName(e.target.value)} />
-              <SiteInput placeholder="手机号" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <SiteInput placeholder="QQ" value={qq} onChange={(e) => setQq(e.target.value)} />
-              <SiteInput placeholder="微信（可选）" value={wechat} onChange={(e) => setWechat(e.target.value)} />
-              <SiteInput placeholder="省" value={province} onChange={(e) => setProvince(e.target.value)} />
-              <SiteInput placeholder="市" value={city} onChange={(e) => setCity(e.target.value)} />
+              <SiteInput placeholder="收件人" value={name} onChange={(e) => { setName(e.target.value); setSelectedAddressId(""); }} />
+              <SiteInput placeholder="手机号" value={phone} onChange={(e) => { setPhone(e.target.value); setSelectedAddressId(""); }} />
+              <SiteInput placeholder="QQ" value={qq} onChange={(e) => { setQq(e.target.value); setSelectedAddressId(""); }} />
+              <SiteInput placeholder="微信（可选）" value={wechat} onChange={(e) => { setWechat(e.target.value); setSelectedAddressId(""); }} />
+              <SiteInput placeholder="省" value={province} onChange={(e) => { setProvince(e.target.value); setSelectedAddressId(""); }} />
+              <SiteInput placeholder="市" value={city} onChange={(e) => { setCity(e.target.value); setSelectedAddressId(""); }} />
             </div>
             <div className="mt-3">
-              <SiteTextarea placeholder="详细地址" value={address} onChange={(e) => setAddress(e.target.value)} rows={3} />
+              <SiteTextarea placeholder="详细地址" value={address} onChange={(e) => { setAddress(e.target.value); setSelectedAddressId(""); }} rows={3} />
             </div>
             <div className="mt-3">
               <SiteTextarea placeholder="备注（可选）" value={remark} onChange={(e) => setRemark(e.target.value)} rows={2} />

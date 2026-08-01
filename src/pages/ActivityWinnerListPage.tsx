@@ -70,7 +70,7 @@ export default function ActivityWinnerListPage() {
       </SitePanel>
 
       <SiteAlert variant="info">
-        为保护隐私，公示名单仅展示脱敏后的设备 SN、开奖期次与中奖时间；姓名、手机号、收货地址等个人信息不会公开。
+        公示名单展示用户昵称、脱敏后的设备 SN、开奖期次与中奖时间；姓名、手机号、收货地址等个人信息不会公开。
       </SiteAlert>
 
       {loading ? <SiteLoadingBlock>加载中奖名单…</SiteLoadingBlock> : null}
@@ -93,6 +93,7 @@ export default function ActivityWinnerListPage() {
                 <thead className="bg-white/60 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-3 font-medium">开奖期次</th>
+                    <th className="px-4 py-3 font-medium">用户昵称</th>
                     <th className="px-4 py-3 font-medium">中奖 SN（脱敏）</th>
                     <th className="px-4 py-3 font-medium">奖品</th>
                     <th className="px-4 py-3 font-medium">中奖时间</th>
@@ -101,10 +102,11 @@ export default function ActivityWinnerListPage() {
                 <tbody className="divide-y divide-white/20 dark:divide-white/10">
                   {data.winners.map((winner, index) => (
                     <tr
-                      key={`${winner.drawPeriod}-${winner.snMasked}-${winner.winnerTime}-${index}`}
+                      key={`${winner.drawPeriod}-${winner.displayName}-${winner.snMasked}-${winner.winnerTime}-${index}`}
                       className="bg-white/40 dark:bg-slate-900/30"
                     >
                       <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{winner.drawPeriod}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{winner.displayName || "—"}</td>
                       <td className="px-4 py-3 font-mono text-violet-700 dark:text-violet-200">{winner.snMasked}</td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{winner.prizeTitle || data.prizeTitle}</td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatWinnerTime(winner.winnerTime)}</td>

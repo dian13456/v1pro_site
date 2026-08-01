@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 func NormalizeMallProductImages(p *MallProduct) {
@@ -56,6 +58,55 @@ func EncodeMallImageURLs(urls []string) string {
 		return "[]"
 	}
 	return string(raw)
+}
+
+func MallImageObjectKey(publicBase, rawURL string) (string, bool) {
+	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
+	text := strings.TrimSpace(rawURL)
+	if base == "" || text == "" {
+		return "", false
+	}
+	prefix := base + "/"
+	if !strings.HasPrefix(text, prefix) {
+		return "", false
+	}
+	key := strings.TrimPrefix(text, prefix)
+	return key, key != ""
+}
+
+func SignMallImageURLIfOwned(ctx context.Context, signer *COSSigner, publicBase, rawURL string, ttl time.Duration) (string, error) {
+	text := strings.TrimSpace(rawURL)
+	if text == "" {
+		return "", nil
+	}
+	key, owned := MallImageObjectKey(publicBase, text)
+	if !owned || signer == nil {
+		return text, nil
+	}
+	return signer.GenerateReadURL(ctx, key, ttl)
+}
+
+func SignMallProductImages(ctx context.Context, signer *COSSigner, publicBase string, ttl time.Duration, p *MallProduct) {
+	if p == nil {
+		return
+	}
+	NormalizeMallProductImages(p)
+	for i, item := range p.ImageURLs {
+		if signed, err := SignMallImageURLIfOwned(ctx, signer, publicBase, item, ttl); err == nil && signed != "" {
+			p.ImageURLs[i] = signed
+		}
+	}
+	if signed, err := SignMallImageURLIfOwned(ctx, signer, publicBase, p.ImageURL, ttl); err == nil && signed != "" {
+		p.ImageURL = signed
+	}
+}
+
+func SignMallOrderItemImages(ctx context.Context, signer *COSSigner, publicBase string, ttl time.Duration, items []MallOrderItem) {
+	for i := range items {
+		if signed, err := SignMallImageURLIfOwned(ctx, signer, publicBase, items[i].ImageURL, ttl); err == nil && signed != "" {
+			items[i].ImageURL = signed
+		}
+	}
 }
 
 func DecodeMallImageURLs(raw string, legacyURL string) []string {

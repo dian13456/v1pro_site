@@ -1,14 +1,41 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { resolveMallImageUrl } from "../services/mallService";
 
 interface MallProductImageProps {
   imageUrl?: string;
   title: string;
   className?: string;
+  adminToken?: string;
 }
 
-export function MallProductImage({ imageUrl, title, className = "h-40 w-full" }: MallProductImageProps) {
+export function MallProductImage({
+  imageUrl,
+  title,
+  className = "h-40 w-full",
+  adminToken,
+}: MallProductImageProps) {
+  const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
-  const src = (imageUrl || "").trim();
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    const raw = (imageUrl || "").trim();
+    if (!raw) {
+      setSrc("");
+      return;
+    }
+
+    void resolveMallImageUrl(raw, adminToken).then((resolved) => {
+      if (!cancelled) {
+        setSrc(resolved.trim());
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl, adminToken]);
 
   if (!src || failed) {
     return (

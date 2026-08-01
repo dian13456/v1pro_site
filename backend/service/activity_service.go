@@ -13,13 +13,27 @@ import (
 )
 
 type ActivityService struct {
-	repo       *ActivityRepo
-	secret     string
-	knownSN    func(sn string) bool
+	repo        *ActivityRepo
+	secret      string
+	knownSN     func(sn string) bool
+	displayName func(userSerial string) string
 }
 
-func NewActivityService(repo *ActivityRepo, secret string, knownSN func(sn string) bool) *ActivityService {
-	return &ActivityService{repo: repo, secret: secret, knownSN: knownSN}
+func NewActivityService(repo *ActivityRepo, secret string, knownSN func(sn string) bool, displayName func(userSerial string) string) *ActivityService {
+	return &ActivityService{repo: repo, secret: secret, knownSN: knownSN, displayName: displayName}
+}
+
+func (s *ActivityService) resolvePublicDisplayName(userSerial string) string {
+	userSerial = strings.TrimSpace(userSerial)
+	if userSerial == "" {
+		return "用户"
+	}
+	if s.displayName != nil {
+		if name := strings.TrimSpace(s.displayName(userSerial)); name != "" {
+			return name
+		}
+	}
+	return DisplayUsernameFromSerial(userSerial)
 }
 
 func (s *ActivityService) GetCurrentPublic(userSerial string) (ActivityPublicView, error) {
@@ -530,10 +544,11 @@ func (s *ActivityService) ListPublicWinners(activityID string) (PublicWinnersVie
 	records := make([]WinnerPublicRecord, 0, len(winners))
 	for _, winner := range winners {
 		records = append(records, WinnerPublicRecord{
-			DrawPeriod: winner.DrawPeriod,
-			SNMasked:   MaskSNForPublic(winner.SN),
-			PrizeTitle: activity.PrizeTitle,
-			WinnerTime: winner.WinnerTime,
+			DrawPeriod:  winner.DrawPeriod,
+			DisplayName: s.resolvePublicDisplayName(winner.UserSerial),
+			SNMasked:    MaskSNForPublic(winner.SN),
+			PrizeTitle:  activity.PrizeTitle,
+			WinnerTime:  winner.WinnerTime,
 		})
 	}
 	return PublicWinnersView{

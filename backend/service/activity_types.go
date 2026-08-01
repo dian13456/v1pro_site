@@ -148,10 +148,11 @@ type ActivityPublicView struct {
 }
 
 type WinnerPublicRecord struct {
-	DrawPeriod string `json:"drawPeriod"`
-	SNMasked   string `json:"snMasked"`
-	PrizeTitle string `json:"prizeTitle"`
-	WinnerTime int64  `json:"winnerTime"`
+	DrawPeriod  string `json:"drawPeriod"`
+	DisplayName string `json:"displayName"`
+	SNMasked    string `json:"snMasked"`
+	PrizeTitle  string `json:"prizeTitle"`
+	WinnerTime  int64  `json:"winnerTime"`
 }
 
 type PublicWinnersView struct {

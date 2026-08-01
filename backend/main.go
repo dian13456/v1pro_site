@@ -991,6 +991,10 @@ func main() {
 		defer profilesMu.RUnlock()
 		_, ok := userProfiles.Profiles[sn]
 		return ok
+	}, func(userSerial string) string {
+		profilesMu.RLock()
+		defer profilesMu.RUnlock()
+		return service.ResolveStoredDisplayName(userProfiles, userSerial, "")
 	})
 	if err := activityService.EnsureDefaultActivity(); err != nil {
 		log.Printf("warn: init default activity failed: %v", err)
@@ -3283,6 +3287,7 @@ func main() {
 		tokenTTL:         tokenTTL,
 		imageSigner:      imageSigner,
 		imagePublicBase:  imagePublicBase,
+		imageSignTTL:     imageSignTTL,
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -28,9 +28,12 @@ import {
 import type { MallOrder, MallProduct } from "../types/mall";
 import { formatMallPrice, getProductImages, MALL_ORDER_STATUS_LABEL } from "../types/mall";
 
+type AdminTabKey = "products" | "orders";
+
 export default function MallAdminPage() {
   const { theme, setTheme } = useThemeMode();
   const { adminToken, authenticated, refreshSession, logout, handleUnauthorized } = useAdminSession();
+  const [tab, setTab] = useState<AdminTabKey>("products");
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<MallProduct[]>([]);
   const [orders, setOrders] = useState<MallOrder[]>([]);
@@ -206,13 +209,43 @@ export default function MallAdminPage() {
       {authenticated && adminToken ? (
         <>
       <SitePanel>
-        <SiteSectionTitle title="编辑商品" description="可上传多张图片或粘贴 URL；用户端可点击放大浏览。" />
+        <SiteSectionTitle
+          title="商城后台"
+          description="商品上下架、订单收款确认与发货。"
+          action={
+            <div className="flex flex-wrap gap-2">
+              <SiteButton
+                type="button"
+                variant={tab === "products" ? "primary" : "secondary"}
+                onClick={() => setTab("products")}
+              >
+                商品管理
+              </SiteButton>
+              <SiteButton
+                type="button"
+                variant={tab === "orders" ? "primary" : "secondary"}
+                onClick={() => setTab("orders")}
+              >
+                订单管理{orders.length > 0 ? ` (${orders.length})` : ""}
+              </SiteButton>
+              <SiteButton type="button" variant="secondary" onClick={() => void loadAll(adminToken)}>
+                刷新数据
+              </SiteButton>
+            </div>
+          }
+        />
+      </SitePanel>
+
+      {tab === "products" ? (
+      <SitePanel>
+        <SiteSectionTitle title="商品管理" description="可上传多张图片或粘贴 URL；用户端可点击放大浏览。" />
         <div className="mt-3 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <div>
             <MallProductGallery
               imageUrls={editImages}
               title={editTitle || "商品预览"}
               className="h-44 w-full"
+              adminToken={adminToken}
             />
             <input
               ref={fileInputRef}
@@ -271,7 +304,7 @@ export default function MallAdminPage() {
           <div className="mt-4 flex flex-wrap gap-3">
             {editImages.map((url, index) => (
               <div key={`${url}-${index}`} className="relative">
-                <MallProductImage imageUrl={url} title={`图片 ${index + 1}`} className="h-20 w-20" />
+                <MallProductImage imageUrl={url} title={`图片 ${index + 1}`} className="h-20 w-20" adminToken={adminToken} />
                 <button
                   type="button"
                   className="absolute -right-2 -top-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white"
@@ -295,7 +328,7 @@ export default function MallAdminPage() {
           {products.map((product) => (
             <li key={product.id} className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <MallProductImage imageUrl={getProductImages(product)[0]} title={product.title} className="h-14 w-14 shrink-0" />
+                <MallProductImage imageUrl={getProductImages(product)[0]} title={product.title} className="h-14 w-14 shrink-0" adminToken={adminToken} />
                 <span>
                   {product.title} · {formatMallPrice(product.priceCents)} · 图 {getProductImages(product).length} · 库存{" "}
                   {product.stock} · {product.status}
@@ -308,7 +341,9 @@ export default function MallAdminPage() {
           ))}
         </ul>
       </SitePanel>
+      ) : null}
 
+      {tab === "orders" ? (
       <SitePanel>
         <SiteSectionTitle title="订单管理" description="流程：待确认收款 → 确认收款 → 填写单号发货。" />
         <div className="mt-3">
@@ -324,7 +359,10 @@ export default function MallAdminPage() {
           </SiteAlert>
         ) : null}
         <div className="mt-4 space-y-3">
-          {orders.map((order) => (
+          {orders.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">暂无订单。</p>
+          ) : (
+          orders.map((order) => (
             <div key={order.id} className="rounded-2xl border border-white/20 p-3 dark:border-white/10">
               <div className="font-medium">
                 {order.id} · {MALL_ORDER_STATUS_LABEL[order.status] || order.status} ·{" "}
@@ -355,9 +393,11 @@ export default function MallAdminPage() {
                 </SiteButton>
               </div>
             </div>
-          ))}
+          ))
+          )}
         </div>
       </SitePanel>
+      ) : null}
         </>
       ) : null}
     </SitePageLayout>

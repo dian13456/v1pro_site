@@ -1,23 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { MallProductImage } from "./MallProductImage";
+import { resolveMallImageUrl } from "../services/mallService";
 
 interface MallProductGalleryProps {
   imageUrls: string[];
   title: string;
   className?: string;
+  adminToken?: string;
 }
 
-export function MallProductGallery({ imageUrls, title, className = "h-44 w-full" }: MallProductGalleryProps) {
+export function MallProductGallery({
+  imageUrls,
+  title,
+  className = "h-44 w-full",
+  adminToken,
+}: MallProductGalleryProps) {
   const images = useMemo(
     () => imageUrls.map((item) => item.trim()).filter(Boolean),
     [imageUrls],
   );
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState("");
 
   useEffect(() => {
     setActiveIndex(0);
   }, [images.join("|")]);
+
+  const active = images[Math.min(activeIndex, images.length - 1)];
+
+  useEffect(() => {
+    if (!lightboxOpen || !active) {
+      setLightboxSrc("");
+      return;
+    }
+    let cancelled = false;
+    void resolveMallImageUrl(active, adminToken).then((resolved) => {
+      if (!cancelled) {
+        setLightboxSrc(resolved.trim());
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lightboxOpen, active, adminToken]);
 
   useEffect(() => {
     if (!lightboxOpen) return;
@@ -35,10 +61,8 @@ export function MallProductGallery({ imageUrls, title, className = "h-44 w-full"
   }, [lightboxOpen, images.length]);
 
   if (images.length === 0) {
-    return <MallProductImage title={title} className={className} />;
+    return <MallProductImage title={title} className={className} adminToken={adminToken} />;
   }
-
-  const active = images[Math.min(activeIndex, images.length - 1)];
 
   return (
     <>
@@ -49,7 +73,7 @@ export function MallProductGallery({ imageUrls, title, className = "h-44 w-full"
           onClick={() => setLightboxOpen(true)}
           aria-label={`查看 ${title} 大图`}
         >
-          <MallProductImage imageUrl={active} title={title} className={className} />
+          <MallProductImage imageUrl={active} title={title} className={className} adminToken={adminToken} />
         </button>
         {images.length > 1 ? (
           <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -65,7 +89,7 @@ export function MallProductGallery({ imageUrls, title, className = "h-44 w-full"
                 onClick={() => setActiveIndex(index)}
                 aria-label={`查看第 ${index + 1} 张图`}
               >
-                <MallProductImage imageUrl={url} title={title} className="h-14 w-14" />
+                <MallProductImage imageUrl={url} title={title} className="h-14 w-14" adminToken={adminToken} />
               </button>
             ))}
           </div>
@@ -117,7 +141,7 @@ export function MallProductGallery({ imageUrls, title, className = "h-44 w-full"
             </>
           ) : null}
           <div className="max-h-[85vh] max-w-5xl" onClick={(event) => event.stopPropagation()}>
-            <img src={active} alt={title} className="max-h-[85vh] max-w-full rounded-xl object-contain" />
+            <img src={lightboxSrc || active} alt={title} className="max-h-[85vh] max-w-full rounded-xl object-contain" />
             {images.length > 1 ? (
               <p className="mt-3 text-center text-sm text-white/80">
                 {activeIndex + 1} / {images.length}

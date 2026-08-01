@@ -53,6 +53,39 @@ type mallRouteDeps struct {
 	tokenTTL         time.Duration
 	imageSigner      *service.COSSigner
 	imagePublicBase  string
+	imageSignTTL     time.Duration
+}
+
+func ensureMallImageAccess(c *gin.Context, deps mallRouteDeps) bool {
+	token := parseBearerToken(c)
+	if _, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL); ok {
+		return true
+	}
+	return ensureReviewAdmin(c, deps.reviewAdminToken)
+}
+
+func signMallProductsForResponse(c *gin.Context, deps mallRouteDeps, items []service.MallProduct) []service.MallProduct {
+	out := make([]service.MallProduct, len(items))
+	copy(out, items)
+	for i := range out {
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &out[i])
+	}
+	return out
+}
+
+func signMallPublicProductsForResponse(c *gin.Context, deps mallRouteDeps, items []service.MallProductPublic) []service.MallProductPublic {
+	out := make([]service.MallProductPublic, len(items))
+	copy(out, items)
+	for i := range out {
+		product := service.MallProduct{
+			ImageURL:  out[i].ImageURL,
+			ImageURLs: out[i].ImageURLs,
+		}
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &product)
+		out[i].ImageURL = product.ImageURL
+		out[i].ImageURLs = product.ImageURLs
+	}
+	return out
 }
 
 func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
@@ -67,7 +100,7 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "products": items})
+		c.JSON(http.StatusOK, gin.H{"success": true, "products": signMallPublicProductsForResponse(c, deps, items)})
 	})
 
 	router.POST("/api/mall/orders", func(c *gin.Context) {
@@ -148,7 +181,7 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "products": items})
+		c.JSON(http.StatusOK, gin.H{"success": true, "products": signMallProductsForResponse(c, deps, items)})
 	})
 
 	router.POST("/api/admin/mall/products", func(c *gin.Context) {
@@ -169,6 +202,7 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
 		}
+		service.SignMallProductImages(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, deps.imageSignTTL, &product)
 		c.JSON(http.StatusOK, gin.H{"success": true, "product": product})
 	})
 
@@ -229,7 +263,28 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			return
 		}
 		imageURL := strings.TrimRight(deps.imagePublicBase, "/") + "/" + objectKey
-		c.JSON(http.StatusOK, gin.H{"success": true, "imageUrl": imageURL})
+		displayURL := imageURL
+		if signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, imageURL, deps.imageSignTTL); err == nil && signed != "" {
+			displayURL = signed
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "imageUrl": imageURL, "displayUrl": displayURL})
+	})
+
+	router.GET("/api/mall/image", func(c *gin.Context) {
+		if !ensureMallImageAccess(c, deps) {
+			return
+		}
+		rawURL := strings.TrimSpace(c.Query("url"))
+		if rawURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "缺少图片地址"})
+			return
+		}
+		signed, err := service.SignMallImageURLIfOwned(c.Request.Context(), deps.imageSigner, deps.imagePublicBase, rawURL, deps.imageSignTTL)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "生成图片访问链接失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "url": signed})
 	})
 
 	router.GET("/api/admin/mall/orders", func(c *gin.Context) {
