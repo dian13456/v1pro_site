@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { MallProductGallery } from "../components/MallProductGallery";
 import { MallProductImage } from "../components/MallProductImage";
 import { SitePageLayout } from "../components/SitePageLayout";
@@ -13,7 +14,9 @@ import {
   SiteTextarea,
   SITE_CONTENT_MEDIUM,
 } from "../components/SiteUi";
+import { useAdminSession } from "../hooks/useAdminSession";
 import { useThemeMode } from "../hooks/useThemeMode";
+import { getAdminToken } from "../services/adminAuthService";
 import {
   adminFetchMallOrderContact,
   adminFetchMallOrders,
@@ -25,11 +28,9 @@ import {
 import type { MallOrder, MallProduct } from "../types/mall";
 import { formatMallPrice, getProductImages, MALL_ORDER_STATUS_LABEL } from "../types/mall";
 
-const ADMIN_TOKEN_KEY = "jiadian_activity_admin_token";
-
 export default function MallAdminPage() {
   const { theme, setTheme } = useThemeMode();
-  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_TOKEN_KEY) || "");
+  const { adminToken, authenticated, refreshSession, logout, handleUnauthorized } = useAdminSession();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<MallProduct[]>([]);
   const [orders, setOrders] = useState<MallOrder[]>([]);
@@ -61,21 +62,25 @@ export default function MallAdminPage() {
       setOrders(orderList);
       setNotice("数据已刷新");
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "加载失败，请检查管理员 Token");
+      const message = (err as Error)?.message || "加载失败，请重新登录";
+      if (message.includes("token") || message.includes("无效") || message.includes("未授权")) {
+        handleUnauthorized();
+      }
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (adminToken) {
+    if (authenticated && adminToken) {
       void loadAll(adminToken);
     }
   }, []);
 
-  const handleSaveToken = () => {
-    sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken.trim());
-    void loadAll(adminToken.trim());
+  const handleLoggedIn = () => {
+    refreshSession();
+    void loadAll(getAdminToken());
   };
 
   const fillProduct = (product: MallProduct) => {
@@ -170,34 +175,36 @@ export default function MallAdminPage() {
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
     >
-      <SitePanel>
-        <SiteSectionTitle
-          title="管理员登录"
-          description="使用与活动后台相同的 REVIEW_ADMIN_TOKEN。"
-          action={
-            <Link to="/mall" className="text-sm text-violet-600 underline dark:text-violet-300">
-              返回商城
-            </Link>
-          }
+      {!authenticated ? (
+        <AdminLoginPanel
+          description="输入后台密码后可管理商品、订单与发货。"
+          onLoggedIn={handleLoggedIn}
         />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <SiteInput
-            className="min-w-[240px] flex-1"
-            type="password"
-            placeholder="管理员 Token"
-            value={adminToken}
-            onChange={(e) => setAdminToken(e.target.value)}
+      ) : (
+        <SitePanel>
+          <SiteSectionTitle
+            title="已登录管理后台"
+            description="当前会话有效，可进行操作。"
+            action={
+              <div className="flex flex-wrap items-center gap-3">
+                <Link to="/mall" className="text-sm text-violet-600 underline dark:text-violet-300">
+                  返回商城
+                </Link>
+                <SiteButton type="button" variant="secondary" onClick={logout}>
+                  退出登录
+                </SiteButton>
+              </div>
+            }
           />
-          <SiteButton type="button" onClick={handleSaveToken}>
-            保存并刷新
-          </SiteButton>
-        </div>
-      </SitePanel>
+        </SitePanel>
+      )}
 
       {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
       {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
       {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
 
+      {authenticated && adminToken ? (
+        <>
       <SitePanel>
         <SiteSectionTitle title="编辑商品" description="可上传多张图片或粘贴 URL；用户端可点击放大浏览。" />
         <div className="mt-3 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -351,6 +358,8 @@ export default function MallAdminPage() {
           ))}
         </div>
       </SitePanel>
+        </>
+      ) : null}
     </SitePageLayout>
   );
 }

@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
-  SiteInput,
   SiteLoadingBlock,
   SitePanel,
   SiteSectionTitle,
   SITE_CONTENT_MEDIUM,
 } from "../components/SiteUi";
+import { useAdminSession } from "../hooks/useAdminSession";
 import { useThemeMode } from "../hooks/useThemeMode";
+import { getAdminToken } from "../services/adminAuthService";
 import {
   adminFetchActivities,
   adminFetchJoins,
@@ -22,11 +24,9 @@ import {
 } from "../services/activityService";
 import type { ActivityAdminItem, ActivityJoinRecord, ActivityWinnerRecord, WinnerContactInfo } from "../types/activity";
 
-const ADMIN_TOKEN_KEY = "jiadian_activity_admin_token";
-
 export default function ActivityAdminPage() {
   const { theme, setTheme } = useThemeMode();
-  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_TOKEN_KEY) || "");
+  const { adminToken, authenticated, refreshSession, logout, handleUnauthorized } = useAdminSession();
   const [loading, setLoading] = useState(false);
   const [activities, setActivities] = useState<ActivityAdminItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -54,21 +54,25 @@ export default function ActivityAdminPage() {
       }
       setNotice("数据已刷新");
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "加载失败，请检查管理员 Token");
+      const message = (err as Error)?.message || "加载失败，请重新登录";
+      if (message.includes("token") || message.includes("无效") || message.includes("未授权")) {
+        handleUnauthorized();
+      }
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (adminToken) {
+    if (authenticated && adminToken) {
       void loadAll(adminToken);
     }
   }, []);
 
-  const handleSaveToken = () => {
-    sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken.trim());
-    void loadAll(adminToken.trim());
+  const handleLoggedIn = () => {
+    refreshSession();
+    void loadAll(getAdminToken());
   };
 
   const handleSelectActivity = async (id: string) => {
@@ -159,31 +163,35 @@ export default function ActivityAdminPage() {
 
   return (
     <SitePageLayout
-      subtitle="活动管理后台 · 需管理员 Token"
+      subtitle="活动管理后台 · 需管理员密码"
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
     >
-      <SitePanel>
-        <SiteSectionTitle title="管理员认证" description="使用 REVIEW_ADMIN_TOKEN 访问后台接口。" />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <SiteInput
-            value={adminToken}
-            onChange={(e) => setAdminToken(e.target.value)}
-            placeholder="X-Review-Admin-Token"
-            className="min-w-[240px] flex-1"
+      {!authenticated ? (
+        <AdminLoginPanel
+          description="输入后台密码后可管理抽奖活动、开奖与发货。"
+          onLoggedIn={handleLoggedIn}
+        />
+      ) : (
+        <SitePanel>
+          <SiteSectionTitle
+            title="已登录管理后台"
+            description="当前会话有效，可进行操作。"
+            action={
+              <SiteButton type="button" variant="secondary" onClick={logout}>
+                退出登录
+              </SiteButton>
+            }
           />
-          <SiteButton type="button" onClick={handleSaveToken}>
-            验证并加载
-          </SiteButton>
-        </div>
-      </SitePanel>
+        </SitePanel>
+      )}
 
       {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
       {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
       {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
 
-      {adminToken ? (
+      {authenticated && adminToken ? (
         <>
           <SitePanel>
             <SiteSectionTitle
