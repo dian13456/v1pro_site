@@ -203,3 +203,22 @@ CREATE TABLE IF NOT EXISTS mall_order (
   KEY idx_mall_order_user (user_serial, created_at DESC),
   KEY idx_mall_order_status (status, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS promo_submission (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  campaign_id VARCHAR(64) NOT NULL,
+  choice_group VARCHAR(64) NOT NULL,
+  user_serial VARCHAR(191) NOT NULL,
+  order_no VARCHAR(191) NOT NULL DEFAULT '',
+  order_screenshot_url TEXT NOT NULL,
+  injection_color_note TEXT NOT NULL,
+  shipping_address_enc TEXT NOT NULL,
+  video_link TEXT NOT NULL,
+  payment_qr_url_enc TEXT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  admin_note TEXT NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  updated_at BIGINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_promo_user_group (user_serial, choice_group),
+  KEY idx_promo_campaign_status (campaign_id, status, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

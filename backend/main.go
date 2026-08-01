@@ -1013,6 +1013,13 @@ func main() {
 		log.Printf("warn: init mall seed products failed: %v", err)
 	}
 
+	promoRepo, err := service.NewPromoRepo(filepath.Join("config"))
+	if err != nil {
+		log.Fatalf("init promo repo failed: %v", err)
+	}
+	defer promoRepo.Close()
+	promoService := service.NewPromoService(promoRepo, jwtSecret)
+
 	// 给缓存留 30 秒安全边界，避免返回临过期签名链接。
 	imageCacheReuseTTL := imageSignTTL - 30*time.Second
 	imagePublicBase := strings.TrimSpace(os.Getenv("IMAGE_COS_PUBLIC_BASE"))
@@ -3289,6 +3296,14 @@ func main() {
 		imageCOSBucket:   imageCOSBucket,
 		imagePublicBase:  imagePublicBase,
 		imageSignTTL:     imageSignTTL,
+	})
+	registerPromoRoutes(router, promoRouteDeps{
+		promoService:     promoService,
+		reviewAdminToken: reviewAdminToken,
+		jwtSecret:        jwtSecret,
+		tokenTTL:         tokenTTL,
+		imageSigner:      imageSigner,
+		imagePublicBase:  imagePublicBase,
 	})
 
 	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {

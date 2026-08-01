@@ -20,6 +20,8 @@ import ActivityLotteryPage from "./pages/ActivityLotteryPage.tsx";
 import ActivityPrizeInfoPage from "./pages/ActivityPrizeInfoPage.tsx";
 import ActivityWinnerListPage from "./pages/ActivityWinnerListPage.tsx";
 import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
+import ActivityPromoPage from "./pages/ActivityPromoPage.tsx";
+import ActivityPromoAdminPage from "./pages/ActivityPromoAdminPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -159,6 +161,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ActivityAdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities/promo"
+            element={
+              <ProtectedRoute>
+                <ActivityPromoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities/promo-admin"
+            element={
+              <ProtectedRoute>
+                <ActivityPromoAdminPage />
               </ProtectedRoute>
             }
           />

@@ -33,6 +33,19 @@ export const ACTIVITY_CENTER_INTRO =
 
 export const ACTIVITIES: ActivityItem[] = [
   {
+    id: "promo-choice-2026",
+    title: "新上福利活动（二选一）",
+    summary: "CNC 复购加送注塑 V1PRO，或参与视频点赞免单，只能选一个。",
+    body: "活动一：CNC 用户复购注塑 V1PRO，加送一个注塑 V1PRO，需提交 CNC 订单号、订单截图、颜色备注与收货地址。活动二：视频点赞免单，需提交订单号、订单截图、视频链接与收款码。两个活动只能二选一参与，提交后不可更改。",
+    status: "ongoing",
+    category: "reward",
+    startDate: "2026-08-01",
+    endDate: "2026-12-31",
+    featured: true,
+    linkTo: "/activities/promo",
+    linkLabel: "立即报名",
+  },
+  {
     id: "device-lottery",
     title: "设备用户专属抽奖",
     summary: "使用设备 SN 码参与，每 24 小时自动开奖。",

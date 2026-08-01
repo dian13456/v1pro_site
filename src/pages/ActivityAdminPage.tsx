@@ -179,9 +179,16 @@ export default function ActivityAdminPage() {
             title="已登录管理后台"
             description="当前会话有效，可进行操作。"
             action={
-              <SiteButton type="button" variant="secondary" onClick={logout}>
-                退出登录
-              </SiteButton>
+              <div className="flex flex-wrap gap-2">
+                <Link to="/activities/promo-admin">
+                  <SiteButton type="button" variant="secondary">
+                    福利活动审核
+                  </SiteButton>
+                </Link>
+                <SiteButton type="button" variant="secondary" onClick={logout}>
+                  退出登录
+                </SiteButton>
+              </div>
             }
           />
         </SitePanel>
