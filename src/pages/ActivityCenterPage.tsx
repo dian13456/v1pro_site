@@ -96,8 +96,11 @@ export default function ActivityCenterPage() {
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
 
-  const featured = ACTIVITIES.find((item) => item.featured);
-  const others = ACTIVITIES.filter((item) => !item.featured);
+  const promoActivity = ACTIVITIES.find((item) => item.id === "promo-choice-2026");
+  const lotteryActivity = ACTIVITIES.find((item) => item.id === "device-lottery");
+  const others = ACTIVITIES.filter(
+    (item) => item.id !== "promo-choice-2026" && item.id !== "device-lottery",
+  );
   const ongoingCount = ACTIVITIES.filter((item) => item.status === "ongoing").length;
 
   useEffect(() => {
@@ -126,40 +129,32 @@ export default function ActivityCenterPage() {
         />
       </SitePanel>
 
-      {featured ? (
+      {promoActivity ? (
         <SitePanel className="overflow-hidden p-0">
           <div className="bg-gradient-to-r from-violet-600/90 via-fuchsia-500/85 to-cyan-500/80 px-6 py-5 text-white">
             <p className="text-xs uppercase tracking-[0.24em] text-white/80">Featured</p>
-            <h2 className="mt-2 text-2xl font-semibold">{featured.title}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">{featured.summary}</p>
+            <h2 className="mt-2 text-2xl font-semibold">{promoActivity.title}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">{promoActivity.summary}</p>
           </div>
           <div className="space-y-4 p-6">
             <div className="flex flex-wrap items-center gap-2">
-              <ActivityBadge status={featured.status} />
+              <ActivityBadge status={promoActivity.status} />
               <span className="rounded-full border border-violet-200/70 bg-violet-50/80 px-3 py-1 text-xs text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
-                {ACTIVITY_CATEGORY_LABELS[featured.category]}
+                {ACTIVITY_CATEGORY_LABELS[promoActivity.category]}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{formatActivityRange(featured)}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{formatActivityRange(promoActivity)}</span>
             </div>
-            <p className="text-sm leading-7 text-slate-700 dark:text-slate-300">{featured.body}</p>
-            {featured.linkTo && featured.linkLabel ? (
-              <div className="flex flex-wrap gap-2">
-                <Link to={featured.linkTo}>
-                  <SiteButton type="button">{featured.linkLabel}</SiteButton>
-                </Link>
-                <Link to="/activities/winners">
-                  <SiteButton
-                    type="button"
-                    className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600"
-                  >
-                    中奖名单公示
-                  </SiteButton>
-                </Link>
-              </div>
+            <p className="text-sm leading-7 text-slate-700 dark:text-slate-300">{promoActivity.body}</p>
+            {promoActivity.linkTo && promoActivity.linkLabel ? (
+              <Link to={promoActivity.linkTo}>
+                <SiteButton type="button">{promoActivity.linkLabel}</SiteButton>
+              </Link>
             ) : null}
           </div>
         </SitePanel>
       ) : null}
+
+      {lotteryActivity ? <ActivityCard item={lotteryActivity} /> : null}
 
       <SiteSectionTitle title="全部活动" description="浏览当前可参与的活动与平台更新。" />
 
