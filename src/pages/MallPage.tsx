@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import { MallProductGallery } from "../components/MallProductGallery";
 import { MallProductImage } from "../components/MallProductImage";
+import { MallOrderStatusBadge } from "../components/MallOrderStatusBadge";
 import {
   SiteAlert,
   SiteButton,
@@ -31,7 +32,7 @@ import {
   toShippingInput,
 } from "../services/mallAddressBook";
 import type { MallOrder, MallProduct, MallSavedAddress } from "../types/mall";
-import { formatMallPrice, getProductImages, MALL_MAX_SAVED_ADDRESSES, MALL_ORDER_STATUS_LABEL } from "../types/mall";
+import { formatMallPrice, getProductImages, MALL_MAX_SAVED_ADDRESSES } from "../types/mall";
 
 const PHONE_PATTERN = /^1\d{10}$/;
 const QQ_PATTERN = /^[1-9]\d{4,11}$/;
@@ -425,8 +426,11 @@ export default function MallPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <div className="font-medium text-slate-800 dark:text-slate-100">订单 {order.id}</div>
-                    <div className="text-sm text-slate-500">
-                      {MALL_ORDER_STATUS_LABEL[order.status] || order.status} · {formatMallPrice(order.totalCents)}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <MallOrderStatusBadge status={order.status} />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                        {formatMallPrice(order.totalCents)}
+                      </span>
                     </div>
                   </div>
                   {order.trackingNo ? (
