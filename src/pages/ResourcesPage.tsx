@@ -25,6 +25,11 @@ import {
   handleTransferButtonClick,
   prefetchTransferDownloadUrl,
 } from "../services/v1proTransferService";
+import {
+  canWebUsbDirectTransfer,
+  prefetchWebUsbTransferDownload,
+  transferResourceViaWebUsb,
+} from "../services/v1proWebResourceTransferService";
 
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
@@ -35,6 +40,7 @@ export default function ResourcesPage() {
   const [searchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
+  const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
@@ -164,6 +170,9 @@ export default function ResourcesPage() {
       if (canTransferViaV1Pro(item)) {
         prefetchTransferDownloadUrl(item);
       }
+      if (canWebUsbDirectTransfer(item)) {
+        prefetchWebUsbTransferDownload(item);
+      }
     }
   }, [visibleItems]);
 
@@ -274,6 +283,37 @@ export default function ResourcesPage() {
 
   const handleTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
     prefetchTransferDownloadUrl(resource, options);
+  };
+
+  const handleWebUsbTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
+    prefetchWebUsbTransferDownload(resource, options);
+  };
+
+  const handleWebUsbTransfer = (resource: ResourceItem) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    setErrorMessage("");
+    setWebUsbTransferringId(resource.id);
+    void transferResourceViaWebUsb(resource, {
+      onStatus: (message) => setTransferNotice(message),
+    })
+      .then((result) => {
+        let message = `网页直传完成：${result.frameCount} 帧`;
+        if (result.note) {
+          message += `（${result.note}）`;
+        }
+        setTransferNotice(message);
+        window.setTimeout(() => setTransferNotice(""), 6000);
+      })
+      .catch((err) => {
+        setErrorMessage((err as Error)?.message || "网页直传失败");
+      })
+      .finally(() => {
+        setWebUsbTransferringId(null);
+      });
   };
 
   const handleTransfer = (resource: ResourceItem) => {
@@ -561,6 +601,8 @@ export default function ResourcesPage() {
                 onDownload={handleDownload}
                 onTransfer={handleTransfer}
                 onTransferPrepare={handleTransferPrepare}
+                onWebUsbTransfer={handleWebUsbTransfer}
+                onWebUsbTransferPrepare={handleWebUsbTransferPrepare}
                 onPlay={handlePlay}
                 onPlayPrepare={handlePlayPrepare}
                 onStopPlay={() => {
@@ -571,6 +613,7 @@ export default function ResourcesPage() {
                 onFavorite={handleFavorite}
                 downloading={downloadingId === resource.id}
                 transferring={transferringId === resource.id}
+                webUsbTransferring={webUsbTransferringId === resource.id}
                 playing={playingId === resource.id}
                 isPlaying={playingResourceId === resource.id}
                 playUrl={playingResourceId === resource.id ? playingUrl : ""}

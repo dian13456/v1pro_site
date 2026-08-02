@@ -3,6 +3,7 @@ import type { ResourceItem } from "../types/resource";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
+import { canWebUsbDirectTransfer } from "../services/v1proWebResourceTransferService";
 
 function looksLikeFilename(text: string): boolean {
   const value = text.trim();
@@ -27,6 +28,8 @@ interface ResourceCardProps {
   onDownload?: (resource: ResourceItem) => void;
   onTransfer?: (resource: ResourceItem) => void;
   onTransferPrepare?: (resource: ResourceItem, options?: { urgent?: boolean }) => void;
+  onWebUsbTransfer?: (resource: ResourceItem) => void;
+  onWebUsbTransferPrepare?: (resource: ResourceItem, options?: { urgent?: boolean }) => void;
   onPlay: (resource: ResourceItem) => Promise<string | void>;
   onPlayPrepare?: (resource: ResourceItem) => void;
   onStopPlay: () => void;
@@ -34,6 +37,7 @@ interface ResourceCardProps {
   onFavorite?: (resource: ResourceItem) => void;
   downloading?: boolean;
   transferring?: boolean;
+  webUsbTransferring?: boolean;
   playing: boolean;
   isPlaying: boolean;
   playUrl: string;
@@ -52,6 +56,8 @@ function ResourceCardComponent({
   onDownload,
   onTransfer,
   onTransferPrepare,
+  onWebUsbTransfer,
+  onWebUsbTransferPrepare,
   onPlay,
   onPlayPrepare,
   onStopPlay,
@@ -59,6 +65,7 @@ function ResourceCardComponent({
   onFavorite,
   downloading,
   transferring = false,
+  webUsbTransferring = false,
   playing,
   isPlaying,
   playUrl,
@@ -106,6 +113,7 @@ function ResourceCardComponent({
   const [playError, setPlayError] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const transferPrefetchedRef = useRef(false);
+  const webUsbPrefetchedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +143,8 @@ function ResourceCardComponent({
   }, [resource.id, resource.image, resource.download, resource.materialType]);
 
   const showTransfer = canTransferViaV1Pro(resource) && Boolean(onTransfer);
+  const showWebUsbTransfer = canWebUsbDirectTransfer(resource) && Boolean(onWebUsbTransfer);
+  const actionBusy = transferring || webUsbTransferring;
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
@@ -155,6 +165,25 @@ function ResourceCardComponent({
     observer.observe(node);
     return () => observer.disconnect();
   }, [resource, showTransfer, onTransferPrepare]);
+
+  useEffect(() => {
+    if (!showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
+    const node = cardRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting) || webUsbPrefetchedRef.current) {
+          return;
+        }
+        webUsbPrefetchedRef.current = true;
+        onWebUsbTransferPrepare(resource);
+      },
+      { rootMargin: "120px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [resource, showWebUsbTransfer, onWebUsbTransferPrepare]);
 
   const showVideoPlayer = isPlaying && Boolean(playUrl);
 
@@ -271,7 +300,7 @@ function ResourceCardComponent({
         <button
           type="button"
           aria-label="点赞"
-          disabled={liked || liking || transferring}
+          disabled={liked || liking || actionBusy}
           onClick={() => onLike(resource)}
           className={`inline-flex h-10 w-full items-center justify-center gap-1 rounded-xl border px-1 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
             liked
@@ -288,7 +317,7 @@ function ResourceCardComponent({
           <button
             type="button"
             aria-label={favorited ? "取消收藏" : "收藏"}
-            disabled={favoriting || transferring}
+            disabled={favoriting || actionBusy}
             onClick={() => onFavorite(resource)}
             className={`inline-flex h-10 w-full items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-60 ${
               favorited
@@ -306,7 +335,7 @@ function ResourceCardComponent({
         {showTransfer ? (
           <button
             type="button"
-            disabled={transferring}
+            disabled={actionBusy}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-cyan-600 px-1 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -319,7 +348,7 @@ function ResourceCardComponent({
         {hasPlay ? (
           <button
             type="button"
-            disabled={playing || transferring}
+            disabled={playing || actionBusy}
             onPointerDown={() => onPlayPrepare?.(resource)}
             onClick={() => void handlePlayClick()}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-1 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -330,6 +359,17 @@ function ResourceCardComponent({
           <div className="h-10" aria-hidden="true" />
         )}
       </div>
+      {showWebUsbTransfer ? (
+        <button
+          type="button"
+          disabled={actionBusy}
+          onPointerDown={() => onWebUsbTransferPrepare?.(resource, { urgent: true })}
+          onClick={() => void onWebUsbTransfer?.(resource)}
+          className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-violet-600 px-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {webUsbTransferring ? "网页直传中…" : "网页直传"}
+        </button>
+      ) : null}
     </article>
   );
 }
