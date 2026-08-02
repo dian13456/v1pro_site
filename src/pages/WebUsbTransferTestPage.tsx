@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
@@ -8,7 +7,6 @@ import {
   SiteSectionTitle,
   SITE_CONTENT_NARROW,
 } from "../components/SiteUi";
-import { V1PRO_SETUP_DOWNLOAD_URL } from "../config/v1proProtocol";
 import { useThemeMode } from "../hooks/useThemeMode";
 import {
   createV1ProWebTransferClient,
@@ -173,20 +171,11 @@ export default function WebUsbTransferTestPage() {
       contentClassName={SITE_CONTENT_NARROW}
     >
       {!webUsbSupported ? (
-        <SiteAlert variant="error">
-          当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版；也可安装{" "}
-          <a href={V1PRO_SETUP_DOWNLOAD_URL} className="underline" target="_blank" rel="noreferrer">
-            佳点 V1PRO 控制工具
-          </a>{" "}
-          通过素材中心的「传输到设备」功能。
-        </SiteAlert>
+        <SiteAlert variant="error">当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。</SiteAlert>
       ) : null}
 
       <SitePanel>
-        <SiteSectionTitle
-          title="网页直传测试"
-          description="免装控制工具，在浏览器内将图片或短 GIF 编码为 GFM1 并通过 USB 写入设备 Flash。"
-        />
+        <SiteSectionTitle title="网页直传测试" />
 
         <div className={`mt-4 min-h-[1.4em] text-sm font-medium ${statusClass}`}>{statusText}</div>
 
@@ -246,27 +235,6 @@ export default function WebUsbTransferTestPage() {
             {busy ? "传输中…" : "传到设备"}
           </SiteButton>
         </div>
-      </SitePanel>
-
-      <SitePanel>
-        <SiteSectionTitle title="使用说明" />
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300">
-          <li>
-            请先<strong>关闭</strong>「佳点V1PRO控制工具」，否则无法占用 USB 接口。
-          </li>
-          <li>仅支持 Chrome / Edge 桌面版；页面需通过 HTTPS 或 localhost 访问。</li>
-          <li>设备需处于<strong>应用固件</strong>（非 Bootloader）。</li>
-          <li>短 GIF 默认最多 30 帧；更长动画或视频请用控制工具或素材中心「传输到设备」。</li>
-          <li>与网站 WebUSB 设备登录互斥：传素材前请先退出设备登录会话。</li>
-        </ul>
-        <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
-          不支持 WebUSB 时，可回到{" "}
-          <Link to="/" className="text-violet-600 hover:underline dark:text-violet-300">
-            素材中心
-          </Link>{" "}
-          使用 <code className="rounded bg-slate-900/10 px-1.5 py-0.5 text-xs dark:bg-white/10">v1pro://</code>{" "}
-          深链接传输。
-        </p>
       </SitePanel>
     </SitePageLayout>
   );
