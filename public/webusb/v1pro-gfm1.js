@@ -11,7 +11,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.0.2";
+} from "./v1pro-constants.js?v=1.0.3";
 
 /**
  * @param {number} n
@@ -175,7 +175,7 @@ export async function decodeBlobToFrames(blob, opts = {}) {
  * @param {number} maxFrames
  */
 async function decodeGifWithGifuct(blob, maxFrames) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.0.2");
+  const gifuct = await import("./gifuct-bundle.js?v=1.0.3");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

@@ -367,6 +367,37 @@ func isGIFObjectKey(objectKey string) bool {
 	return strings.HasSuffix(key, ".gif")
 }
 
+func contentTypeFromObjectKey(objectKey string) string {
+	key := strings.ToLower(strings.TrimSpace(objectKey))
+	switch {
+	case strings.HasSuffix(key, ".gif"):
+		return "image/gif"
+	case strings.HasSuffix(key, ".png"):
+		return "image/png"
+	case strings.HasSuffix(key, ".webp"):
+		return "image/webp"
+	case strings.HasSuffix(key, ".jpg"), strings.HasSuffix(key, ".jpeg"):
+		return "image/jpeg"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func writeTransferBlob(c *gin.Context, signer *service.COSSigner, objectKey string) bool {
+	if signer == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage signer unavailable"})
+		return false
+	}
+	data, err := signer.GetObject(c.Request.Context(), objectKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "read object failed"})
+		return false
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, contentTypeFromObjectKey(objectKey), data)
+	return true
+}
+
 func normalizeObjectKey(raw string) string {
 	key := strings.TrimSpace(raw)
 	if key == "" {
@@ -3095,6 +3126,11 @@ func main() {
 			selectedSigner = videoSigner
 		}
 
+		if !previewOnly && c.Query("blob") == "1" {
+			writeTransferBlob(c, selectedSigner, objectKey)
+			return
+		}
+
 		url, signErr := selectedSigner.GenerateReadURL(c.Request.Context(), objectKey, 10*time.Minute)
 		if signErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "sign url failed"})
@@ -3181,6 +3217,11 @@ func main() {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
 				return
 			}
+		}
+
+		if forDownload && c.Query("blob") == "1" {
+			writeTransferBlob(c, selectedImageSigner, objectKey)
+			return
 		}
 
 		imageURLCacheMu.RLock()

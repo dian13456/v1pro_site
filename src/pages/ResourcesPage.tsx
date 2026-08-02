@@ -27,7 +27,6 @@ import {
 } from "../services/v1proTransferService";
 import {
   canWebUsbDirectTransfer,
-  prefetchWebUsbTransferDownload,
   transferResourceViaWebUsb,
 } from "../services/v1proWebResourceTransferService";
 
@@ -170,9 +169,6 @@ export default function ResourcesPage() {
       if (canTransferViaV1Pro(item)) {
         prefetchTransferDownloadUrl(item);
       }
-      if (canWebUsbDirectTransfer(item)) {
-        prefetchWebUsbTransferDownload(item);
-      }
     }
   }, [visibleItems]);
 
@@ -285,13 +281,16 @@ export default function ResourcesPage() {
     prefetchTransferDownloadUrl(resource, options);
   };
 
-  const handleWebUsbTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
-    prefetchWebUsbTransferDownload(resource, options);
+  const handleWebUsbTransferPrepare = (_resource: ResourceItem, _options?: { urgent?: boolean }) => {
+    // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
   const handleWebUsbTransfer = (resource: ResourceItem) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
+      return;
+    }
+    if (webUsbTransferringId !== null) {
       return;
     }
 
