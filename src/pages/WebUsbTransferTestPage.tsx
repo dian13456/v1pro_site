@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { WebUsbDropZone } from "../components/WebUsbDropZone";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
@@ -35,7 +36,7 @@ function formatError(err: unknown): string {
 export default function WebUsbTransferTestPage() {
   const { theme, setTheme } = useThemeMode();
   const clientRef = useRef<V1ProWebTransferClient | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const transferLockRef = useRef(false);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkVersion, setSdkVersion] = useState(WEBUSB_TRANSFER_VERSION);
@@ -44,7 +45,7 @@ export default function WebUsbTransferTestPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [statusText, setStatusText] = useState("未连接");
   const [statusKind, setStatusKind] = useState<StatusKind>("idle");
-  const [metaText, setMetaText] = useState("选择图片或短 GIF 后点击「传到设备」。");
+  const [metaText, setMetaText] = useState("连接设备后，将图片或 GIF 拖入下方区域即可自动传输。");
   const [progress, setProgress] = useState(0);
   const [lastResult, setLastResult] = useState<V1ProTransferResult | null>(null);
 
@@ -79,11 +80,18 @@ export default function WebUsbTransferTestPage() {
     };
   }, []);
 
-  const refreshConnectionState = () => {
+  const refreshConnectionState = useCallback(() => {
     const client = clientRef.current;
     setConnected(Boolean(client?.connected));
     setBusy(Boolean(client?.busy));
-  };
+  }, []);
+
+  const ensureClient = useCallback(async (): Promise<V1ProWebTransferClient> => {
+    if (!clientRef.current) {
+      clientRef.current = await createV1ProWebTransferClient();
+    }
+    return clientRef.current;
+  }, []);
 
   const handleConnect = async () => {
     if (!webUsbSupported) return;
@@ -92,13 +100,11 @@ export default function WebUsbTransferTestPage() {
     setProgress(0);
     setLastResult(null);
     try {
-      if (!clientRef.current) {
-        clientRef.current = await createV1ProWebTransferClient();
-      }
-      await clientRef.current.connect();
-      setStatusText(`已连接：${deviceLabel(clientRef.current)}`);
+      const client = await ensureClient();
+      await client.connect();
+      setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
-      setMetaText("设备已连接，可选择图片或 GIF。");
+      setMetaText("设备已连接，将图片或 GIF 拖入下方区域即可自动传输。");
     } catch (err) {
       setStatusText(formatError(err));
       setStatusKind("error");
@@ -115,65 +121,73 @@ export default function WebUsbTransferTestPage() {
     setStatusText("已断开");
     setStatusKind("idle");
     setProgress(0);
+    setMetaText("连接设备后，将图片或 GIF 拖入下方区域即可自动传输。");
   };
 
-  const handleFileChange = (file: File | null) => {
-    setSelectedFile(file);
-    setLastResult(null);
-    if (file) {
+  const runTransfer = useCallback(
+    async (file: File, options: { connectIfNeeded?: boolean } = {}) => {
+      if (!webUsbSupported || !sdkReady || transferLockRef.current) return;
+      transferLockRef.current = true;
+      setSelectedFile(file);
+      setLastResult(null);
       setMetaText(`已选：${file.name}（${(file.size / 1024).toFixed(1)} KB）`);
-    } else {
-      setMetaText("选择图片或短 GIF 后点击「传到设备」。");
-    }
-  };
+      setStatusText("正在准备传输…");
+      setStatusKind("idle");
+      setProgress(0);
 
-  const handleTransfer = async () => {
-    const client = clientRef.current;
-    if (!client || !selectedFile) return;
-
-    setStatusText("正在编码并传输…");
-    setStatusKind("idle");
-    setProgress(0);
-    setLastResult(null);
-    refreshConnectionState();
-
-    try {
-      const result = await client.transferFile(selectedFile, {
-        onProgress: (info) => {
-          if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
-            setStatusText(`正在编码… ${info.sent}/${info.frameCount} 帧`);
-            setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));
+      try {
+        const client = await ensureClient();
+        if (!client.connected) {
+          if (!options.connectIfNeeded) {
+            setStatusText("请先连接设备");
+            setStatusKind("error");
             return;
           }
-          const ratio = 0.12 + info.ratio * 0.88;
-          setStatusText(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
-          setProgress(Math.round(ratio * 100));
-        },
-      });
-      setProgress(100);
-      let message = `传输完成：${result.bytes} 字节，${result.frameCount} 帧`;
-      if (result.note) {
-        message += `（${result.note}）`;
+          setStatusText("正在连接设备…");
+          await client.connect();
+          setStatusText(`已连接：${deviceLabel(client)}`);
+          setStatusKind("ok");
+        }
+
+        setStatusText("正在编码并传输…");
+        refreshConnectionState();
+
+        const result = await client.transferFile(file, {
+          onProgress: (info) => {
+            if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
+              setStatusText(`正在编码… ${info.sent}/${info.frameCount} 帧`);
+              setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));
+              return;
+            }
+            const ratio = 0.12 + info.ratio * 0.88;
+            setStatusText(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
+            setProgress(Math.round(ratio * 100));
+          },
+        });
+
+        setProgress(100);
+        let message = `传输完成：${result.bytes} 字节，${result.frameCount} 帧`;
+        if (result.note) {
+          message += `（${result.note}）`;
+        }
+        setStatusText(message);
+        setStatusKind("ok");
+        setMetaText("设备应已开始播放。可继续拖入其他素材。");
+        setLastResult(result);
+      } catch (err) {
+        setStatusText(formatError(err));
+        setStatusKind("error");
+        setProgress(0);
+      } finally {
+        transferLockRef.current = false;
+        refreshConnectionState();
       }
-      if (
-        selectedFile.name.toLowerCase().endsWith(".gif") &&
-        result.frameCount <= 1 &&
-        !result.note?.includes("gifuct") &&
-        !result.note?.includes("ImageDecoder")
-      ) {
-        message += "（仅首帧，请确认页面版本为 v1.0.2）";
-      }
-      setStatusText(message);
-      setStatusKind("ok");
-      setMetaText("设备应已开始播放。可继续选择其他素材。");
-      setLastResult(result);
-    } catch (err) {
-      setStatusText(formatError(err));
-      setStatusKind("error");
-      setProgress(0);
-    } finally {
-      refreshConnectionState();
-    }
+    },
+    [ensureClient, refreshConnectionState, sdkReady, webUsbSupported],
+  );
+
+  const handleIncomingFile = (file: File) => {
+    void runTransfer(file, { connectIfNeeded: true });
   };
 
   const statusClass =
@@ -220,6 +234,18 @@ export default function WebUsbTransferTestPage() {
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-200">提示：{lastResult.note}</p>
         ) : null}
 
+        <WebUsbDropZone
+          disabled={!webUsbSupported || !sdkReady}
+          busy={busy}
+          connected={connected}
+          selectedFileName={selectedFile?.name ?? null}
+          onFile={handleIncomingFile}
+          onInvalidFile={() => {
+            setStatusText("仅支持 PNG、JPG、WebP、GIF 图片文件");
+            setStatusKind("error");
+          }}
+        />
+
         <div className="mt-5 flex flex-wrap gap-3">
           <SiteButton
             type="button"
@@ -236,31 +262,11 @@ export default function WebUsbTransferTestPage() {
           >
             断开
           </SiteButton>
-          <SiteButton
-            type="button"
-            variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!connected || busy}
-          >
-            选择图片 / GIF
-          </SiteButton>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              handleFileChange(file);
-            }}
-          />
-          <SiteButton
-            type="button"
-            onClick={() => void handleTransfer()}
-            disabled={!connected || !selectedFile || busy}
-          >
-            {busy ? "传输中…" : "传到设备"}
-          </SiteButton>
+          {selectedFile && connected && !busy ? (
+            <SiteButton type="button" variant="secondary" onClick={() => void runTransfer(selectedFile)}>
+              重新传输当前文件
+            </SiteButton>
+          ) : null}
         </div>
       </SitePanel>
     </SitePageLayout>
