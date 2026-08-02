@@ -8,17 +8,23 @@ import {
   IO_TIMEOUT_MS,
   PING_TIMEOUT_MS,
   USB_CHUNK,
+  USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
   USBDL_CMD_START,
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.0.7";
+} from "./v1pro-constants.js?v=1.0.8";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
 const TRANSFER_OUT_RETRIES = 5;
 const TRANSFER_DRAIN_INTERVAL_MS = 250;
+const PROBE_POLL_TIMEOUT_MS = 4000;
+const JEDEC_PROBE_TIMEOUT_MS = 3000;
+
+/** @type {WeakMap<USBDevice, { interfaceNumber: number, inEndpoint: number, outEndpoint: number }>} */
+const deviceSessions = new WeakMap();
 
 export class V1ProUsbError extends Error {
   /**
@@ -49,11 +55,55 @@ function withTimeout(promise, ms, code, message) {
 /**
  * @param {USBDevice} device
  */
-async function drainInQuick(device) {
+function pickBulkEndpoints(device) {
+  const configuration = device.configuration;
+  if (!configuration) {
+    return { interfaceNumber: 0, outEndpoint: EP_OUT, inEndpoint: EP_IN };
+  }
+
+  for (const usbInterface of configuration.interfaces) {
+    for (const alternate of usbInterface.alternates) {
+      const out = alternate.endpoints.find(
+        (endpoint) => endpoint.direction === "out" && endpoint.type === "bulk"
+      );
+      const input = alternate.endpoints.find(
+        (endpoint) => endpoint.direction === "in" && endpoint.type === "bulk"
+      );
+      if (out && input) {
+        return {
+          interfaceNumber: usbInterface.interfaceNumber,
+          outEndpoint: out.endpointNumber,
+          inEndpoint: input.endpointNumber,
+        };
+      }
+    }
+  }
+
+  return { interfaceNumber: 0, outEndpoint: EP_OUT, inEndpoint: 2 };
+}
+
+/**
+ * @param {USBDevice} device
+ */
+function getSession(device) {
+  return (
+    deviceSessions.get(device) ?? {
+      interfaceNumber: 0,
+      outEndpoint: EP_OUT,
+      inEndpoint: EP_IN,
+    }
+  );
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {number} inEndpoint
+ */
+async function drainInQuick(device, inEndpoint) {
   for (let i = 0; i < 8; i += 1) {
     try {
       const result = await withTimeout(
-        device.transferIn(EP_IN, 64),
+        device.transferIn(inEndpoint, 64),
         12,
         "drain_timeout",
         "drain"
@@ -65,6 +115,47 @@ async function drainInQuick(device) {
       break;
     }
   }
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {number} inEndpoint
+ * @param {string[]} prefixes
+ * @param {number} timeoutMs
+ */
+async function readTextReply(device, inEndpoint, prefixes, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const left = Math.max(30, Math.min(250, deadline - Date.now()));
+      const result = await withTimeout(
+        device.transferIn(inEndpoint, 64),
+        left,
+        "io_timeout",
+        "poll"
+      );
+      if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
+        continue;
+      }
+      const text = new TextDecoder()
+        .decode(
+          new Uint8Array(
+            result.data.buffer,
+            result.data.byteOffset,
+            result.data.byteLength
+          )
+        )
+        .replace(/\0/g, "")
+        .trim();
+      if (!text) continue;
+      if (prefixes.some((prefix) => text.startsWith(prefix))) {
+        return text;
+      }
+    } catch {
+      // keep polling until deadline
+    }
+  }
+  return null;
 }
 
 /**
@@ -113,11 +204,12 @@ async function transferOutWithRetry(device, endpoint, slice, timeoutMs, retries)
  * @param {{ timeoutMs?: number, retries?: number }} [opts]
  */
 export async function bulkOut(device, data, opts = {}) {
+  const { outEndpoint } = getSession(device);
   const timeoutMs = opts.timeoutMs ?? BULK_OUT_TIMEOUT_MS;
   const retries = opts.retries ?? TRANSFER_OUT_RETRIES;
   for (let i = 0; i < data.length; i += USB_CHUNK) {
     const slice = data.subarray(i, Math.min(i + USB_CHUNK, data.length));
-    await transferOutWithRetry(device, EP_OUT, slice, timeoutMs, retries);
+    await transferOutWithRetry(device, outEndpoint, slice, timeoutMs, retries);
   }
 }
 
@@ -126,9 +218,10 @@ export async function bulkOut(device, data, opts = {}) {
  * @param {number} [length]
  */
 export async function bulkIn(device, length = 64) {
+  const { inEndpoint } = getSession(device);
   try {
     const result = await withTimeout(
-      device.transferIn(EP_IN, length),
+      device.transferIn(inEndpoint, length),
       IO_TIMEOUT_MS,
       "io_timeout",
       "USB 读入超时。"
@@ -202,9 +295,12 @@ async function openClaimed(device) {
   try {
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
-    await device.claimInterface(0);
-    await drainInQuick(device);
+    const session = pickBulkEndpoints(device);
+    deviceSessions.set(device, session);
+    await device.claimInterface(session.interfaceNumber);
+    await drainInQuick(device, session.inEndpoint);
   } catch (err) {
+    deviceSessions.delete(device);
     try {
       if (device.opened) await device.close();
     } catch {
@@ -219,10 +315,11 @@ async function openClaimed(device) {
  */
 export async function closeDevice(device) {
   if (!device) return;
+  const session = deviceSessions.get(device);
   try {
     if (device.opened) {
       try {
-        await device.releaseInterface(0);
+        await device.releaseInterface(session?.interfaceNumber ?? 0);
       } catch {
         /* ignore */
       }
@@ -231,6 +328,7 @@ export async function closeDevice(device) {
   } catch {
     /* ignore */
   }
+  deviceSessions.delete(device);
 }
 
 /**
@@ -238,32 +336,59 @@ export async function closeDevice(device) {
  * @returns {Promise<boolean>}
  */
 export async function ping(device) {
-  await drainInQuick(device);
-  const cmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
+  const { outEndpoint, inEndpoint } = getSession(device);
+  await drainInQuick(device, inEndpoint);
+
+  const pingCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
   try {
-    await bulkOut(device, cmd, { timeoutMs: IO_TIMEOUT_MS, retries: 3 });
+    await transferOutWithRetry(device, outEndpoint, pingCmd, IO_TIMEOUT_MS, 3);
   } catch (err) {
     if (err instanceof V1ProUsbError) throw err;
     throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
   }
+
+  const pong = await readTextReply(
+    device,
+    inEndpoint,
+    ["PONG"],
+    Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
+  );
+  if (pong) return true;
+
+  const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
   try {
-    const buf = await withTimeout(
-      bulkIn(device, 64),
-      PING_TIMEOUT_MS,
-      "ping_timeout",
-      "设备无响应 PING。请确认：① 已进入应用固件（非 Bootloader）；② 未打开控制工具；③ USB 已插好。"
-    );
-    const text = new TextDecoder().decode(buf).replace(/\0/g, "").trim();
-    if (!text.startsWith("PONG")) {
-      throw new V1ProUsbError(
-        "ping_bad_reply",
-        `设备应答异常（期望 PONG）：${text.slice(0, 40) || "(空)"}`
-      );
-    }
-    return true;
+    await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
   } catch (err) {
     if (err instanceof V1ProUsbError) throw err;
     throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
+  }
+
+  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
+  if (jedec) return true;
+
+  throw new V1ProUsbError(
+    "ping_timeout",
+    "设备无响应 PING。请确认：① 已进入应用固件（非 Bootloader）；② 已关闭控制工具；③ USB 已插好；④ 设备未处于屏保/时钟界面。将尝试跳过探测直接传输。"
+  );
+}
+
+/**
+ * Best-effort device probe; does not throw on timeout.
+ * @param {USBDevice} device
+ * @returns {Promise<{ ok: boolean, note?: string }>}
+ */
+export async function probeDevice(device) {
+  try {
+    await ping(device);
+    return { ok: true };
+  } catch (err) {
+    const message =
+      err instanceof V1ProUsbError
+        ? err.message
+        : err && err.message
+          ? String(err.message)
+          : "设备探测失败";
+    return { ok: false, note: message };
   }
 }
 
@@ -284,7 +409,8 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     );
   }
 
-  await drainInQuick(device);
+  const { inEndpoint } = getSession(device);
+  await drainInQuick(device, inEndpoint);
 
   const total = gfm1.length;
   const preamble = new Uint8Array(8);
@@ -305,7 +431,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   const writeChunk = async (chunk) => {
     const now = Date.now();
     if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
-      await drainInQuick(device);
+      await drainInQuick(device, inEndpoint);
       lastDrainAt = now;
     }
     await bulkOut(device, chunk);
@@ -313,7 +439,6 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
   };
 
-  // Stream in larger logical batches assembled into 64B USB packets inside bulkOut.
   await writeChunk(preamble);
 
   const BATCH = 4096;
@@ -321,5 +446,5 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
   }
 
-  await drainInQuick(device);
+  await drainInQuick(device, inEndpoint);
 }

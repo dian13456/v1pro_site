@@ -16,6 +16,7 @@ export const USB_CHUNK = 64;
 export const USBDL_MAGIC0 = 0xa5;
 export const USBDL_MAGIC1 = 0x5a;
 export const USBDL_CMD_START = 0x01;
+export const USBDL_CMD_JEDEC = 0x07;
 export const USBDL_CMD_PING = 0x09;
 
 export const LCD_W = 320;
@@ -32,7 +33,7 @@ export const ANIM_FLASH_MAX_BYTES = 0x02000000 - 0x1000;
 export const DEFAULT_MAX_GIF_FRAMES = 70;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.0.7";
+export const WEBUSB_TRANSFER_VERSION = "1.0.8";
 
 export const PING_TIMEOUT_MS = 1500;
 export const IO_TIMEOUT_MS = 15000;

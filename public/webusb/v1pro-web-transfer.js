@@ -8,16 +8,16 @@
  *   await client.transferFile(file, { onProgress: (p) => ... });
  *   await client.disconnect();
  */
-import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.7";
-import { encodeBlobToGfm1 } from "./v1pro-gfm1.js?v=1.0.7";
+import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.8";
+import { encodeBlobToGfm1 } from "./v1pro-gfm1.js?v=1.0.8";
 import {
   closeDevice,
   openAuthorizedDevice,
-  ping,
+  probeDevice,
   requestAndOpenDevice,
   sendGfm1,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.0.7";
+} from "./v1pro-usb.js?v=1.0.8";
 
 export { V1ProUsbError };
 export { WEBUSB_TRANSFER_VERSION };
@@ -97,18 +97,26 @@ export class V1ProWebTransfer {
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
 
     this.busy = true;
+    let probeNote;
     try {
       if (pingFirst) {
-        await ping(this.device);
+        const probe = await probeDevice(this.device);
+        if (!probe.ok) {
+          if (opts.requirePing === true) {
+            throw new V1ProUsbError("ping_timeout", probe.note || "设备无响应 PING。");
+          }
+          probeNote = probe.note || "设备未应答 PING，已跳过探测并尝试直接传输";
+        }
       }
 
       if (onProgress) {
         onProgress({ phase: "encode", sent: 0, total: 1, ratio: 0 });
       }
-      const { gfm1, frameCount, note } = await encodeBlobToGfm1(file, {
+      const { gfm1, frameCount, note: encodeNote } = await encodeBlobToGfm1(file, {
         maxFrames,
         fileName,
       });
+      const note = [probeNote, encodeNote].filter(Boolean).join("；") || undefined;
       if (onProgress) {
         onProgress({
           phase: "encode",
