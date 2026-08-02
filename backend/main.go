@@ -694,6 +694,10 @@ func main() {
 	if aiImageCreditsPath == "" {
 		aiImageCreditsPath = filepath.Join("config", "ai_image_credits.json")
 	}
+	aiCreditLedgerPath := os.Getenv("AI_CREDIT_LEDGER_PATH")
+	if aiCreditLedgerPath == "" {
+		aiCreditLedgerPath = filepath.Join("config", "ai_credit_ledger.json")
+	}
 	shopItemsPath := os.Getenv("SHOP_ITEMS_PATH")
 	if shopItemsPath == "" {
 		shopItemsPath = filepath.Join("config", "shop_items.json")
@@ -833,6 +837,7 @@ func main() {
 		PromptPrefsPath: userPromptPrefsPath,
 		CreditsPath:     aiImageCreditsPath,
 		SharesPath:      aiImageSharesPath,
+		LedgerPath:      aiCreditLedgerPath,
 	})
 	if err != nil {
 		log.Fatalf("init user data storage failed: %v", err)
@@ -1156,6 +1161,12 @@ func main() {
 		credits := aiCredits.Balance(serial)
 		aiCreditsMu.Unlock()
 
+		creditLedger, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
+		if ledgerErr != nil {
+			log.Printf("warn: list credit ledger failed: %v", ledgerErr)
+			creditLedger = []service.CreditLedgerEntry{}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success":                   true,
 			"serial":                    serial,
@@ -1165,6 +1176,7 @@ func main() {
 			"creditCost":                service.AICreditCostPerGeneration,
 			"likeRewardCredits":         service.LikeCreditRewardAmount,
 			"softwarePromptDismissedId": softwarePromptDismissedID,
+			"creditLedger":              creditLedger,
 		})
 	})
 
@@ -1391,11 +1403,17 @@ func main() {
 		reloadAICreditsLocked()
 		balance := aiCredits.Balance(serial)
 		aiCreditsMu.Unlock()
+		creditLedger, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
+		if ledgerErr != nil {
+			log.Printf("warn: list credit ledger failed: %v", ledgerErr)
+			creditLedger = []service.CreditLedgerEntry{}
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"success":           true,
 			"credits":           balance,
 			"likeRewardCredits": service.LikeCreditRewardAmount,
 			"items":             shopCatalog.PublicItems(),
+			"creditLedger":      creditLedger,
 		})
 	})
 
@@ -1449,6 +1467,27 @@ func main() {
 		}
 		aiShareMu.Unlock()
 		aiCreditsMu.Unlock()
+
+		if ledgerErr := userDataRepo.RecordCreditChange(
+			serial,
+			-result.Cost,
+			service.CreditSourceShopRedeem,
+			fmt.Sprintf("兑换「%s」", result.Title),
+			result.ItemID,
+		); ledgerErr != nil {
+			log.Printf("warn: record shop redeem ledger failed: %v", ledgerErr)
+		}
+		if result.RewardCredits > 0 {
+			if ledgerErr := userDataRepo.RecordCreditChange(
+				serial,
+				result.RewardCredits,
+				service.CreditSourceShopBonus,
+				fmt.Sprintf("兑换「%s」奖励", result.Title),
+				result.ItemID,
+			); ledgerErr != nil {
+				log.Printf("warn: record shop bonus ledger failed: %v", ledgerErr)
+			}
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":          true,
@@ -1637,6 +1676,16 @@ func main() {
 		}
 		aiCreditsMu.Unlock()
 
+		if ledgerErr := userDataRepo.RecordCreditChange(
+			serial,
+			-service.AICreditCostPerGeneration,
+			service.CreditSourceAIGenerate,
+			"",
+			"",
+		); ledgerErr != nil {
+			log.Printf("warn: record ai generate ledger failed: %v", ledgerErr)
+		}
+
 		result, err := minimaxClient.GenerateImages(
 			c.Request.Context(),
 			req.Prompt,
@@ -1651,6 +1700,15 @@ func main() {
 				log.Printf("warn: refund ai image credits failed: %v", refundErr)
 			}
 			aiCreditsMu.Unlock()
+			if ledgerErr := userDataRepo.RecordCreditChange(
+				serial,
+				service.AICreditCostPerGeneration,
+				service.CreditSourceAIRefund,
+				"",
+				"",
+			); ledgerErr != nil {
+				log.Printf("warn: record ai refund ledger failed: %v", ledgerErr)
+			}
 			log.Printf("warn: minimax image generation failed: %v", err)
 			c.JSON(http.StatusBadGateway, gin.H{
 				"success":          false,
@@ -2757,6 +2815,15 @@ func main() {
 						} else {
 							creditRewarded = true
 							creditRewardAmount = service.LikeCreditRewardAmount
+							if ledgerErr := userDataRepo.RecordCreditChange(
+								uploaderSerial,
+								creditRewardAmount,
+								service.CreditSourceLikeReward,
+								"",
+								resourceID,
+							); ledgerErr != nil {
+								log.Printf("warn: record like reward ledger failed: %v", ledgerErr)
+							}
 						}
 					}
 					aiCreditsMu.Unlock()

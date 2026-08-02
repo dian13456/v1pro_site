@@ -615,3 +615,56 @@ func (m *mysqlStore) saveAIShareQuota(ctx context.Context, store AIShareQuotaSto
 	}
 	return tx.Commit()
 }
+
+func (m *mysqlStore) appendCreditLedgerEntry(ctx context.Context, entry CreditLedgerEntry) error {
+	createdAt := time.Now().UTC().UnixMilli()
+	if entry.CreatedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, entry.CreatedAt); err == nil {
+			createdAt = parsed.UnixMilli()
+		}
+	}
+	_, err := m.db.ExecContext(ctx, `
+		INSERT INTO ai_credit_ledger (id, serial, amount, source, label, ref_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		entry.ID,
+		strings.TrimSpace(entry.Serial),
+		entry.Amount,
+		strings.TrimSpace(entry.Source),
+		strings.TrimSpace(entry.Label),
+		strings.TrimSpace(entry.RefID),
+		createdAt,
+	)
+	return err
+}
+
+func (m *mysqlStore) listCreditLedger(ctx context.Context, serial string, limit int) ([]CreditLedgerEntry, error) {
+	serial = strings.TrimSpace(serial)
+	if serial == "" {
+		return []CreditLedgerEntry{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT id, amount, source, label, ref_id, created_at
+		FROM ai_credit_ledger
+		WHERE serial = ?
+		ORDER BY created_at DESC
+		LIMIT ?`, serial, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]CreditLedgerEntry, 0, limit)
+	for rows.Next() {
+		var entry CreditLedgerEntry
+		var createdAt int64
+		if err := rows.Scan(&entry.ID, &entry.Amount, &entry.Source, &entry.Label, &entry.RefID, &createdAt); err != nil {
+			return nil, err
+		}
+		entry.CreatedAt = time.UnixMilli(createdAt).UTC().Format(time.RFC3339)
+		out = append(out, entry)
+	}
+	return out, rows.Err()
+}

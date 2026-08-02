@@ -1,3 +1,5 @@
+import type { CreditLedgerEntry } from "./credits";
+
 export interface ShopEffect {
   type: "add_credits" | "reset_ai_share" | "grant_code" | string;
   amount?: number;
@@ -17,6 +19,7 @@ export interface ShopCatalogPayload {
   credits?: number;
   likeRewardCredits?: number;
   items?: ShopItem[];
+  creditLedger?: CreditLedgerEntry[];
   message?: string;
 }
 

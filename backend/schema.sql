@@ -84,6 +84,17 @@ CREATE TABLE IF NOT EXISTS ai_share_counts (
   share_count INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS ai_credit_ledger (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  serial VARCHAR(191) NOT NULL,
+  amount INT NOT NULL,
+  source VARCHAR(32) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  ref_id VARCHAR(64) NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  KEY idx_credit_ledger_serial_created (serial, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Activity lottery module
 CREATE TABLE IF NOT EXISTS activity (
   id VARCHAR(64) NOT NULL PRIMARY KEY,

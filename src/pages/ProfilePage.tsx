@@ -25,7 +25,9 @@ import {
   saveDisplayName,
   syncDisplayNameFromServer,
 } from "../services/welcomeService";
+import { CreditLedgerPanel } from "../components/CreditLedgerPanel";
 import { MyUploadsPanel } from "../components/MyUploadsPanel";
+import type { CreditLedgerEntry } from "../types/credits";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -41,6 +43,7 @@ export default function ProfilePage() {
   const [nameHint, setNameHint] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
+  const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -61,6 +64,7 @@ export default function ProfilePage() {
         if (typeof profile.likeRewardCredits === "number") {
           setLikeRewardCredits(profile.likeRewardCredits);
         }
+        setCreditLedger(Array.isArray(profile.creditLedger) ? profile.creditLedger : []);
       })
       .catch(() => {
         setCredits(DEFAULT_AI_CREDITS);
@@ -148,6 +152,7 @@ export default function ProfilePage() {
                 </Link>{" "}
                 兑换权益。
               </p>
+              <CreditLedgerPanel entries={creditLedger} loading={loading} />
             </div>
           </div>
 

@@ -2,10 +2,13 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 
+import type { CreditLedgerEntry } from "../types/credits";
+
 export const DEFAULT_AI_CREDITS = 100;
 export const AI_CREDIT_COST = 1;
 
 const DEV_AI_CREDITS_KEY = "jiadian_dev_ai_credits";
+const DEV_CREDIT_LEDGER_KEY = "jiadian_dev_credit_ledger";
 
 export interface ProfilePayload {
   success?: boolean;
@@ -16,7 +19,39 @@ export interface ProfilePayload {
   creditCost?: number;
   likeRewardCredits?: number;
   softwarePromptDismissedId?: number;
+  creditLedger?: CreditLedgerEntry[];
   message?: string;
+}
+
+function readDevCreditLedger(serial: string): CreditLedgerEntry[] {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_CREDIT_LEDGER_KEY) || "{}") as Record<
+      string,
+      CreditLedgerEntry[]
+    >;
+    return Array.isArray(map[serial]) ? map[serial] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function appendDevCreditLedger(serial: string, entry: Omit<CreditLedgerEntry, "id" | "createdAt">): void {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_CREDIT_LEDGER_KEY) || "{}") as Record<
+      string,
+      CreditLedgerEntry[]
+    >;
+    const list = Array.isArray(map[serial]) ? map[serial] : [];
+    list.unshift({
+      ...entry,
+      id: `${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    });
+    map[serial] = list.slice(0, 50);
+    localStorage.setItem(DEV_CREDIT_LEDGER_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
 }
 
 function readDevCredits(serial: string): number {
@@ -73,6 +108,7 @@ export async function fetchProfile(): Promise<ProfilePayload> {
       credits: readDevCredits(serial),
       creditsDefault: DEFAULT_AI_CREDITS,
       creditCost: AI_CREDIT_COST,
+      creditLedger: readDevCreditLedger(serial),
     };
   }
 

@@ -10,11 +10,13 @@ import {
   SiteSectionTitle,
   SITE_CONTENT_MEDIUM,
 } from "../components/SiteUi";
+import { CreditLedgerPanel } from "../components/CreditLedgerPanel";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { hasValidLocalAuth } from "../services/authService";
 import { DEFAULT_AI_CREDITS } from "../services/profileService";
 import { fetchShopCatalog, redeemShopItem } from "../services/shopService";
 import type { ShopItem } from "../types/shop";
+import type { CreditLedgerEntry } from "../types/credits";
 
 export default function ShopPage() {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export default function ShopPage() {
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
   const [items, setItems] = useState<ShopItem[]>([]);
+  const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
   const [notice, setNotice] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -36,6 +39,7 @@ export default function ShopPage() {
       setCredits(typeof payload.credits === "number" ? payload.credits : DEFAULT_AI_CREDITS);
       setLikeRewardCredits(typeof payload.likeRewardCredits === "number" ? payload.likeRewardCredits : 1);
       setItems(Array.isArray(payload.items) ? payload.items : []);
+      setCreditLedger(Array.isArray(payload.creditLedger) ? payload.creditLedger : []);
     } catch (err) {
       setErrorMessage((err as Error)?.message || "加载商城失败");
     } finally {
@@ -67,6 +71,7 @@ export default function ShopPage() {
       }
       setNotice(result.message || `已兑换「${item.title}」`);
       window.setTimeout(() => setNotice(""), 5000);
+      await loadCatalog();
     } catch (err) {
       setErrorMessage((err as Error)?.message || "兑换失败");
     } finally {
@@ -94,6 +99,7 @@ export default function ShopPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             通过 AI 生图、GIF 上传或素材被点赞获得积分。当前商城仅兑换 V1PRO CNC 喵喵壳子 77 帧兑换码。
           </p>
+          <CreditLedgerPanel entries={creditLedger} loading={loading} />
         </SitePanel>
 
         {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}

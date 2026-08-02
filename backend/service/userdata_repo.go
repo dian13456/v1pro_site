@@ -17,6 +17,7 @@ type UserDataPaths struct {
 	PromptPrefsPath string
 	CreditsPath     string
 	SharesPath      string
+	LedgerPath      string
 }
 
 type UserDataRepo struct {
@@ -246,6 +247,32 @@ func (r *UserDataRepo) TryReloadAIShareQuota(current *AIShareQuotaStore) error {
 	}
 	var lastMod time.Time
 	return TryReloadAIShareQuotaStore(r.paths.SharesPath, current, &lastMod)
+}
+
+func (r *UserDataRepo) AppendCreditLedgerEntry(entry CreditLedgerEntry) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.appendCreditLedgerEntry(ctx, entry)
+	}
+	return appendCreditLedgerEntryJSON(r.paths.LedgerPath, entry)
+}
+
+func (r *UserDataRepo) ListCreditLedger(serial string, limit int) ([]CreditLedgerEntry, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.listCreditLedger(ctx, serial, limit)
+	}
+	return listCreditLedgerEntriesJSON(r.paths.LedgerPath, serial, limit)
+}
+
+func (r *UserDataRepo) RecordCreditChange(serial string, amount int, source, label, refID string) error {
+	if amount == 0 {
+		return nil
+	}
+	entry := NewCreditLedgerEntry(serial, amount, source, label, refID)
+	return r.AppendCreditLedgerEntry(entry)
 }
 
 // ImportJSONFiles imports existing JSON config files into MySQL (one-time migration).
