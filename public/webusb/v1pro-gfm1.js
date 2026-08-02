@@ -158,40 +158,55 @@ export async function decodeBlobToFrames(blob, opts = {}) {
 async function decodeGifWithImageDecoder(blob, maxFrames) {
   const buffer = await blob.arrayBuffer();
   const decoder = new ImageDecoder({ data: buffer, type: "image/gif" });
-  await decoder.completed.catch(() => {});
-  const track = decoder.tracks?.selectedTrack;
-  let frameCount = track?.frameCount || 1;
-  if (frameCount > maxFrames) {
-    frameCount = maxFrames;
-  }
 
-  /** @type {Uint8Array[]} */
-  const frames = [];
-  /** @type {number[]} */
-  const delaysMs = [];
-
-  for (let i = 0; i < frameCount; i++) {
-    const result = await decoder.decode({ frameIndex: i });
-    const bitmap = result.image;
-    const imageData = fitToLcdImageData(bitmap, bitmap.displayWidth, bitmap.displayHeight);
-    frames.push(rgbaToRgb565(imageData));
-    // duration is in microseconds for ImageDecoder
-    let ms = DEFAULT_FRAME_MS;
-    if (typeof result.image.duration === "number" && result.image.duration > 0) {
-      ms = Math.max(ANIM_MIN_FRAME_MS, Math.round(result.image.duration / 1000));
+  try {
+    await decoder.tracks.ready;
+    if (!decoder.complete) {
+      await decoder.completed;
     }
-    delaysMs.push(ms);
-    bitmap.close?.();
-  }
 
-  decoder.close?.();
+    const track = decoder.tracks.selectedTrack || decoder.tracks[0];
+    if (!track) {
+      throw new Error("GIF 无可用轨道");
+    }
 
-  let note;
-  const totalInFile = track?.frameCount || frameCount;
-  if (totalInFile > maxFrames) {
-    note = `GIF 共 ${totalInFile} 帧，已截取前 ${maxFrames} 帧。`;
+    let frameCount = Math.max(1, track.frameCount || 1);
+    const totalInFile = frameCount;
+    if (frameCount > maxFrames) {
+      frameCount = maxFrames;
+    }
+
+    /** @type {Uint8Array[]} */
+    const frames = [];
+    /** @type {number[]} */
+    const delaysMs = [];
+
+    for (let i = 0; i < frameCount; i++) {
+      const result = await decoder.decode({ frameIndex: i });
+      const bitmap = result.image;
+      try {
+        const imageData = fitToLcdImageData(bitmap, bitmap.displayWidth, bitmap.displayHeight);
+        frames.push(rgbaToRgb565(imageData));
+        let ms = DEFAULT_FRAME_MS;
+        if (typeof bitmap.duration === "number" && bitmap.duration > 0) {
+          ms = Math.max(ANIM_MIN_FRAME_MS, Math.round(bitmap.duration / 1000));
+        }
+        delaysMs.push(ms);
+      } finally {
+        bitmap.close?.();
+      }
+    }
+
+    let note;
+    if (totalInFile > maxFrames) {
+      note = `GIF 共 ${totalInFile} 帧，已截取前 ${maxFrames} 帧。`;
+    } else if (totalInFile > 1) {
+      note = `GIF ${totalInFile} 帧`;
+    }
+    return { frames, delaysMs, note };
+  } finally {
+    decoder.close?.();
   }
-  return { frames, delaysMs, note };
 }
 
 /**
