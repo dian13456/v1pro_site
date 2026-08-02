@@ -140,12 +140,12 @@ export default function WebUsbTransferTestPage() {
     try {
       const result = await client.transferFile(selectedFile, {
         onProgress: (info) => {
-          if (info.phase === "encode") {
-            setStatusText("正在编码 GFM1…");
-            setProgress(5);
+          if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
+            setStatusText(`正在编码… ${info.sent}/${info.frameCount} 帧`);
+            setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));
             return;
           }
-          const ratio = 0.05 + info.ratio * 0.95;
+          const ratio = 0.12 + info.ratio * 0.88;
           setStatusText(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
           setProgress(Math.round(ratio * 100));
         },

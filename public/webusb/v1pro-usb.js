@@ -14,7 +14,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.0.8";
+} from "./v1pro-constants.js?v=1.0.9";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -444,6 +444,73 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   const BATCH = 4096;
   for (let i = 0; i < gfm1.length; i += BATCH) {
     await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
+  }
+
+  await drainInQuick(device, inEndpoint);
+}
+
+/**
+ * Send START (device begins flash erase) then stream GFM1 payload chunks as they are encoded.
+ * @param {USBDevice} device
+ * @param {number} totalBytes GFM1 payload size (excluding 8-byte START header)
+ * @param {AsyncIterable<Uint8Array>} payloadChunks
+ * @param {{ onProgress?: (sent: number, total: number) => void }} [opts]
+ */
+export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, opts = {}) {
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+    throw new V1ProUsbError("invalid_gfm1", "GFM1 载荷无效。");
+  }
+  if (totalBytes > ANIM_FLASH_MAX_BYTES) {
+    throw new V1ProUsbError(
+      "gfm1_too_large",
+      `GFM1 过大（${totalBytes} 字节），超过设备 Flash 上限。`
+    );
+  }
+
+  const { inEndpoint } = getSession(device);
+  await drainInQuick(device, inEndpoint);
+
+  const preamble = new Uint8Array(8);
+  preamble[0] = USBDL_MAGIC0;
+  preamble[1] = USBDL_MAGIC1;
+  preamble[2] = USBDL_CMD_START;
+  preamble[3] = totalBytes & 0xff;
+  preamble[4] = (totalBytes >>> 8) & 0xff;
+  preamble[5] = (totalBytes >>> 16) & 0xff;
+  preamble[6] = (totalBytes >>> 24) & 0xff;
+  preamble[7] = 0x00;
+
+  const streamLen = preamble.length + totalBytes;
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+  let sent = 0;
+  let lastDrainAt = Date.now();
+
+  const writeChunk = async (chunk) => {
+    const now = Date.now();
+    if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
+      await drainInQuick(device, inEndpoint);
+      lastDrainAt = now;
+    }
+    await bulkOut(device, chunk);
+    sent += chunk.length;
+    if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
+  };
+
+  await writeChunk(preamble);
+
+  const BATCH = 4096;
+  for await (const chunk of payloadChunks) {
+    if (!(chunk instanceof Uint8Array) || chunk.length === 0) continue;
+    for (let i = 0; i < chunk.length; i += BATCH) {
+      await writeChunk(chunk.subarray(i, Math.min(i + BATCH, chunk.length)));
+    }
+  }
+
+  if (sent !== streamLen) {
+    throw new V1ProUsbError(
+      "invalid_gfm1",
+      `GFM1 流长度错误：已发送 ${sent - preamble.length} 字节，期望 ${totalBytes} 字节。`
+    );
   }
 
   await drainInQuick(device, inEndpoint);

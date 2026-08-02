@@ -1,23 +1,16 @@
 /**
  * High-level WebUSB transfer API for website / demo pages.
- *
- * Usage:
- *   import { V1ProWebTransfer } from './v1pro-web-transfer.js';
- *   const client = new V1ProWebTransfer();
- *   await client.connect();
- *   await client.transferFile(file, { onProgress: (p) => ... });
- *   await client.disconnect();
  */
-import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.8";
-import { encodeBlobToGfm1 } from "./v1pro-gfm1.js?v=1.0.8";
+import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.9";
+import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.0.9";
 import {
   closeDevice,
   openAuthorizedDevice,
   probeDevice,
   requestAndOpenDevice,
-  sendGfm1,
+  sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.0.8";
+} from "./v1pro-usb.js?v=1.0.9";
 
 export { V1ProUsbError };
 export { WEBUSB_TRANSFER_VERSION };
@@ -34,10 +27,6 @@ export class V1ProWebTransfer {
     return !!(this.device && this.device.opened);
   }
 
-  /**
-   * Prompt user to pick a V1PRO device (must be called from a click handler).
-   * @param {{ reuseAuthorized?: boolean }} [opts]
-   */
   async connect(opts = {}) {
     if (this.busy) {
       throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
@@ -62,20 +51,7 @@ export class V1ProWebTransfer {
 
   /**
    * Encode File/Blob to GFM1 and send via START stream.
-   * @param {Blob} file
-   * @param {{
-   *   fileName?: string,
-   *   maxFrames?: number,
-   *   pingFirst?: boolean,
-   *   onProgress?: (info: {
-   *     phase: 'encode'|'transfer',
-   *     sent: number,
-   *     total: number,
-   *     ratio: number,
-   *     frameCount?: number,
-   *     note?: string,
-   *   }) => void,
-   * }} [opts]
+   * Device flash erase begins as soon as START is sent, overlapping with encode/USB.
    */
   async transferFile(file, opts = {}) {
     if (!this.device || !this.device.opened) {
@@ -112,38 +88,55 @@ export class V1ProWebTransfer {
       if (onProgress) {
         onProgress({ phase: "encode", sent: 0, total: 1, ratio: 0 });
       }
-      const { gfm1, frameCount, note: encodeNote } = await encodeBlobToGfm1(file, {
+
+      const plan = await planGfm1Encode(file, {
         maxFrames,
         fileName,
-      });
-      const note = [probeNote, encodeNote].filter(Boolean).join("；") || undefined;
-      if (onProgress) {
-        onProgress({
-          phase: "encode",
-          sent: 1,
-          total: 1,
-          ratio: 1,
-          frameCount,
-          note,
-        });
-      }
-
-      await sendGfm1(this.device, gfm1, {
-        onProgress: (sent, total) => {
+        onFrameEncoded: (frameIndex, frameCount) => {
           if (onProgress) {
             onProgress({
-              phase: "transfer",
-              sent,
-              total,
-              ratio: total > 0 ? sent / total : 0,
+              phase: "encode",
+              sent: frameIndex,
+              total: frameCount,
+              ratio: frameCount > 0 ? frameIndex / frameCount : 0,
               frameCount,
-              note,
             });
           }
         },
       });
 
-      return { bytes: gfm1.length, frameCount, note };
+      const note = [probeNote, plan.note].filter(Boolean).join("；") || undefined;
+      const streamTotal = 8 + plan.totalBytes;
+
+      await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
+        onProgress: (sent, total) => {
+          if (!onProgress) return;
+          const encodeWeight = 0.12;
+          const transferRatio = total > 0 ? sent / total : 0;
+          const phase = sent <= 8 + 56 + plan.frameCount * 2 ? "encode" : "transfer";
+          onProgress({
+            phase,
+            sent,
+            total,
+            ratio: Math.min(1, encodeWeight + transferRatio * (1 - encodeWeight)),
+            frameCount: plan.frameCount,
+            note,
+          });
+        },
+      });
+
+      if (onProgress) {
+        onProgress({
+          phase: "transfer",
+          sent: streamTotal,
+          total: streamTotal,
+          ratio: 1,
+          frameCount: plan.frameCount,
+          note,
+        });
+      }
+
+      return { bytes: plan.totalBytes, frameCount: plan.frameCount, note };
     } finally {
       this.busy = false;
     }
