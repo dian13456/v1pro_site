@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: "/shop", label: "积分商城", highlight: false },
   { to: "/mall", label: "实物商城", highlight: false },
   { to: "/profile", label: "个人中心", highlight: false },
+  { to: "/webusb-test", label: "网页直传", highlight: false },
   { to: "/board", label: "留言板", highlight: false },
 ];
 

@@ -23,6 +23,7 @@ import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
 import ActivityPromoPage from "./pages/ActivityPromoPage.tsx";
 import ActivityPromoAdminPage from "./pages/ActivityPromoAdminPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
+import WebUsbTransferTestPage from "./pages/WebUsbTransferTestPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -185,6 +186,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/webusb-test"
+            element={
+              <ProtectedRoute>
+                <WebUsbTransferTestPage />
               </ProtectedRoute>
             }
           />

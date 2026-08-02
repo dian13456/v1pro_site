@@ -14,6 +14,36 @@ import {
 } from "../services/authService";
 import { acceptTerms } from "../services/termsService";
 
+const AUTO_CONNECT_TIMEOUT_MS = 12_000;
+
+type SilentConnectResult = "ok" | "timeout" | "failed";
+
+async function runSilentConnect(
+  finishAuth: (serial: string) => void,
+  timeoutMs: number,
+): Promise<SilentConnectResult> {
+  let settled = false;
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve("timeout");
+    }, timeoutMs);
+
+    void tryAuthorizeGrantedDevice().then((state) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      if (!state) {
+        resolve("failed");
+        return;
+      }
+      finishAuth(state.serial);
+      resolve("ok");
+    });
+  });
+}
+
 export default function AuthPage() {
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(false);
@@ -40,13 +70,8 @@ export default function AuthPage() {
     [navigate, redirectTarget],
   );
 
-  const attemptSilentConnect = useCallback(async (): Promise<boolean> => {
-    const state = await tryAuthorizeGrantedDevice();
-    if (!state) {
-      return false;
-    }
-    finishAuth(state.serial);
-    return true;
+  const attemptSilentConnect = useCallback(async (): Promise<SilentConnectResult> => {
+    return runSilentConnect(finishAuth, AUTO_CONNECT_TIMEOUT_MS);
   }, [finishAuth]);
 
   const handleVerify = async () => {
@@ -55,7 +80,11 @@ export default function AuthPage() {
       setError("");
 
       const silent = await attemptSilentConnect();
-      if (silent) {
+      if (silent === "ok") {
+        return;
+      }
+      if (silent === "timeout") {
+        setError("连接超时。请关闭「佳点V1PRO控制工具」和网页直传页后重试。");
         return;
       }
 
@@ -75,17 +104,18 @@ export default function AuthPage() {
     let active = true;
     void (async () => {
       try {
-        const [connected] = await Promise.all([
-          attemptSilentConnect(),
-          hasGrantedAuthorizedDevice().then((value) => {
-            if (active) {
-              setCanSilentConnect(value);
-            }
-          }),
-        ]);
-        if (connected) {
+        const silentResult = await attemptSilentConnect();
+        if (silentResult === "ok") {
           return;
         }
+        if (silentResult === "timeout") {
+          setError("自动连接超时。请关闭「佳点V1PRO控制工具」和网页直传页，确认设备已插入后点击「同意条款并连接」。");
+        }
+        await hasGrantedAuthorizedDevice().then((value) => {
+          if (active) {
+            setCanSilentConnect(value);
+          }
+        });
       } catch {
         // 等待用户手动点击连接
       } finally {
@@ -109,8 +139,11 @@ export default function AuthPage() {
       void (async () => {
         setAutoConnecting(true);
         setError("");
-        const connected = await attemptSilentConnect();
-        if (!connected) {
+        const silentResult = await attemptSilentConnect();
+        if (silentResult === "timeout") {
+          setError("自动连接超时。请关闭「佳点V1PRO控制工具」后重试，或点击「同意条款并连接」。");
+        }
+        if (silentResult !== "ok") {
           setAutoConnecting(false);
         }
       })();

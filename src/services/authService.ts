@@ -5,6 +5,24 @@ import { isStaticMode } from "./runtimeMode";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
 export const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
+const USB_OPEN_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
 
 interface AuthApiResponse {
   success: boolean;
@@ -30,13 +48,22 @@ async function ensureDeviceSerial(device: USBDevice): Promise<string> {
   }
 
   try {
-    if (!device.opened) {
-      await device.open();
+    await withTimeout(
+      (async () => {
+        if (!device.opened) {
+          await device.open();
+        }
+        if (!device.configuration) {
+          await device.selectConfiguration(1);
+        }
+      })(),
+      USB_OPEN_TIMEOUT_MS,
+      "USB 设备打开超时，请关闭「佳点V1PRO控制工具」或网页直传页后再试",
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("打开超时")) {
+      throw error;
     }
-    if (!device.configuration) {
-      await device.selectConfiguration(1);
-    }
-  } catch {
     throw new Error(DEVICE_MISMATCH_MESSAGE);
   }
 
