@@ -11,7 +11,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.0.4";
+} from "./v1pro-constants.js?v=1.0.5";
 
 /**
  * @param {number} n

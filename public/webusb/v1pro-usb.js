@@ -3,10 +3,13 @@
  */
 import {
   ANIM_FLASH_MAX_BYTES,
+  BULK_OUT_TIMEOUT_MS,
   EP_IN,
   EP_OUT,
   IO_TIMEOUT_MS,
   PING_TIMEOUT_MS,
+  TRANSFER_DRAIN_INTERVAL_MS,
+  TRANSFER_OUT_RETRIES,
   USB_CHUNK,
   USBDL_CMD_PING,
   USBDL_CMD_START,
@@ -29,6 +32,10 @@ export class V1ProUsbError extends Error {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function withTimeout(promise, ms, code, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -39,26 +46,76 @@ function withTimeout(promise, ms, code, message) {
 
 /**
  * @param {USBDevice} device
- * @param {Uint8Array} data
  */
-export async function bulkOut(device, data) {
+async function drainInQuick(device) {
+  for (let i = 0; i < 8; i += 1) {
+    try {
+      const result = await withTimeout(
+        device.transferIn(EP_IN, 64),
+        12,
+        "drain_timeout",
+        "drain"
+      );
+      if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
+        break;
+      }
+    } catch {
+      break;
+    }
+  }
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {number} endpoint
+ * @param {Uint8Array} slice
+ * @param {number} timeoutMs
+ * @param {number} retries
+ */
+async function transferOutWithRetry(device, endpoint, slice, timeoutMs, retries) {
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      const result = await withTimeout(
+        device.transferOut(endpoint, slice),
+        timeoutMs,
+        "io_timeout",
+        "USB 写出超时。请关闭「佳点V1PRO控制工具」、保持 USB 连接，大 GIF 传输时请耐心等待（设备可能在擦写 Flash）。"
+      );
+      if (result.status === "ok") {
+        return;
+      }
+    } catch (err) {
+      if (err instanceof V1ProUsbError && err.code === "io_timeout") {
+        throw err;
+      }
+      if (attempt + 1 >= retries) {
+        if (err instanceof V1ProUsbError) throw err;
+        throw new V1ProUsbError(
+          "transfer_out_failed",
+          formatUsbOpenHint(err),
+          err
+        );
+      }
+      await sleep(4);
+    }
+  }
+  throw new V1ProUsbError(
+    "transfer_out_failed",
+    "USB 写出失败，请重新插拔设备后重试。"
+  );
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {Uint8Array} data
+ * @param {{ timeoutMs?: number, retries?: number }} [opts]
+ */
+export async function bulkOut(device, data, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? BULK_OUT_TIMEOUT_MS;
+  const retries = opts.retries ?? TRANSFER_OUT_RETRIES;
   for (let i = 0; i < data.length; i += USB_CHUNK) {
     const slice = data.subarray(i, Math.min(i + USB_CHUNK, data.length));
-    try {
-      await withTimeout(
-        device.transferOut(EP_OUT, slice),
-        IO_TIMEOUT_MS,
-        "io_timeout",
-        "USB 写出超时，请确认设备仍连接且控制工具已关闭。"
-      );
-    } catch (err) {
-      if (err instanceof V1ProUsbError) throw err;
-      throw new V1ProUsbError(
-        "transfer_out_failed",
-        formatUsbOpenHint(err),
-        err
-      );
-    }
+    await transferOutWithRetry(device, EP_OUT, slice, timeoutMs, retries);
   }
 }
 
@@ -144,6 +201,7 @@ async function openClaimed(device) {
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
     await device.claimInterface(0);
+    await drainInQuick(device);
   } catch (err) {
     try {
       if (device.opened) await device.close();
@@ -178,9 +236,10 @@ export async function closeDevice(device) {
  * @returns {Promise<boolean>}
  */
 export async function ping(device) {
+  await drainInQuick(device);
   const cmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
   try {
-    await bulkOut(device, cmd);
+    await bulkOut(device, cmd, { timeoutMs: IO_TIMEOUT_MS, retries: 3 });
   } catch (err) {
     if (err instanceof V1ProUsbError) throw err;
     throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
@@ -223,6 +282,8 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     );
   }
 
+  await drainInQuick(device);
+
   const total = gfm1.length;
   const preamble = new Uint8Array(8);
   preamble[0] = USBDL_MAGIC0;
@@ -237,8 +298,14 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   const streamLen = preamble.length + total;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   let sent = 0;
+  let lastDrainAt = Date.now();
 
   const writeChunk = async (chunk) => {
+    const now = Date.now();
+    if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
+      await drainInQuick(device);
+      lastDrainAt = now;
+    }
     await bulkOut(device, chunk);
     sent += chunk.length;
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
@@ -251,4 +318,6 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   for (let i = 0; i < gfm1.length; i += BATCH) {
     await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
   }
+
+  await drainInQuick(device);
 }

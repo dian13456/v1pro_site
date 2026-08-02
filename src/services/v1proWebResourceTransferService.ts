@@ -119,10 +119,8 @@ export async function transferResourceViaWebUsb(
     const client = sharedClient;
 
     try {
-      if (!client.connected) {
-        callbacks.onStatus?.("正在连接设备…");
-        await client.connect({ reuseAuthorized: true });
-      }
+      callbacks.onStatus?.("正在连接设备…");
+      await client.connect({ reuseAuthorized: true });
 
       callbacks.onStatus?.("正在获取素材…");
       const blob = await fetchTransferBlob(resource);
