@@ -12,7 +12,10 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@v1pro-webusb/*": ["./public/webusb/*"]
+    }
   },
   "include": ["src"]
 }

@@ -16,7 +16,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js";
+} from "./v1pro-constants.js?v=1.0.6";
 
 export class V1ProUsbError extends Error {
   /**

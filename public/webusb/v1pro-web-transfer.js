@@ -8,8 +8,8 @@
  *   await client.transferFile(file, { onProgress: (p) => ... });
  *   await client.disconnect();
  */
-import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.5";
-import { encodeBlobToGfm1 } from "./v1pro-gfm1.js?v=1.0.5";
+import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.6";
+import { encodeBlobToGfm1 } from "./v1pro-gfm1.js?v=1.0.6";
 import {
   closeDevice,
   openAuthorizedDevice,
@@ -17,7 +17,7 @@ import {
   requestAndOpenDevice,
   sendGfm1,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.0.5";
+} from "./v1pro-usb.js?v=1.0.6";
 
 export { V1ProUsbError };
 export { WEBUSB_TRANSFER_VERSION };

@@ -61,9 +61,14 @@ export default function WebUsbTransferTestPage() {
           }
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setStatusText("WebUSB SDK 加载失败，请刷新页面重试。");
+          const detail = formatError(err);
+          setStatusText(
+            detail && detail !== "[object Object]"
+              ? `WebUSB SDK 加载失败：${detail}`
+              : "WebUSB SDK 加载失败，请强制刷新（Ctrl+Shift+R）后重试。",
+          );
           setStatusKind("error");
         }
       });

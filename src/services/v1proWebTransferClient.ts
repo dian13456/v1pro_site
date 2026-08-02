@@ -1,29 +1,32 @@
 import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
 /** 与 public/webusb/v1pro-constants.js 中 WEBUSB_TRANSFER_VERSION 保持一致 */
-export const WEBUSB_TRANSFER_VERSION = "1.0.5";
+export const WEBUSB_TRANSFER_VERSION = "1.0.6";
 
-let sdkPromise: Promise<{
+type WebUsbSdkModule = {
   V1ProWebTransfer: new () => V1ProWebTransferClient;
   V1ProUsbError: typeof import("../types/v1proWebTransfer").V1ProUsbError;
   WEBUSB_TRANSFER_VERSION?: string;
-}> | null = null;
+};
 
-function sdkUrl(): string {
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base}webusb/v1pro-web-transfer.js?v=${WEBUSB_TRANSFER_VERSION}`;
-}
+let sdkPromise: Promise<WebUsbSdkModule> | null = null;
+let sdkLoadedVersion = "";
 
 export function isWebUsbSupported(): boolean {
   return typeof navigator !== "undefined" && "usb" in navigator;
 }
 
-export async function loadV1ProWebTransferSdk() {
+export async function loadV1ProWebTransferSdk(): Promise<WebUsbSdkModule> {
+  if (sdkPromise && sdkLoadedVersion !== WEBUSB_TRANSFER_VERSION) {
+    sdkPromise = null;
+  }
   if (!sdkPromise) {
-    sdkPromise = import(/* @vite-ignore */ sdkUrl()) as Promise<{
-      V1ProWebTransfer: new () => V1ProWebTransferClient;
-      V1ProUsbError: typeof import("../types/v1proWebTransfer").V1ProUsbError;
-    }>;
+    sdkLoadedVersion = WEBUSB_TRANSFER_VERSION;
+    sdkPromise = import("@v1pro-webusb/v1pro-web-transfer.js").catch((err: unknown) => {
+      sdkPromise = null;
+      sdkLoadedVersion = "";
+      throw err;
+    });
   }
   return sdkPromise;
 }
