@@ -3,20 +3,22 @@
  */
 import {
   ANIM_FLASH_MAX_BYTES,
-  BULK_OUT_TIMEOUT_MS,
   EP_IN,
   EP_OUT,
   IO_TIMEOUT_MS,
   PING_TIMEOUT_MS,
-  TRANSFER_DRAIN_INTERVAL_MS,
-  TRANSFER_OUT_RETRIES,
   USB_CHUNK,
   USBDL_CMD_PING,
   USBDL_CMD_START,
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.0.6";
+} from "./v1pro-constants.js?v=1.0.7";
+
+/** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
+const BULK_OUT_TIMEOUT_MS = 60000;
+const TRANSFER_OUT_RETRIES = 5;
+const TRANSFER_DRAIN_INTERVAL_MS = 250;
 
 export class V1ProUsbError extends Error {
   /**
