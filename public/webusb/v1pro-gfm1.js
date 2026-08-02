@@ -11,7 +11,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js";
+} from "./v1pro-constants.js?v=1.0.2";
 
 /**
  * @param {number} n
@@ -129,11 +129,30 @@ export async function decodeBlobToFrames(blob, opts = {}) {
   const name = (opts.fileName || "").toLowerCase();
   const isGif = type === "image/gif" || name.endsWith(".gif");
 
-  if (isGif && typeof ImageDecoder !== "undefined") {
+  if (isGif) {
     try {
-      return await decodeGifWithImageDecoder(blob, maxFrames);
+      return await decodeGifWithGifuct(blob, maxFrames);
     } catch (err) {
-      console.warn("[V1PRO] ImageDecoder GIF failed, fallback first frame:", err);
+      console.warn("[V1PRO] gifuct GIF failed:", err);
+    }
+    if (typeof ImageDecoder !== "undefined") {
+      try {
+        return await decodeGifWithImageDecoder(blob, maxFrames);
+      } catch (err) {
+        console.warn("[V1PRO] ImageDecoder GIF failed:", err);
+      }
+    }
+  } else {
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const imageData = fitToLcdImageData(bitmap, bitmap.width, bitmap.height);
+      const frame = rgbaToRgb565(imageData);
+      return {
+        frames: [frame],
+        delaysMs: [DEFAULT_FRAME_MS],
+      };
+    } finally {
+      bitmap.close?.();
     }
   }
 
@@ -144,11 +163,78 @@ export async function decodeBlobToFrames(blob, opts = {}) {
     return {
       frames: [frame],
       delaysMs: [DEFAULT_FRAME_MS],
-      note: isGif ? "GIF 多帧解码不可用，已使用首帧。" : undefined,
+      note: "GIF 多帧解码失败，已使用首帧。",
     };
   } finally {
     bitmap.close?.();
   }
+}
+
+/**
+ * @param {Blob} blob
+ * @param {number} maxFrames
+ */
+async function decodeGifWithGifuct(blob, maxFrames) {
+  const gifuct = await import("./gifuct-bundle.js?v=1.0.2");
+  const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
+  const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
+  if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
+    throw new Error("gifuct 模块不可用");
+  }
+
+  const buffer = await blob.arrayBuffer();
+  const parsed = parseGIF(buffer);
+  const rawFrames = decompressFrames(parsed, true);
+  if (!rawFrames.length) {
+    throw new Error("GIF 无有效帧");
+  }
+
+  const gifW = parsed.lsd.width;
+  const gifH = parsed.lsd.height;
+  const frameCount = Math.min(rawFrames.length, maxFrames);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = gifW;
+  canvas.height = gifH;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas 不可用。");
+
+  const patchCanvas = document.createElement("canvas");
+  const patchCtx = patchCanvas.getContext("2d");
+  if (!patchCtx) throw new Error("Canvas 不可用。");
+
+  /** @type {Uint8Array[]} */
+  const frames = [];
+  /** @type {number[]} */
+  const delaysMs = [];
+
+  for (let i = 0; i < frameCount; i++) {
+    const frame = rawFrames[i];
+    patchCanvas.width = frame.dims.width;
+    patchCanvas.height = frame.dims.height;
+    const patchData = patchCtx.createImageData(frame.dims.width, frame.dims.height);
+    patchData.data.set(frame.patch);
+    patchCtx.putImageData(patchData, 0, 0);
+    ctx.drawImage(patchCanvas, frame.dims.left, frame.dims.top);
+
+    const imageData = fitToLcdImageData(canvas, gifW, gifH);
+    frames.push(rgbaToRgb565(imageData));
+
+    let ms = frame.delay || DEFAULT_FRAME_MS;
+    if (!Number.isFinite(ms) || ms <= 0) ms = DEFAULT_FRAME_MS;
+    if (ms < ANIM_MIN_FRAME_MS) ms = ANIM_MIN_FRAME_MS;
+    delaysMs.push(ms);
+
+    if (frame.disposalType === 2) {
+      ctx.clearRect(frame.dims.left, frame.dims.top, frame.dims.width, frame.dims.height);
+    }
+  }
+
+  let note = `GIF ${frameCount} 帧 · gifuct`;
+  if (rawFrames.length > maxFrames) {
+    note = `GIF 共 ${rawFrames.length} 帧，已截取前 ${maxFrames} 帧 · gifuct`;
+  }
+  return { frames, delaysMs, note };
 }
 
 /**
@@ -201,7 +287,7 @@ async function decodeGifWithImageDecoder(blob, maxFrames) {
     if (totalInFile > maxFrames) {
       note = `GIF 共 ${totalInFile} 帧，已截取前 ${maxFrames} 帧。`;
     } else if (totalInFile > 1) {
-      note = `GIF ${totalInFile} 帧`;
+      note = `GIF ${totalInFile} 帧 · ImageDecoder`;
     }
     return { frames, delaysMs, note };
   } finally {

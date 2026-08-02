@@ -12,6 +12,7 @@ import {
   createV1ProWebTransferClient,
   isWebUsbSupported,
   loadV1ProWebTransferSdk,
+  WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
 import type { V1ProTransferResult, V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
@@ -37,6 +38,7 @@ export default function WebUsbTransferTestPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [sdkReady, setSdkReady] = useState(false);
+  const [sdkVersion, setSdkVersion] = useState(WEBUSB_TRANSFER_VERSION);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -51,8 +53,13 @@ export default function WebUsbTransferTestPage() {
   useEffect(() => {
     let cancelled = false;
     void loadV1ProWebTransferSdk()
-      .then(() => {
-        if (!cancelled) setSdkReady(true);
+      .then((mod) => {
+        if (!cancelled) {
+          setSdkReady(true);
+          if (mod.WEBUSB_TRANSFER_VERSION) {
+            setSdkVersion(mod.WEBUSB_TRANSFER_VERSION);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -143,6 +150,14 @@ export default function WebUsbTransferTestPage() {
       if (result.note) {
         message += `（${result.note}）`;
       }
+      if (
+        selectedFile.name.toLowerCase().endsWith(".gif") &&
+        result.frameCount <= 1 &&
+        !result.note?.includes("gifuct") &&
+        !result.note?.includes("ImageDecoder")
+      ) {
+        message += "（仅首帧，请确认页面版本为 v1.0.2）";
+      }
       setStatusText(message);
       setStatusKind("ok");
       setMetaText("设备应已开始播放。可继续选择其他素材。");
@@ -175,7 +190,14 @@ export default function WebUsbTransferTestPage() {
       ) : null}
 
       <SitePanel>
-        <SiteSectionTitle title="网页直传测试" />
+        <SiteSectionTitle
+          title="网页直传测试"
+          action={
+            <span className="rounded-full border border-violet-200/70 bg-violet-50/80 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
+              v{sdkVersion}
+            </span>
+          }
+        />
 
         <div className={`mt-4 min-h-[1.4em] text-sm font-medium ${statusClass}`}>{statusText}</div>
 

@@ -31,5 +31,8 @@ export const ANIM_FLASH_MAX_BYTES = 0x02000000 - 0x1000;
 /** Soft cap for browser GIF decode (frames). */
 export const DEFAULT_MAX_GIF_FRAMES = 30;
 
+/** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
+export const WEBUSB_TRANSFER_VERSION = "1.0.2";
+
 export const PING_TIMEOUT_MS = 1500;
 export const IO_TIMEOUT_MS = 8000;
