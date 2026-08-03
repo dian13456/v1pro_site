@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from "react";
 
-const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif";
+const FILE_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.m4v";
 
 export function isWebUsbImageFile(file: File): boolean {
   const type = (file.type || "").toLowerCase();
@@ -10,11 +11,23 @@ export function isWebUsbImageFile(file: File): boolean {
   return /\.(png|jpe?g|webp|gif)$/i.test(file.name);
 }
 
-function pickImageFile(list: FileList | null | undefined): File | null {
+export function isWebUsbVideoFile(file: File): boolean {
+  const type = (file.type || "").toLowerCase();
+  if (type.startsWith("video/")) {
+    return true;
+  }
+  return /\.(mp4|webm|mov|m4v)$/i.test(file.name);
+}
+
+export function isWebUsbTransferFile(file: File): boolean {
+  return isWebUsbImageFile(file) || isWebUsbVideoFile(file);
+}
+
+function pickTransferFile(list: FileList | null | undefined): File | null {
   if (!list || list.length === 0) return null;
   for (let i = 0; i < list.length; i += 1) {
     const file = list.item(i);
-    if (file && isWebUsbImageFile(file)) {
+    if (file && isWebUsbTransferFile(file)) {
       return file;
     }
   }
@@ -81,7 +94,7 @@ export function WebUsbDropZone({
     event.stopPropagation();
     setDragActive(false);
     if (inactive) return;
-    handleFile(pickImageFile(event.dataTransfer.files));
+    handleFile(pickTransferFile(event.dataTransfer.files));
   };
 
   const zoneClass = [
@@ -119,10 +132,12 @@ export function WebUsbDropZone({
         ↓
       </div>
       <p className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-100">
-        {dragActive ? "松开即可上传" : "拖拽图片 / GIF 到此处"}
+        {dragActive ? "松开即可上传" : "拖拽图片 / GIF / 短视频到此处"}
       </p>
       <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{hint}</p>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">支持 PNG、JPG、WebP、GIF · 点击也可选择文件</p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+        支持 PNG、JPG、WebP、GIF、MP4（H.264，≤10 秒）· 点击也可选择文件
+      </p>
       {selectedFileName ? (
         <p className="mt-3 max-w-full truncate text-xs font-medium text-violet-700 dark:text-violet-200">
           当前：{selectedFileName}
@@ -135,7 +150,7 @@ export function WebUsbDropZone({
         accept={FILE_ACCEPT}
         disabled={inactive}
         onChange={(event) => {
-          handleFile(pickImageFile(event.target.files));
+          handleFile(pickTransferFile(event.target.files));
           event.target.value = "";
         }}
       />

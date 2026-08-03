@@ -8,10 +8,12 @@ import {
   ANIM_VERSION,
   DEFAULT_FRAME_MS,
   DEFAULT_MAX_GIF_FRAMES,
+  DEFAULT_MAX_VIDEO_SEC,
+  DEFAULT_VIDEO_FPS,
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.0.9";
+} from "./v1pro-constants.js?v=1.1.0";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -197,6 +199,170 @@ function normalizeDelayMs(value) {
   return ms;
 }
 
+function isVideoBlob(type, name) {
+  const lowerType = (type || "").toLowerCase();
+  if (lowerType.startsWith("video/")) return true;
+  return /\.(mp4|webm|mov|m4v)$/i.test(name || "");
+}
+
+function indexOfBytes(haystack, needle) {
+  if (needle.length === 0 || haystack.length < needle.length) return -1;
+  outer: for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+function includesAscii(bytes, text) {
+  const needle = new TextEncoder().encode(text);
+  return indexOfBytes(bytes, needle) >= 0;
+}
+
+/**
+ * @param {Blob} blob
+ */
+async function probeVideoBrowserCompatibility(blob) {
+  const chunk = await blob.slice(0, Math.min(blob.size, 512 * 1024)).arrayBuffer();
+  const bytes = new Uint8Array(chunk);
+
+  if (includesAscii(bytes, "hvc1") || includesAscii(bytes, "hev1") || includesAscii(bytes, "hvt1")) {
+    return {
+      compatible: false,
+      reason: "检测到 HEVC/H.265，浏览器无法解码。请使用 H.264 8-bit MP4。",
+    };
+  }
+  if (includesAscii(bytes, "av01") || includesAscii(bytes, "dav1")) {
+    return {
+      compatible: false,
+      reason: "检测到 AV1，浏览器可能无法解码。请使用 H.264 8-bit MP4。",
+    };
+  }
+  const marker = new TextEncoder().encode("avcC");
+  const avcIndex = indexOfBytes(bytes, marker);
+  if (avcIndex >= 0 && avcIndex + 8 < bytes.length && bytes[avcIndex + 8] === 110) {
+    return {
+      compatible: false,
+      reason: "检测到 H.264 10-bit，请转换为 8-bit H.264 MP4。",
+    };
+  }
+  return { compatible: true };
+}
+
+/**
+ * @param {HTMLVideoElement} video
+ * @param {number} time
+ */
+function seekVideoTo(video, time) {
+  if (Math.abs(video.currentTime - time) < 0.02) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("视频抽帧超时，请尝试更短或更小的 MP4。"));
+    }, 8000);
+    const onSeeked = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("视频抽帧失败，请使用 H.264 8-bit MP4。"));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+    };
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("error", onError);
+    video.currentTime = time;
+  });
+}
+
+/**
+ * @param {Blob} blob
+ * @param {{ maxFrames?: number, maxVideoSec?: number, videoFps?: number, onFrameEncoded?: (index: number, total: number) => void }} opts
+ */
+async function planVideoWithSeek(blob, opts) {
+  const maxFrames = opts.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
+  const maxVideoSec = opts.maxVideoSec ?? DEFAULT_MAX_VIDEO_SEC;
+  const videoFps = opts.videoFps ?? DEFAULT_VIDEO_FPS;
+  const onFrameEncoded =
+    typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
+
+  const probe = await probeVideoBrowserCompatibility(blob);
+  if (!probe.compatible) {
+    throw new Error(probe.reason || "视频格式不受支持。");
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+
+  try {
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("无法读取视频，请使用 H.264 8-bit MP4。"));
+      video.src = objectUrl;
+    });
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    if (duration <= 0) {
+      throw new Error("视频时长无效。");
+    }
+
+    const clipSec = Math.min(duration, maxVideoSec);
+    const frameCount = Math.min(maxFrames, Math.max(1, Math.round(clipSec * videoFps)));
+    const delayMs = normalizeDelayMs(Math.round((clipSec / frameCount) * 1000));
+    const delaysMs = Array.from({ length: frameCount }, () => delayMs);
+    const times = [];
+    for (let i = 0; i < frameCount; i += 1) {
+      times.push(frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, clipSec - 0.05));
+    }
+
+    const totalBytes = gfm1TotalBytes(frameCount);
+    const headerBlock = buildGfm1HeaderBlock(frameCount, delaysMs);
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw <= 0 || vh <= 0) {
+      throw new Error("无法读取视频画面尺寸。");
+    }
+
+    let note = `短视频 ${frameCount} 帧 · ${videoFps}fps`;
+    if (duration > maxVideoSec) {
+      note = `视频 ${duration.toFixed(1)}s，已截取前 ${maxVideoSec}s · ${frameCount} 帧`;
+    }
+
+    return {
+      frameCount,
+      totalBytes,
+      note,
+      payloadChunks: async function* () {
+        yield headerBlock;
+        for (let i = 0; i < frameCount; i += 1) {
+          await seekVideoTo(video, times[i]);
+          const rgb = sourceToRgb565(video, vw, vh);
+          onFrameEncoded?.(i + 1, frameCount);
+          yield rgb;
+          if (i > 0 && i % 2 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        }
+      },
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+
 /**
  * @param {Blob} blob
  * @param {{ maxFrames?: number, fileName?: string, onFrameEncoded?: (index: number, total: number) => void }} [opts]
@@ -212,8 +378,18 @@ export async function planGfm1Encode(blob, opts = {}) {
   const type = (blob.type || "").toLowerCase();
   const name = (opts.fileName || "").toLowerCase();
   const isGif = type === "image/gif" || name.endsWith(".gif");
+  const isVideo = isVideoBlob(type, name);
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
+
+  if (isVideo) {
+    return planVideoWithSeek(blob, {
+      maxFrames,
+      maxVideoSec: opts.maxVideoSec,
+      videoFps: opts.videoFps,
+      onFrameEncoded,
+    });
+  }
 
   if (!isGif) {
     const bitmap = await createImageBitmap(blob);
@@ -277,7 +453,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.0.9");
+  const gifuct = await import("./gifuct-bundle.js?v=1.1.0");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

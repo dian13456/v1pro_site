@@ -45,7 +45,7 @@ export default function WebUsbTransferTestPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [statusText, setStatusText] = useState("未连接");
   const [statusKind, setStatusKind] = useState<StatusKind>("idle");
-  const [metaText, setMetaText] = useState("连接设备后，将图片或 GIF 拖入下方区域即可自动传输。");
+  const [metaText, setMetaText] = useState("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   const [progress, setProgress] = useState(0);
   const [lastResult, setLastResult] = useState<V1ProTransferResult | null>(null);
 
@@ -104,7 +104,7 @@ export default function WebUsbTransferTestPage() {
       await client.connect();
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
-      setMetaText("设备已连接，将图片或 GIF 拖入下方区域即可自动传输。");
+      setMetaText("设备已连接，将图片、GIF 或短视频拖入下方区域即可自动传输。");
     } catch (err) {
       setStatusText(formatError(err));
       setStatusKind("error");
@@ -121,7 +121,7 @@ export default function WebUsbTransferTestPage() {
     setStatusText("已断开");
     setStatusKind("idle");
     setProgress(0);
-    setMetaText("连接设备后，将图片或 GIF 拖入下方区域即可自动传输。");
+    setMetaText("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   };
 
   const runTransfer = useCallback(
@@ -241,7 +241,7 @@ export default function WebUsbTransferTestPage() {
           selectedFileName={selectedFile?.name ?? null}
           onFile={handleIncomingFile}
           onInvalidFile={() => {
-            setStatusText("仅支持 PNG、JPG、WebP、GIF 图片文件");
+            setStatusText("仅支持 PNG、JPG、WebP、GIF 或 H.264 MP4 短视频（≤10 秒）");
             setStatusKind("error");
           }}
         />

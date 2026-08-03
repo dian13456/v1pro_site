@@ -1,8 +1,8 @@
 /**
  * High-level WebUSB transfer API for website / demo pages.
  */
-import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.0.9";
-import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.0.9";
+import { DEFAULT_MAX_GIF_FRAMES, WEBUSB_TRANSFER_VERSION } from "./v1pro-constants.js?v=1.1.0";
+import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.1.0";
 import {
   closeDevice,
   openAuthorizedDevice,
@@ -10,7 +10,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.0.9";
+} from "./v1pro-usb.js?v=1.1.0";
 
 export { V1ProUsbError };
 export { WEBUSB_TRANSFER_VERSION };
