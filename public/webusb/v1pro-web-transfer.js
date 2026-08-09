@@ -7,12 +7,12 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.6";
+} from "./v1pro-constants.js?v=1.2.7";
 import {
   gfm1TotalBytes,
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.6";
+} from "./v1pro-gfm1.js?v=1.2.7";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -22,7 +22,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.6";
+} from "./v1pro-usb.js?v=1.2.7";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -39,10 +39,9 @@ export function formatDeviceCapacityLabel(capacity) {
   if (capacity.estimated) {
     return `兼容模式 · 安全上限 ${capacity.maxFrames} 帧`;
   }
-  const total = capacity.totalMb ? `${capacity.totalMb}MB` : "未知容量";
   const frames = capacity.maxFrames ? `${capacity.maxFrames} 帧` : "";
   const model = capacity.model ? `${capacity.model} 档` : "";
-  return [total, model, frames].filter(Boolean).join(" · ");
+  return [model, frames].filter(Boolean).join(" · ");
 }
 
 function fallbackDeviceCapacity() {
