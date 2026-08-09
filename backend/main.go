@@ -378,6 +378,12 @@ func contentTypeFromObjectKey(objectKey string) string {
 		return "image/webp"
 	case strings.HasSuffix(key, ".jpg"), strings.HasSuffix(key, ".jpeg"):
 		return "image/jpeg"
+	case strings.HasSuffix(key, ".mp4"), strings.HasSuffix(key, ".m4v"):
+		return "video/mp4"
+	case strings.HasSuffix(key, ".webm"):
+		return "video/webm"
+	case strings.HasSuffix(key, ".mov"):
+		return "video/quicktime"
 	default:
 		return "application/octet-stream"
 	}
@@ -388,13 +394,18 @@ func writeTransferBlob(c *gin.Context, signer *service.COSSigner, objectKey stri
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage signer unavailable"})
 		return false
 	}
-	data, err := signer.GetObject(c.Request.Context(), objectKey)
+	reader, err := signer.OpenObject(c.Request.Context(), objectKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "read object failed"})
 		return false
 	}
+	defer reader.Body.Close()
+	contentType := strings.TrimSpace(reader.ContentType)
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = contentTypeFromObjectKey(objectKey)
+	}
 	c.Header("Cache-Control", "no-store")
-	c.Data(http.StatusOK, contentTypeFromObjectKey(objectKey), data)
+	c.DataFromReader(http.StatusOK, reader.ContentLength, contentType, reader.Body, nil)
 	return true
 }
 
@@ -864,16 +875,16 @@ func main() {
 		log.Fatalf("load image map failed: %v", err)
 	}
 	userDataRepo, err := service.NewUserDataRepo(service.UserDataPaths{
-		LikesPath:       resourceLikesPath,
-		FavoritesPath:   resourceFavoritesPath,
-		DownloadsPath:   resourceDownloadsPath,
-		MessagesPath:    messageBoardPath,
-		ProfilesPath:    userProfilesPath,
-		PromptPrefsPath: userPromptPrefsPath,
-		CreditsPath:           aiImageCreditsPath,
-		SharesPath:            aiImageSharesPath,
-		SharesUnlimitedPath:   aiImageSharesUnlimitedPath,
-		LedgerPath:            aiCreditLedgerPath,
+		LikesPath:           resourceLikesPath,
+		FavoritesPath:       resourceFavoritesPath,
+		DownloadsPath:       resourceDownloadsPath,
+		MessagesPath:        messageBoardPath,
+		ProfilesPath:        userProfilesPath,
+		PromptPrefsPath:     userPromptPrefsPath,
+		CreditsPath:         aiImageCreditsPath,
+		SharesPath:          aiImageSharesPath,
+		SharesUnlimitedPath: aiImageSharesUnlimitedPath,
+		LedgerPath:          aiCreditLedgerPath,
 	})
 	if err != nil {
 		log.Fatalf("init user data storage failed: %v", err)
@@ -1177,8 +1188,8 @@ func main() {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":   true,
-			"available": available,
+			"success":     true,
+			"available":   available,
 			"displayName": normalized,
 		})
 	})
@@ -1488,9 +1499,9 @@ func main() {
 			aiShareMu.Unlock()
 			aiCreditsMu.Unlock()
 			c.JSON(http.StatusBadRequest, gin.H{
-				"success":  false,
-				"message":  redeemErr.Error(),
-				"credits":  balance,
+				"success": false,
+				"message": redeemErr.Error(),
+				"credits": balance,
 			})
 			return
 		}
@@ -1918,10 +1929,10 @@ func main() {
 		}
 
 		resp := gin.H{
-			"success":    true,
-			"resourceId": result.ResourceID,
+			"success":     true,
+			"resourceId":  result.ResourceID,
 			"downloadUrl": result.DownloadURL,
-			"title":      result.Title,
+			"title":       result.Title,
 		}
 		for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
 			resp[key] = value
@@ -3088,12 +3099,12 @@ func main() {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":      true,
-			"weekKey":      weekKey,
-			"totalCount":   totalCount,
-			"weeklyCount":  weeklyCount,
-			"hourlyCount":  window.HourCount,
-			"dailyCount":   window.DayCount,
+			"success":     true,
+			"weekKey":     weekKey,
+			"totalCount":  totalCount,
+			"weeklyCount": weeklyCount,
+			"hourlyCount": window.HourCount,
+			"dailyCount":  window.DayCount,
 		})
 	})
 

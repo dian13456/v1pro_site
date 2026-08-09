@@ -14,9 +14,15 @@ import (
 )
 
 type COSSigner struct {
-	client   *cos.Client
-	secretID string
+	client    *cos.Client
+	secretID  string
 	secretKey string
+}
+
+type COSObjectReader struct {
+	Body          io.ReadCloser
+	ContentLength int64
+	ContentType   string
 }
 
 func NewCOSSigner(bucket, region, secretID, secretKey string) (*COSSigner, error) {
@@ -71,6 +77,15 @@ func (s *COSSigner) DeleteObject(ctx context.Context, objectKey string) error {
 }
 
 func (s *COSSigner) GetObject(ctx context.Context, objectKey string) ([]byte, error) {
+	reader, err := s.OpenObject(ctx, objectKey)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Body.Close()
+	return io.ReadAll(reader.Body)
+}
+
+func (s *COSSigner) OpenObject(ctx context.Context, objectKey string) (*COSObjectReader, error) {
 	objectKey = strings.TrimLeft(strings.TrimSpace(objectKey), "/")
 	if objectKey == "" {
 		return nil, fmt.Errorf("empty object key")
@@ -82,8 +97,11 @@ func (s *COSSigner) GetObject(ctx context.Context, objectKey string) ([]byte, er
 	if resp == nil || resp.Body == nil {
 		return nil, fmt.Errorf("empty get response")
 	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return &COSObjectReader{
+		Body:          resp.Body,
+		ContentLength: resp.ContentLength,
+		ContentType:   resp.Header.Get("Content-Type"),
+	}, nil
 }
 
 func (s *COSSigner) GenerateReadURL(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {

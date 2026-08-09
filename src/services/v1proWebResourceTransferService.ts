@@ -34,6 +34,7 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
 let sharedClient: V1ProWebTransferClient | null = null;
 let transferInflight: Promise<{ bytes: number; frameCount: number; note?: string }> | null = null;
 let transferInflightResourceId: number | null = null;
+const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 function formatUsbError(err: unknown): string {
   if (err && typeof err === "object" && "name" in err && err.name === "V1ProUsbError" && "message" in err) {
@@ -57,7 +58,10 @@ function transferBlobPath(resource: ResourceItem): string {
   return `/api/resource/?${params.toString()}`;
 }
 
-async function fetchTransferBlob(resource: ResourceItem): Promise<Blob> {
+async function fetchTransferBlob(
+  resource: ResourceItem,
+  onProgress?: (received: number, total: number) => void,
+): Promise<Blob> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
@@ -74,10 +78,19 @@ async function fetchTransferBlob(resource: ResourceItem): Promise<Blob> {
     },
   });
 
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), TRANSFER_DOWNLOAD_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, init);
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+    });
   } catch (err) {
+    window.clearTimeout(timeout);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("视频下载超时，请检查网络后重试");
+    }
     throw new Error(formatClientError(err, "素材下载失败，请检查网络后重试"));
   }
 
@@ -89,10 +102,60 @@ async function fetchTransferBlob(resource: ResourceItem): Promise<Blob> {
     } catch {
       // ignore non-json body
     }
+    window.clearTimeout(timeout);
     throw new Error(message);
   }
 
-  return response.blob();
+  const total = Number.parseInt(response.headers.get("Content-Length") || "0", 10) || 0;
+  if (!response.body) {
+    try {
+      return await response.blob();
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  let lastReportedAt = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      chunks.push(value);
+      received += value.byteLength;
+      const now = Date.now();
+      if (now - lastReportedAt >= 200 || (total > 0 && received >= total)) {
+        lastReportedAt = now;
+        onProgress?.(received, total);
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("视频下载超时，请检查网络后重试");
+    }
+    throw new Error(formatClientError(err, "视频下载中断，请重试"));
+  } finally {
+    window.clearTimeout(timeout);
+    reader.releaseLock();
+  }
+
+  onProgress?.(received, total);
+  return new Blob(chunks as BlobPart[], {
+    type: response.headers.get("Content-Type") || "application/octet-stream",
+  });
+}
+
+function formatDownloadProgress(received: number, total: number): string {
+  const receivedMb = received / (1024 * 1024);
+  if (total > 0) {
+    const totalMb = total / (1024 * 1024);
+    const percent = Math.min(100, Math.round((received / total) * 100));
+    return `正在下载视频… ${receivedMb.toFixed(1)}/${totalMb.toFixed(1)} MB（${percent}%）`;
+  }
+  return `正在下载视频… ${receivedMb.toFixed(1)} MB`;
 }
 
 export function prefetchWebUsbTransferDownload(): void {
@@ -124,11 +187,33 @@ export async function transferResourceViaWebUsb(
 
     try {
       const isVideo = resource.materialType === "video";
-      callbacks.onStatus?.(isVideo ? "正在连接并下载视频…" : "正在连接并获取素材…");
-      const [, blob] = await Promise.all([
-        client.connect({ reuseAuthorized: true }),
-        fetchTransferBlob(resource),
-      ]);
+      let connected = false;
+      let downloadDone = false;
+      callbacks.onStatus?.("正在连接设备…");
+      const connectTask = client.connect({ reuseAuthorized: true }).then((device) => {
+        connected = true;
+        callbacks.onStatus?.(
+          downloadDone
+            ? "素材下载完成，正在准备设备…"
+            : isVideo
+              ? "设备已连接，正在下载视频…"
+              : "设备已连接，正在获取素材…",
+        );
+        return device;
+      });
+      const downloadTask = fetchTransferBlob(
+        resource,
+        isVideo
+          ? (received, total) => callbacks.onStatus?.(formatDownloadProgress(received, total))
+          : undefined,
+      ).then((blob) => {
+        downloadDone = true;
+        if (!connected) {
+          callbacks.onStatus?.("素材下载完成，正在连接设备…");
+        }
+        return blob;
+      });
+      const [, blob] = await Promise.all([connectTask, downloadTask]);
       const capacityLabel = client.getCapacityLabel?.() ?? "";
       if (capacityLabel) {
         callbacks.onStatus?.(`设备容量 ${capacityLabel}`);
