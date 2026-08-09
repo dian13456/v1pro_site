@@ -31,6 +31,7 @@ export interface VideoShareResponse {
   shareCount?: number;
   shareLimit?: number;
   shareRemaining?: number;
+  shareUnlimited?: boolean;
 }
 
 function throwIfPendingReview(payload: VideoShareResponse): void {

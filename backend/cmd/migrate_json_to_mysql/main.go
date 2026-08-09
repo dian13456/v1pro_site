@@ -20,7 +20,8 @@ func main() {
 		MessagesPath:  filepath.Join(*configDir, "message_board.json"),
 		ProfilesPath:  filepath.Join(*configDir, "user_profiles.json"),
 		CreditsPath:   filepath.Join(*configDir, "ai_image_credits.json"),
-		SharesPath:    filepath.Join(*configDir, "ai_image_share_counts.json"),
+		SharesPath:           filepath.Join(*configDir, "ai_image_share_counts.json"),
+		SharesUnlimitedPath:  filepath.Join(*configDir, "ai_image_share_unlimited.json"),
 	}
 
 	if os.Getenv("STORAGE_BACKEND") == "" {

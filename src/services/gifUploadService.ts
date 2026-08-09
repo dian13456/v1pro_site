@@ -28,6 +28,7 @@ export interface GifShareResponse {
   shareCount?: number;
   shareLimit?: number;
   shareRemaining?: number;
+  shareUnlimited?: boolean;
 }
 
 function throwIfPendingReview(payload: GifShareResponse): void {

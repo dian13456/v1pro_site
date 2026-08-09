@@ -29,6 +29,7 @@ export interface AiImageShareResponse {
   shareCount?: number;
   shareLimit?: number;
   shareRemaining?: number;
+  shareUnlimited?: boolean;
   message?: string;
   pendingReview?: boolean;
   reviewId?: string;

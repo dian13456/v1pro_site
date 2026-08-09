@@ -116,6 +116,7 @@ export default function SharePage() {
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [shareRemaining, setShareRemaining] = useState<number | null>(null);
+  const [shareUnlimited, setShareUnlimited] = useState(false);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -172,6 +173,7 @@ export default function SharePage() {
     try {
       let resourceId: number | undefined;
       let remaining: number | undefined;
+      let unlimited = false;
 
       switch (mediaKind) {
         case "gif": {
@@ -182,6 +184,7 @@ export default function SharePage() {
           });
           resourceId = result.resourceId;
           remaining = result.shareRemaining;
+          unlimited = Boolean(result.shareUnlimited);
           break;
         }
         case "video": {
@@ -193,6 +196,7 @@ export default function SharePage() {
           });
           resourceId = result.resourceId;
           remaining = result.shareRemaining;
+          unlimited = Boolean(result.shareUnlimited);
           break;
         }
         case "image": {
@@ -205,12 +209,16 @@ export default function SharePage() {
           );
           resourceId = result.resourceId;
           remaining = result.shareRemaining;
+          unlimited = Boolean(result.shareUnlimited);
           break;
         }
       }
 
       setNotice(`分享成功！素材编号 ${resourceId ?? ""}，已发布到素材库。`);
-      if (typeof remaining === "number") {
+      setShareUnlimited(unlimited);
+      if (unlimited) {
+        setShareRemaining(null);
+      } else if (typeof remaining === "number") {
         setShareRemaining(remaining);
       }
       setSelectedFile(null);
@@ -246,7 +254,11 @@ export default function SharePage() {
         <SiteSectionTitle
           title="分享素材"
           description={`支持静态图片（8MB）、GIF（${gifMb}MB）、视频（${videoMb}MB，建议 H.264 8-bit MP4，兼容 Edge/Chrome）。他人点赞可为你的 SN 增加积分。${
-            shareRemaining != null ? ` 当前剩余分享次数：${shareRemaining}` : ""
+            shareUnlimited
+              ? " 当前分享次数：无限制"
+              : shareRemaining != null
+                ? ` 当前剩余分享次数：${shareRemaining}`
+                : ""
           }`}
         />
 

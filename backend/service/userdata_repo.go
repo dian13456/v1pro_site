@@ -16,8 +16,9 @@ type UserDataPaths struct {
 	ProfilesPath    string
 	PromptPrefsPath string
 	CreditsPath     string
-	SharesPath      string
-	LedgerPath      string
+	SharesPath           string
+	SharesUnlimitedPath  string
+	LedgerPath           string
 }
 
 type UserDataRepo struct {
@@ -219,6 +220,39 @@ func (r *UserDataRepo) SaveAIShareQuota(store AIShareQuotaStore) error {
 	return SaveAIShareQuotaStore(r.paths.SharesPath, store)
 }
 
+func (r *UserDataRepo) LoadAIShareUnlimited() (AIShareUnlimitedStore, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.loadAIShareUnlimited(ctx)
+	}
+	return LoadAIShareUnlimitedStore(r.paths.SharesUnlimitedPath)
+}
+
+func (r *UserDataRepo) SaveAIShareUnlimited(store AIShareUnlimitedStore) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.saveAIShareUnlimited(ctx, store)
+	}
+	return SaveAIShareUnlimitedStore(r.paths.SharesUnlimitedPath, store)
+}
+
+func (r *UserDataRepo) TryReloadAIShareUnlimited(current *AIShareUnlimitedStore) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		latest, err := r.mysql.loadAIShareUnlimited(ctx)
+		if err != nil {
+			return err
+		}
+		*current = latest
+		return nil
+	}
+	var lastMod time.Time
+	return TryReloadAIShareUnlimitedStore(r.paths.SharesUnlimitedPath, current, &lastMod)
+}
+
 func (r *UserDataRepo) TryReloadAICredits(current *AICreditsStore) error {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()
@@ -328,6 +362,13 @@ func (r *UserDataRepo) ImportJSONFiles() error {
 	}
 	if err := r.SaveAIShareQuota(shares); err != nil {
 		return fmt.Errorf("save shares: %w", err)
+	}
+	unlimited, err := LoadAIShareUnlimitedStore(r.paths.SharesUnlimitedPath)
+	if err != nil {
+		return fmt.Errorf("shares unlimited: %w", err)
+	}
+	if err := r.SaveAIShareUnlimited(unlimited); err != nil {
+		return fmt.Errorf("save shares unlimited: %w", err)
 	}
 	return nil
 }

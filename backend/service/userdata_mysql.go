@@ -616,6 +616,47 @@ func (m *mysqlStore) saveAIShareQuota(ctx context.Context, store AIShareQuotaSto
 	return tx.Commit()
 }
 
+func (m *mysqlStore) loadAIShareUnlimited(ctx context.Context) (AIShareUnlimitedStore, error) {
+	rows, err := m.db.QueryContext(ctx, `SELECT serial FROM ai_share_unlimited_serials`)
+	if err != nil {
+		return AIShareUnlimitedStore{serialSet: map[string]struct{}{}}, err
+	}
+	defer rows.Close()
+	serials := make([]string, 0)
+	for rows.Next() {
+		var serial string
+		if err := rows.Scan(&serial); err != nil {
+			return AIShareUnlimitedStore{serialSet: map[string]struct{}{}}, err
+		}
+		serials = append(serials, serial)
+	}
+	if err := rows.Err(); err != nil {
+		return AIShareUnlimitedStore{serialSet: map[string]struct{}{}}, err
+	}
+	return NewAIShareUnlimitedStore(serials...), nil
+}
+
+func (m *mysqlStore) saveAIShareUnlimited(ctx context.Context, store AIShareUnlimitedStore) error {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_share_unlimited_serials`); err != nil {
+		return err
+	}
+	for _, serial := range store.Serials() {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO ai_share_unlimited_serials (serial) VALUES (?)`,
+			serial,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (m *mysqlStore) appendCreditLedgerEntry(ctx context.Context, entry CreditLedgerEntry) error {
 	createdAt := time.Now().UTC().UnixMilli()
 	if entry.CreatedAt != "" {
