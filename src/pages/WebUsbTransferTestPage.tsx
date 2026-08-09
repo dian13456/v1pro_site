@@ -129,6 +129,49 @@ export default function WebUsbTransferTestPage() {
     setMetaText("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   };
 
+  const handleReadCapacity = async () => {
+    if (!webUsbSupported || !sdkReady || busy) return;
+    setStatusKind("idle");
+    setProgress(0);
+    setLastResult(null);
+    try {
+      const client = await ensureClient();
+      if (!client.connected) {
+        setStatusText("正在连接设备…");
+        await client.connect();
+      }
+      setStatusText("正在读取设备容量（JEDEC）…");
+      refreshConnectionState();
+      const capacity = await client.refreshDeviceCapacity();
+      if (!capacity) {
+        const detail = client.capacityError || "设备未返回 JED 容量应答";
+        setStatusText(`读取容量失败：${detail}`);
+        setStatusKind("error");
+        setMetaText("可再次点击「读取容量」重试，或断开后重新连接。");
+        return;
+      }
+      const label = client.getCapacityLabel?.() || `${capacity.model} 档 · ${capacity.maxFrames} 帧`;
+      setStatusText(`容量读取成功：${label}`);
+      setStatusKind("ok");
+      setMetaText(
+        [
+          `JEDEC ${capacity.jedecHex || "-"}`,
+          `model ${capacity.model}`,
+          `total ${capacity.totalMb}MB`,
+          `usable ${capacity.usableMb}MB`,
+          `productFrames ${capacity.productFrames}`,
+          `maxFrames ${capacity.maxFrames}`,
+          `maxPayload ${capacity.maxPayloadBytes} 字节`,
+        ].join(" · "),
+      );
+    } catch (err) {
+      setStatusText(formatError(err));
+      setStatusKind("error");
+    } finally {
+      refreshConnectionState();
+    }
+  };
+
   const runTransfer = useCallback(
     async (file: File, options: { connectIfNeeded?: boolean } = {}) => {
       if (!webUsbSupported || !sdkReady || transferLockRef.current) return;
@@ -267,6 +310,14 @@ export default function WebUsbTransferTestPage() {
             disabled={!webUsbSupported || !sdkReady || connected || busy}
           >
             连接设备
+          </SiteButton>
+          <SiteButton
+            type="button"
+            variant="secondary"
+            onClick={() => void handleReadCapacity()}
+            disabled={!webUsbSupported || !sdkReady || busy}
+          >
+            读取容量
           </SiteButton>
           <SiteButton
             type="button"
