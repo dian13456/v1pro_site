@@ -5,9 +5,10 @@ import {
   DEFAULT_MAX_GIF_FRAMES,
   MAX_VIDEO_FPS,
   MAX_VIDEO_SPEED,
+  PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.0";
-import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.2.0";
+} from "./v1pro-constants.js?v=1.2.1";
+import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.2.1";
 import {
   closeDevice,
   openAuthorizedDevice,
@@ -16,7 +17,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.0";
+} from "./v1pro-usb.js?v=1.2.1";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -120,7 +121,12 @@ export class V1ProWebTransfer {
     this.busy = true;
     let probeNote;
     try {
-      if (pingFirst) {
+      if (!this.deviceCapacity) {
+        await this.refreshDeviceCapacity();
+      }
+
+      const shouldProbe = pingFirst && !this.deviceCapacity;
+      if (shouldProbe) {
         const probe = await probeDevice(this.device);
         if (!probe.ok) {
           if (opts.requirePing === true) {
@@ -134,7 +140,13 @@ export class V1ProWebTransfer {
 
       const capacityNote = formatDeviceCapacityLabel(this.deviceCapacity);
       if (onProgress) {
-        onProgress({ phase: "encode", sent: 0, total: 1, ratio: 0, note: capacityNote || undefined });
+        onProgress({
+          phase: "encode",
+          sent: 0,
+          total: 1,
+          ratio: 0,
+          note: capacityNote ? `准备编码… ${capacityNote}` : "准备编码…",
+        });
       }
 
       const plan = await planGfm1Encode(file, {
@@ -168,6 +180,7 @@ export class V1ProWebTransfer {
 
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
+        prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
         onProgress: (sent, total) => {
           if (!onProgress) return;
           const encodeWeight = 0.12;

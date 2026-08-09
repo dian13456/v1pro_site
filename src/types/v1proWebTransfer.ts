@@ -35,6 +35,7 @@ export interface V1ProTransferFileOptions {
   maxVideoFps?: number;
   maxVideoSpeed?: number;
   pingFirst?: boolean;
+  requirePing?: boolean;
   onProgress?: (info: V1ProTransferProgress) => void;
 }
 

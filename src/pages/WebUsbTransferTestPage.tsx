@@ -162,7 +162,12 @@ export default function WebUsbTransferTestPage() {
         refreshConnectionState();
 
         const result = await client.transferFile(file, {
+          pingFirst: !client.connected || !client.deviceCapacity,
           onProgress: (info) => {
+            if (info.note && info.sent === 0) {
+              setStatusText(info.note);
+              return;
+            }
             if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
               setStatusText(`正在编码… ${info.sent}/${info.frameCount} 帧`);
               setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));

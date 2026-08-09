@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.0";
+} from "./v1pro-constants.js?v=1.2.1";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -424,8 +424,16 @@ export async function ping(device) {
   );
   if (pong) return true;
 
-  const capacity = await queryDeviceCapacity(device);
-  if (capacity) return true;
+  const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
+  try {
+    await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
+  } catch (err) {
+    if (err instanceof V1ProUsbError) throw err;
+    throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
+  }
+
+  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
+  if (jedec) return true;
 
   throw new V1ProUsbError(
     "ping_timeout",
@@ -553,6 +561,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   let sent = 0;
   let lastDrainAt = Date.now();
+  const prefetchBeforeStart = Math.max(0, opts.prefetchBeforeStart ?? 3);
 
   const writeChunk = async (chunk) => {
     const now = Date.now();
@@ -565,13 +574,62 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
   };
 
-  await writeChunk(preamble);
-
-  const BATCH = 4096;
-  for await (const chunk of payloadChunks) {
-    if (!(chunk instanceof Uint8Array) || chunk.length === 0) continue;
+  const writePayloadChunk = async (chunk) => {
+    if (!(chunk instanceof Uint8Array) || chunk.length === 0) return;
+    const BATCH = 4096;
     for (let i = 0; i < chunk.length; i += BATCH) {
       await writeChunk(chunk.subarray(i, Math.min(i + BATCH, chunk.length)));
+    }
+  };
+
+  const iter = payloadChunks[Symbol.asyncIterator]();
+  const queue = [];
+  let producerDone = false;
+  let producerError = null;
+
+  for (let i = 0; i < prefetchBeforeStart; i += 1) {
+    const next = await iter.next();
+    if (next.done) {
+      producerDone = true;
+      break;
+    }
+    queue.push(next.value);
+  }
+
+  const producer = (async () => {
+    try {
+      while (true) {
+        const next = await iter.next();
+        if (next.done) break;
+        queue.push(next.value);
+      }
+    } catch (err) {
+      producerError = err;
+    } finally {
+      producerDone = true;
+    }
+  })();
+
+  await writeChunk(preamble);
+
+  while (!producerDone || queue.length > 0) {
+    if (producerError) {
+      throw producerError;
+    }
+    if (queue.length > 0) {
+      const chunk = queue.shift();
+      await writePayloadChunk(chunk);
+      continue;
+    }
+    await sleep(4);
+  }
+
+  try {
+    await producer;
+  } catch (err) {
+    if (!producerError) {
+      producerError = err;
+      throw err;
     }
   }
 

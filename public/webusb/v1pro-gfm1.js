@@ -15,7 +15,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.0";
+} from "./v1pro-constants.js?v=1.2.1";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -265,7 +265,7 @@ function seekVideoTo(video, time) {
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error("视频抽帧超时，请尝试更短或更小的 MP4。"));
-    }, 8000);
+    }, 12000);
     const onSeeked = () => {
       cleanup();
       resolve();
@@ -523,7 +523,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.0");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.1");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

@@ -138,7 +138,12 @@ export async function transferResourceViaWebUsb(
       callbacks.onStatus?.(isVideo ? "正在解码视频并传输…" : "正在编码并传输…");
       const result = await client.transferFile(blob, {
         fileName,
+        pingFirst: false,
         onProgress: (info) => {
+          if (info.note && info.sent === 0) {
+            callbacks.onStatus?.(info.note);
+            return;
+          }
           if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
             callbacks.onStatus?.(
               isVideo
