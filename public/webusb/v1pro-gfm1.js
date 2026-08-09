@@ -10,10 +10,12 @@ import {
   DEFAULT_MAX_GIF_FRAMES,
   DEFAULT_MAX_VIDEO_SEC,
   DEFAULT_VIDEO_FPS,
+  MAX_VIDEO_FPS,
+  MAX_VIDEO_SPEED,
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.1.0";
+} from "./v1pro-constants.js?v=1.2.0";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -284,13 +286,70 @@ function seekVideoTo(video, time) {
 }
 
 /**
+ * Plan video sampling: prefer up to maxVideoFps, speed up to maxVideoSpeed, fill frame budget.
+ * @param {number} duration source seconds
+ * @param {number} maxFrames device frame budget
+ * @param {{ maxVideoFps?: number, maxVideoSpeed?: number }} [opts]
+ */
+export function planVideoSampleSchedule(duration, maxFrames, opts = {}) {
+  const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
+  const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
+  const safeDuration = Math.max(0.001, duration);
+  const budget = Math.max(1, maxFrames);
+
+  for (let fps = maxVideoFps; fps >= 1; fps -= 1) {
+    const framesNeeded = Math.max(1, Math.ceil(safeDuration * fps));
+    if (framesNeeded <= budget) {
+      return {
+        frameCount: framesNeeded,
+        fps,
+        speed: 1,
+        sourceSpan: safeDuration,
+      };
+    }
+    const speed = (safeDuration * fps) / budget;
+    if (speed <= maxVideoSpeed) {
+      return {
+        frameCount: budget,
+        fps,
+        speed,
+        sourceSpan: safeDuration,
+      };
+    }
+  }
+
+  const fps = maxVideoFps;
+  const sourceSpan = Math.min(safeDuration, (budget / fps) * maxVideoSpeed);
+  return {
+    frameCount: budget,
+    fps,
+    speed: maxVideoSpeed,
+    sourceSpan,
+  };
+}
+
+function formatVideoPlanNote(schedule, duration) {
+  const parts = [`${schedule.frameCount} 帧`, `${schedule.fps}fps`];
+  if (schedule.speed > 1.01) {
+    parts.push(`${schedule.speed.toFixed(1)}x 倍速`);
+  }
+  if (schedule.sourceSpan + 0.05 < duration) {
+    parts.push(`已截取前 ${schedule.sourceSpan.toFixed(1)}s`);
+  } else if (duration > 0.05) {
+    parts.push(`${duration.toFixed(1)}s`);
+  }
+  return parts.join(" · ");
+}
+
+/**
  * @param {Blob} blob
- * @param {{ maxFrames?: number, maxVideoSec?: number, videoFps?: number, onFrameEncoded?: (index: number, total: number) => void }} opts
+ * @param {{ maxFrames?: number, maxVideoFps?: number, maxVideoSpeed?: number, maxPayloadBytes?: number, onFrameEncoded?: (index: number, total: number) => void }} opts
  */
 async function planVideoWithSeek(blob, opts) {
   const maxFrames = opts.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
-  const maxVideoSec = opts.maxVideoSec ?? DEFAULT_MAX_VIDEO_SEC;
-  const videoFps = opts.videoFps ?? DEFAULT_VIDEO_FPS;
+  const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
+  const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
+  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -317,16 +376,22 @@ async function planVideoWithSeek(blob, opts) {
       throw new Error("视频时长无效。");
     }
 
-    const clipSec = Math.min(duration, maxVideoSec);
-    const frameCount = Math.min(maxFrames, Math.max(1, Math.round(clipSec * videoFps)));
-    const delayMs = normalizeDelayMs(Math.round((clipSec / frameCount) * 1000));
+    const schedule = planVideoSampleSchedule(duration, maxFrames, {
+      maxVideoFps,
+      maxVideoSpeed,
+    });
+    const { frameCount, fps, sourceSpan } = schedule;
+    const delayMs = normalizeDelayMs(Math.round(1000 / fps));
     const delaysMs = Array.from({ length: frameCount }, () => delayMs);
     const times = [];
     for (let i = 0; i < frameCount; i += 1) {
-      times.push(frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, clipSec - 0.05));
+      times.push(frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, sourceSpan - 0.05));
     }
 
     const totalBytes = gfm1TotalBytes(frameCount);
+    if (totalBytes > maxPayloadBytes) {
+      throw new Error("视频编码后超过设备 Flash 上限，请缩短视频或降低画质。");
+    }
     const headerBlock = buildGfm1HeaderBlock(frameCount, delaysMs);
     const vw = video.videoWidth;
     const vh = video.videoHeight;
@@ -334,10 +399,7 @@ async function planVideoWithSeek(blob, opts) {
       throw new Error("无法读取视频画面尺寸。");
     }
 
-    let note = `短视频 ${frameCount} 帧 · ${videoFps}fps`;
-    if (duration > maxVideoSec) {
-      note = `视频 ${duration.toFixed(1)}s，已截取前 ${maxVideoSec}s · ${frameCount} 帧`;
-    }
+    const note = formatVideoPlanNote(schedule, duration);
 
     return {
       frameCount,
@@ -374,7 +436,14 @@ async function planVideoWithSeek(blob, opts) {
  * }>}
  */
 export async function planGfm1Encode(blob, opts = {}) {
-  const maxFrames = opts.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
+  let maxFrames = opts.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
+  if (opts.maxPayloadBytes) {
+    const framesByBytes = Math.max(
+      1,
+      Math.floor((opts.maxPayloadBytes - 56) / (2 + FRAME_PIXEL_BYTES)),
+    );
+    maxFrames = Math.min(maxFrames, framesByBytes);
+  }
   const type = (blob.type || "").toLowerCase();
   const name = (opts.fileName || "").toLowerCase();
   const isGif = type === "image/gif" || name.endsWith(".gif");
@@ -385,8 +454,9 @@ export async function planGfm1Encode(blob, opts = {}) {
   if (isVideo) {
     return planVideoWithSeek(blob, {
       maxFrames,
-      maxVideoSec: opts.maxVideoSec,
-      videoFps: opts.videoFps,
+      maxVideoFps: opts.maxVideoFps,
+      maxVideoSpeed: opts.maxVideoSpeed,
+      maxPayloadBytes: opts.maxPayloadBytes,
       onFrameEncoded,
     });
   }
@@ -453,7 +523,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.1.0");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.0");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

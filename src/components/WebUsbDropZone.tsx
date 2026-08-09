@@ -132,11 +132,11 @@ export function WebUsbDropZone({
         ↓
       </div>
       <p className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-100">
-        {dragActive ? "松开即可上传" : "拖拽图片 / GIF / 短视频到此处"}
+        {dragActive ? "松开即可上传" : "拖拽图片 / GIF / 视频到此处"}
       </p>
       <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{hint}</p>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-        支持 PNG、JPG、WebP、GIF、MP4（H.264，≤10 秒）· 点击也可选择文件
+        支持 PNG、JPG、WebP、GIF、MP4（H.264）；视频按设备容量自适应，最高 25fps、5 倍速
       </p>
       {selectedFileName ? (
         <p className="mt-3 max-w-full truncate text-xs font-medium text-violet-700 dark:text-violet-200">

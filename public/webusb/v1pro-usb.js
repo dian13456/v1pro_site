@@ -5,6 +5,7 @@ import {
   ANIM_FLASH_MAX_BYTES,
   EP_IN,
   EP_OUT,
+  FRAME_PIXEL_BYTES,
   IO_TIMEOUT_MS,
   PING_TIMEOUT_MS,
   USB_CHUNK,
@@ -14,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.1.0";
+} from "./v1pro-constants.js?v=1.2.0";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -332,6 +333,74 @@ export async function closeDevice(device) {
 }
 
 /**
+ * @param {string|null|undefined} text
+ * @returns {{
+ *   jedecHex: string,
+ *   model: number,
+ *   totalMb: number,
+ *   usableMb: number,
+ *   productFrames: number,
+ *   maxPayloadBytes: number,
+ *   maxFrames: number,
+ * }|null}
+ */
+export function parseJedecReply(text) {
+  if (!text) return null;
+  const parts = text.trim().split(",");
+  if (parts[0] !== "JED" || parts.length < 6) return null;
+
+  const jedecHex = parts[1] || "";
+  const model = Number.parseInt(parts[2], 10);
+  const totalMb = Number.parseFloat(parts[3]);
+  const usableMb = Number.parseFloat(parts[4]);
+  const productFrames = Number.parseInt(parts[5], 10);
+  if (!Number.isFinite(productFrames) || productFrames <= 0) {
+    return null;
+  }
+
+  const usableBytes = Number.isFinite(usableMb) && usableMb > 0 ? Math.floor(usableMb * 1024 * 1024) : 0;
+  const maxPayloadBytes = Math.min(
+    ANIM_FLASH_MAX_BYTES,
+    usableBytes > 0 ? usableBytes : ANIM_FLASH_MAX_BYTES,
+  );
+  const framesByBytes = Math.max(
+    1,
+    Math.floor((maxPayloadBytes - 56) / (2 + FRAME_PIXEL_BYTES)),
+  );
+  const maxFrames = Math.max(1, Math.min(productFrames, framesByBytes));
+
+  return {
+    jedecHex,
+    model: Number.isFinite(model) ? model : 0,
+    totalMb: Number.isFinite(totalMb) ? totalMb : 0,
+    usableMb: Number.isFinite(usableMb) ? usableMb : 0,
+    productFrames,
+    maxPayloadBytes,
+    maxFrames,
+  };
+}
+
+/**
+ * Query device Flash capacity via JEDEC command.
+ * @param {USBDevice} device
+ */
+export async function queryDeviceCapacity(device) {
+  const { outEndpoint, inEndpoint } = getSession(device);
+  await drainInQuick(device, inEndpoint);
+
+  const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
+  try {
+    await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
+  } catch (err) {
+    if (err instanceof V1ProUsbError) throw err;
+    throw new V1ProUsbError("jedec_failed", formatUsbOpenHint(err), err);
+  }
+
+  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
+  return parseJedecReply(jedec);
+}
+
+/**
  * @param {USBDevice} device
  * @returns {Promise<boolean>}
  */
@@ -355,16 +424,8 @@ export async function ping(device) {
   );
   if (pong) return true;
 
-  const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
-  try {
-    await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
-  } catch (err) {
-    if (err instanceof V1ProUsbError) throw err;
-    throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
-  }
-
-  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
-  if (jedec) return true;
+  const capacity = await queryDeviceCapacity(device);
+  if (capacity) return true;
 
   throw new V1ProUsbError(
     "ping_timeout",
@@ -380,7 +441,13 @@ export async function ping(device) {
 export async function probeDevice(device) {
   try {
     await ping(device);
-    return { ok: true };
+    let capacity = null;
+    try {
+      capacity = await queryDeviceCapacity(device);
+    } catch {
+      capacity = null;
+    }
+    return { ok: true, capacity };
   } catch (err) {
     const message =
       err instanceof V1ProUsbError
@@ -402,7 +469,8 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   if (!(gfm1 instanceof Uint8Array) || gfm1.length < 56) {
     throw new V1ProUsbError("invalid_gfm1", "GFM1 载荷无效。");
   }
-  if (gfm1.length > ANIM_FLASH_MAX_BYTES) {
+  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
+  if (gfm1.length > maxPayloadBytes) {
     throw new V1ProUsbError(
       "gfm1_too_large",
       `GFM1 过大（${gfm1.length} 字节），超过设备 Flash 上限。`
@@ -460,7 +528,8 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
     throw new V1ProUsbError("invalid_gfm1", "GFM1 载荷无效。");
   }
-  if (totalBytes > ANIM_FLASH_MAX_BYTES) {
+  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
+  if (totalBytes > maxPayloadBytes) {
     throw new V1ProUsbError(
       "gfm1_too_large",
       `GFM1 过大（${totalBytes} 字节），超过设备 Flash 上限。`

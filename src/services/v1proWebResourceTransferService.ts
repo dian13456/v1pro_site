@@ -129,6 +129,10 @@ export async function transferResourceViaWebUsb(
         client.connect({ reuseAuthorized: true }),
         fetchTransferBlob(resource),
       ]);
+      const capacityLabel = client.getCapacityLabel?.() ?? "";
+      if (capacityLabel) {
+        callbacks.onStatus?.(`设备容量 ${capacityLabel}`);
+      }
       const fileName = guessTransferFileName(resource);
 
       callbacks.onStatus?.(isVideo ? "正在解码视频并传输…" : "正在编码并传输…");

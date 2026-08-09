@@ -29,17 +29,23 @@ export const DEFAULT_FRAME_MS = 100;
 /** W25Q256-class: 32 MiB minus ANIM_FLASH_BASE 0x1000 */
 export const ANIM_FLASH_MAX_BYTES = 0x02000000 - 0x1000;
 
-/** Soft cap for browser GIF / short-video decode (frames). */
+/** Soft cap for browser GIF decode when device capacity is unknown. */
 export const DEFAULT_MAX_GIF_FRAMES = 70;
 
-/** Short video clip cap for WebUSB test page (seconds). */
+/** Video encode: prefer up to this output fps (device capacity may lower it). */
+export const MAX_VIDEO_FPS = 25;
+
+/** Video encode: max playback speed multiplier when frame budget is tight. */
+export const MAX_VIDEO_SPEED = 5;
+
+/** Short video clip cap when device capacity is unknown (seconds). */
 export const DEFAULT_MAX_VIDEO_SEC = 10;
 
-/** Sample rate when converting short video to GFM1 frames. */
+/** Sample rate when converting short video to GFM1 frames (fallback). */
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.1.0";
+export const WEBUSB_TRANSFER_VERSION = "1.2.0";
 
 export const PING_TIMEOUT_MS = 1500;
 export const IO_TIMEOUT_MS = 15000;
