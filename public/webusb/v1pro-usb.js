@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.5";
+} from "./v1pro-constants.js?v=1.2.6";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -80,7 +80,7 @@ function pickBulkEndpoints(device) {
     }
   }
 
-  return { interfaceNumber: 0, outEndpoint: EP_OUT, inEndpoint: 2 };
+  return { interfaceNumber: 0, outEndpoint: EP_OUT, inEndpoint: EP_IN };
 }
 
 /**
@@ -394,22 +394,56 @@ export function parseJedecReply(text) {
 
 /**
  * Query device Flash capacity via JEDEC command.
+ * Some firmwares reply more reliably after a PING wake-up.
  * @param {USBDevice} device
+ * @param {{ wake?: boolean, retries?: number }} [opts]
  */
-export async function queryDeviceCapacity(device) {
+export async function queryDeviceCapacity(device, opts = {}) {
+  const wake = opts.wake !== false;
+  const retries = Math.max(1, opts.retries ?? 3);
   const { outEndpoint, inEndpoint } = getSession(device);
-  await drainInQuick(device, inEndpoint);
 
-  const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
-  try {
-    await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
-  } catch (err) {
-    if (err instanceof V1ProUsbError) throw err;
-    throw new V1ProUsbError("jedec_failed", formatUsbOpenHint(err), err);
+  if (wake) {
+    try {
+      await drainInQuick(device, inEndpoint);
+      const pingCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
+      await transferOutWithRetry(device, outEndpoint, pingCmd, IO_TIMEOUT_MS, 3);
+      await readTextReply(
+        device,
+        inEndpoint,
+        ["PONG", "JED,"],
+        Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
+      );
+    } catch {
+      // wake is best-effort; continue to JEDEC
+    }
   }
 
-  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
-  return parseJedecReply(jedec);
+  let lastError = null;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      await drainInQuick(device, inEndpoint);
+      const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
+      await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
+      const jedec = await readTextReply(
+        device,
+        inEndpoint,
+        ["JED,"],
+        JEDEC_PROBE_TIMEOUT_MS
+      );
+      const parsed = parseJedecReply(jedec);
+      if (parsed) return parsed;
+    } catch (err) {
+      lastError = err;
+    }
+    await sleep(40);
+  }
+
+  if (lastError instanceof V1ProUsbError) throw lastError;
+  if (lastError) {
+    throw new V1ProUsbError("jedec_failed", formatUsbOpenHint(lastError), lastError);
+  }
+  return null;
 }
 
 /**

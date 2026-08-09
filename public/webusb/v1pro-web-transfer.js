@@ -7,11 +7,12 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.5";
+} from "./v1pro-constants.js?v=1.2.6";
 import {
+  gfm1TotalBytes,
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.5";
+} from "./v1pro-gfm1.js?v=1.2.6";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -21,7 +22,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.5";
+} from "./v1pro-usb.js?v=1.2.6";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -35,10 +36,27 @@ export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
  */
 export function formatDeviceCapacityLabel(capacity) {
   if (!capacity) return "";
+  if (capacity.estimated) {
+    return `兼容模式 · 安全上限 ${capacity.maxFrames} 帧`;
+  }
   const total = capacity.totalMb ? `${capacity.totalMb}MB` : "未知容量";
   const frames = capacity.maxFrames ? `${capacity.maxFrames} 帧` : "";
   const model = capacity.model ? `${capacity.model} 档` : "";
   return [total, model, frames].filter(Boolean).join(" · ");
+}
+
+function fallbackDeviceCapacity() {
+  const maxFrames = DEFAULT_MAX_GIF_FRAMES;
+  return {
+    jedecHex: "",
+    model: 0,
+    totalMb: 0,
+    usableMb: 0,
+    productFrames: maxFrames,
+    maxPayloadBytes: gfm1TotalBytes(maxFrames),
+    maxFrames,
+    estimated: true,
+  };
 }
 
 export class V1ProWebTransfer {
@@ -84,9 +102,15 @@ export class V1ProWebTransfer {
       return null;
     }
     try {
-      this.deviceCapacity = await queryDeviceCapacity(this.device);
+      this.deviceCapacity = await queryDeviceCapacity(this.device, {
+        wake: true,
+        retries: 3,
+      });
     } catch {
       this.deviceCapacity = null;
+    }
+    if (!this.deviceCapacity) {
+      this.deviceCapacity = fallbackDeviceCapacity();
     }
     return this.deviceCapacity;
   }
