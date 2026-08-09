@@ -150,20 +150,10 @@ export default function WebUsbTransferTestPage() {
         setMetaText("可再次点击「读取容量」重试，或断开后重新连接。");
         return;
       }
-      const label = client.getCapacityLabel?.() || `${capacity.model} 档 · ${capacity.maxFrames} 帧`;
+      const label = client.getCapacityLabel?.() || `${capacity.maxFrames}帧`;
       setStatusText(`容量读取成功：${label}`);
       setStatusKind("ok");
-      setMetaText(
-        [
-          `JEDEC ${capacity.jedecHex || "-"}`,
-          `model ${capacity.model}`,
-          `total ${capacity.totalMb}MB`,
-          `usable ${capacity.usableMb}MB`,
-          `productFrames ${capacity.productFrames}`,
-          `maxFrames ${capacity.maxFrames}`,
-          `maxPayload ${capacity.maxPayloadBytes} 字节`,
-        ].join(" · "),
-      );
+      setMetaText(label);
     } catch (err) {
       setStatusText(formatError(err));
       setStatusKind("error");

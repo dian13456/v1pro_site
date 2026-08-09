@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.9";
+} from "./v1pro-constants.js?v=1.2.10";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.9";
+} from "./v1pro-gfm1.js?v=1.2.10";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -21,7 +21,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.9";
+} from "./v1pro-usb.js?v=1.2.10";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -34,10 +34,8 @@ export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
  * }|null|undefined} capacity
  */
 export function formatDeviceCapacityLabel(capacity) {
-  if (!capacity) return "";
-  const frames = capacity.maxFrames ? `${capacity.maxFrames} 帧` : "";
-  const model = capacity.model ? `${capacity.model} 档` : "";
-  return [model, frames].filter(Boolean).join(" · ");
+  if (!capacity?.maxFrames) return "";
+  return `${capacity.maxFrames}帧`;
 }
 
 export class V1ProWebTransfer {
