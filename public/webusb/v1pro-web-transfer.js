@@ -7,9 +7,13 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.2";
-import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.2.2";
+} from "./v1pro-constants.js?v=1.2.5";
 import {
+  planGfm1Encode,
+  predictVideoTransferFromUrl,
+} from "./v1pro-gfm1.js?v=1.2.5";
+import {
+  beginGfm1PayloadStream,
   closeDevice,
   openAuthorizedDevice,
   probeDevice,
@@ -17,7 +21,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.2";
+} from "./v1pro-usb.js?v=1.2.5";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -44,6 +48,7 @@ export class V1ProWebTransfer {
     this.busy = false;
     /** @type {import("./v1pro-usb.js").parseJedecReply extends (t: infer T) => infer R ? R : never|null} */
     this.deviceCapacity = null;
+    this.preparedTransferBytes = null;
   }
 
   /** @returns {boolean} */
@@ -90,7 +95,58 @@ export class V1ProWebTransfer {
     const d = this.device;
     this.device = null;
     this.deviceCapacity = null;
+    this.preparedTransferBytes = null;
     await closeDevice(d);
+  }
+
+  async predictVideoUrl(url, opts = {}) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "请先连接设备。");
+    }
+    if (!this.deviceCapacity) {
+      await this.refreshDeviceCapacity();
+    }
+    if (!this.deviceCapacity) {
+      throw new V1ProUsbError(
+        "capacity_unavailable",
+        "无法读取设备容量，已停止视频空间预测。请重新连接设备后重试。"
+      );
+    }
+    const prediction = await predictVideoTransferFromUrl(
+      url,
+      opts.maxFrames ?? this.deviceCapacity.maxFrames,
+      {
+        maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
+        maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
+      }
+    );
+    if (prediction.totalBytes > this.deviceCapacity.maxPayloadBytes) {
+      throw new V1ProUsbError(
+        "gfm1_too_large",
+        "完整视频即使降至 20fps、5 倍速后仍无法装入设备，请选择更短的视频。"
+      );
+    }
+    return prediction;
+  }
+
+  async beginPreparedVideoTransfer(totalBytes) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "请先连接设备。");
+    }
+    if (this.busy || this.preparedTransferBytes != null) {
+      throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
+    }
+    const maxPayloadBytes = this.deviceCapacity?.maxPayloadBytes;
+    if (!maxPayloadBytes) {
+      throw new V1ProUsbError("capacity_unavailable", "无法读取设备容量，不能开始预擦除。");
+    }
+    this.busy = true;
+    try {
+      await beginGfm1PayloadStream(this.device, totalBytes, { maxPayloadBytes });
+      this.preparedTransferBytes = totalBytes;
+    } finally {
+      this.busy = false;
+    }
   }
 
   /**
@@ -112,15 +168,24 @@ export class V1ProWebTransfer {
       opts.fileName ||
       (typeof File !== "undefined" && file instanceof File ? file.name : "") ||
       "";
-    const capacity = this.deviceCapacity;
-    const maxFrames = opts.maxFrames ?? capacity?.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
-    const maxPayloadBytes = capacity?.maxPayloadBytes;
     const pingFirst = opts.pingFirst !== false;
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
     const lowerType = (file.type || "").toLowerCase();
     const lowerName = fileName.toLowerCase();
     const isVideo =
-      lowerType.startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
+      opts.mediaType === "video" ||
+      lowerType.startsWith("video/") ||
+      /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
+    const preparedTotalBytes = opts.preparedTotalBytes ?? null;
+    if (
+      this.preparedTransferBytes != null &&
+      preparedTotalBytes !== this.preparedTransferBytes
+    ) {
+      throw new V1ProUsbError(
+        "prepared_transfer_mismatch",
+        "预擦除任务与当前视频不一致，请重新连接设备后重试。"
+      );
+    }
 
     this.busy = true;
     let probeNote;
@@ -142,6 +207,15 @@ export class V1ProWebTransfer {
         }
       }
 
+      if (isVideo && !this.deviceCapacity && opts.maxFrames == null) {
+        throw new V1ProUsbError(
+          "capacity_unavailable",
+          "无法读取设备容量，已停止视频转换。请重新连接设备后重试。"
+        );
+      }
+      const capacity = this.deviceCapacity;
+      const maxFrames = opts.maxFrames ?? capacity?.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
+      const maxPayloadBytes = capacity?.maxPayloadBytes;
       const capacityNote = formatDeviceCapacityLabel(this.deviceCapacity);
       if (onProgress) {
         onProgress({
@@ -159,6 +233,7 @@ export class V1ProWebTransfer {
         maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
         maxPayloadBytes,
         fileName,
+        mediaType: opts.mediaType,
         onFrameEncoded: (frameIndex, frameCount) => {
           if (onProgress) {
             onProgress({
@@ -178,12 +253,19 @@ export class V1ProWebTransfer {
           `GFM1 过大（${plan.totalBytes} 字节），超过设备可用 Flash（约 ${this.deviceCapacity?.usableMb ?? "?"}MB）。`
         );
       }
+      if (preparedTotalBytes != null && plan.totalBytes !== preparedTotalBytes) {
+        throw new V1ProUsbError(
+          "prediction_changed",
+          `视频实际转换大小与预测不一致（${plan.totalBytes}/${preparedTotalBytes} 字节），已停止写入。`
+        );
+      }
 
       const note = [capacityNote, plan.note, probeNote].filter(Boolean).join("；") || undefined;
       const streamTotal = 8 + plan.totalBytes;
 
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
+        startAlreadySent: preparedTotalBytes != null,
         // Video seek/decode is much slower than USB. Buffer all video frames
         // before START so the device never waits mid-stream.
         prefetchBeforeStart: isVideo
@@ -218,6 +300,7 @@ export class V1ProWebTransfer {
 
       return { bytes: plan.totalBytes, frameCount: plan.frameCount, note };
     } finally {
+      this.preparedTransferBytes = null;
       this.busy = false;
     }
   }

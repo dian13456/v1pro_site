@@ -11,11 +11,12 @@ import {
   DEFAULT_MAX_VIDEO_SEC,
   DEFAULT_VIDEO_FPS,
   MAX_VIDEO_FPS,
+  MIN_VIDEO_FPS,
   MAX_VIDEO_SPEED,
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.2";
+} from "./v1pro-constants.js?v=1.2.5";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -286,18 +287,20 @@ function seekVideoTo(video, time) {
 }
 
 /**
- * Plan video sampling: prefer up to maxVideoFps, speed up to maxVideoSpeed, fill frame budget.
+ * Plan a complete-video conversion. First lower fps from 25 to 20, then apply
+ * up to 5x playback speed. Never truncate the source video.
  * @param {number} duration source seconds
  * @param {number} maxFrames device frame budget
- * @param {{ maxVideoFps?: number, maxVideoSpeed?: number }} [opts]
+ * @param {{ maxVideoFps?: number, minVideoFps?: number, maxVideoSpeed?: number }} [opts]
  */
 export function planVideoSampleSchedule(duration, maxFrames, opts = {}) {
   const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
+  const minVideoFps = opts.minVideoFps ?? MIN_VIDEO_FPS;
   const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
   const safeDuration = Math.max(0.001, duration);
   const budget = Math.max(1, maxFrames);
 
-  for (let fps = maxVideoFps; fps >= 1; fps -= 1) {
+  for (let fps = maxVideoFps; fps >= minVideoFps; fps -= 1) {
     const framesNeeded = Math.max(1, Math.ceil(safeDuration * fps));
     if (framesNeeded <= budget) {
       return {
@@ -307,25 +310,71 @@ export function planVideoSampleSchedule(duration, maxFrames, opts = {}) {
         sourceSpan: safeDuration,
       };
     }
-    const speed = (safeDuration * fps) / budget;
-    if (speed <= maxVideoSpeed) {
-      return {
-        frameCount: budget,
-        fps,
-        speed,
-        sourceSpan: safeDuration,
-      };
-    }
   }
 
-  const fps = maxVideoFps;
-  const sourceSpan = Math.min(safeDuration, (budget / fps) * maxVideoSpeed);
+  const requiredSpeed = (safeDuration * minVideoFps) / budget;
+  if (requiredSpeed > maxVideoSpeed) {
+    const minimumFrames = Math.ceil((safeDuration * minVideoFps) / maxVideoSpeed);
+    throw new Error(
+      `设备空间不足：完整视频降至 ${minVideoFps}fps、${maxVideoSpeed} 倍速后仍需 ` +
+        `${minimumFrames} 帧，当前设备最多容纳 ${budget} 帧。`,
+    );
+  }
+
   return {
     frameCount: budget,
-    fps,
-    speed: maxVideoSpeed,
-    sourceSpan,
+    fps: minVideoFps,
+    speed: Math.max(1, requiredSpeed),
+    sourceSpan: safeDuration,
   };
+}
+
+/**
+ * Read only video metadata from a CORS-enabled URL and predict GFM1 size.
+ * Browsers normally use range requests here instead of downloading the file.
+ */
+export async function predictVideoTransferFromUrl(url, maxFrames, opts = {}) {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  video.crossOrigin = "anonymous";
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("读取视频时长超时，无法预测设备空间。"));
+      }, 15000);
+      const cleanupListeners = () => {
+        clearTimeout(timer);
+        video.onloadedmetadata = null;
+        video.onerror = null;
+      };
+      video.onloadedmetadata = () => {
+        cleanupListeners();
+        resolve();
+      };
+      video.onerror = () => {
+        cleanupListeners();
+        reject(new Error("无法读取视频元数据，请确认视频格式与 COS 跨域配置。"));
+      };
+      video.src = url;
+    });
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    if (duration <= 0) {
+      throw new Error("视频时长无效，无法预测设备空间。");
+    }
+    const schedule = planVideoSampleSchedule(duration, maxFrames, opts);
+    return {
+      ...schedule,
+      duration,
+      totalBytes: gfm1TotalBytes(schedule.frameCount),
+      note: formatVideoPlanNote(schedule, duration),
+    };
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+  }
 }
 
 function formatVideoPlanNote(schedule, duration) {
@@ -333,9 +382,7 @@ function formatVideoPlanNote(schedule, duration) {
   if (schedule.speed > 1.01) {
     parts.push(`${schedule.speed.toFixed(1)}x 倍速`);
   }
-  if (schedule.sourceSpan + 0.05 < duration) {
-    parts.push(`已截取前 ${schedule.sourceSpan.toFixed(1)}s`);
-  } else if (duration > 0.05) {
+  if (duration > 0.05) {
     parts.push(`${duration.toFixed(1)}s`);
   }
   return parts.join(" · ");
@@ -455,8 +502,11 @@ export async function planGfm1Encode(blob, opts = {}) {
   }
   const type = (blob.type || "").toLowerCase();
   const name = (opts.fileName || "").toLowerCase();
-  const isGif = type === "image/gif" || name.endsWith(".gif");
-  const isVideo = isVideoBlob(type, name);
+  const explicitMediaType = (opts.mediaType || "").toLowerCase();
+  const isGif =
+    explicitMediaType === "gif" || type === "image/gif" || name.endsWith(".gif");
+  const isVideo =
+    explicitMediaType === "video" || isVideoBlob(type, name);
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -532,7 +582,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.2");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.5");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.2";
+} from "./v1pro-constants.js?v=1.2.5";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -537,28 +537,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   await drainInQuick(device, inEndpoint);
 }
 
-/**
- * Send START (device begins flash erase) then stream GFM1 payload chunks as they are encoded.
- * @param {USBDevice} device
- * @param {number} totalBytes GFM1 payload size (excluding 8-byte START header)
- * @param {AsyncIterable<Uint8Array>} payloadChunks
- * @param {{ onProgress?: (sent: number, total: number) => void }} [opts]
- */
-export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, opts = {}) {
-  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
-    throw new V1ProUsbError("invalid_gfm1", "GFM1 载荷无效。");
-  }
-  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
-  if (totalBytes > maxPayloadBytes) {
-    throw new V1ProUsbError(
-      "gfm1_too_large",
-      `GFM1 过大（${totalBytes} 字节），超过设备 Flash 上限。`
-    );
-  }
-
-  const { inEndpoint } = getSession(device);
-  await drainInQuick(device, inEndpoint);
-
+function buildStartPreamble(totalBytes) {
   const preamble = new Uint8Array(8);
   preamble[0] = USBDL_MAGIC0;
   preamble[1] = USBDL_MAGIC1;
@@ -568,12 +547,58 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   preamble[5] = (totalBytes >>> 16) & 0xff;
   preamble[6] = (totalBytes >>> 24) & 0xff;
   preamble[7] = 0x00;
+  return preamble;
+}
+
+function validateStreamSize(totalBytes, maxPayloadBytes) {
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+    throw new V1ProUsbError("invalid_gfm1", "GFM1 载荷无效。");
+  }
+  if (totalBytes > maxPayloadBytes) {
+    throw new V1ProUsbError(
+      "gfm1_too_large",
+      `GFM1 过大（${totalBytes} 字节），超过设备 Flash 上限。`
+    );
+  }
+}
+
+/**
+ * Send only the START header so flash erase can overlap with network download.
+ */
+export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
+  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
+  validateStreamSize(totalBytes, maxPayloadBytes);
+  const { inEndpoint } = getSession(device);
+  await drainInQuick(device, inEndpoint);
+  await bulkOut(device, buildStartPreamble(totalBytes));
+}
+
+/**
+ * Send START (device begins flash erase) then stream GFM1 payload chunks as they are encoded.
+ * @param {USBDevice} device
+ * @param {number} totalBytes GFM1 payload size (excluding 8-byte START header)
+ * @param {AsyncIterable<Uint8Array>} payloadChunks
+ * @param {{ onProgress?: (sent: number, total: number) => void }} [opts]
+ */
+export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, opts = {}) {
+  const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
+  validateStreamSize(totalBytes, maxPayloadBytes);
+
+  const { inEndpoint } = getSession(device);
+  const startAlreadySent = opts.startAlreadySent === true;
+  if (!startAlreadySent) {
+    await drainInQuick(device, inEndpoint);
+  }
+  const preamble = buildStartPreamble(totalBytes);
 
   const streamLen = preamble.length + totalBytes;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
-  let sent = 0;
+  let sent = startAlreadySent ? preamble.length : 0;
   let lastDrainAt = Date.now();
-  const prefetchBeforeStart = Math.max(0, opts.prefetchBeforeStart ?? 3);
+  const prefetchBeforeStart = Math.max(
+    0,
+    startAlreadySent ? 1 : (opts.prefetchBeforeStart ?? 3)
+  );
 
   const writeChunk = async (chunk) => {
     const now = Date.now();
@@ -622,7 +647,11 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     }
   })();
 
-  await writeChunk(preamble);
+  if (!startAlreadySent) {
+    await writeChunk(preamble);
+  } else if (onProgress) {
+    onProgress(sent, streamLen);
+  }
 
   while (!producerDone || queue.length > 0) {
     if (producerError) {
