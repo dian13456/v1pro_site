@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.10";
+} from "./v1pro-constants.js?v=1.2.11";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -420,15 +420,16 @@ export function parseJedecReply(text) {
     return null;
   }
 
-  const usableBytes = Number.isFinite(usableMb) && usableMb > 0 ? Math.floor(usableMb * 1024 * 1024) : 0;
+  const totalBytes = Number.isFinite(totalMb) && totalMb > 0 ? Math.floor(totalMb * 1024 * 1024) : 0;
   const maxPayloadBytes = Math.min(
     ANIM_FLASH_MAX_BYTES,
-    usableBytes > 0 ? usableBytes : ANIM_FLASH_MAX_BYTES,
+    totalBytes > 0 ? totalBytes : ANIM_FLASH_MAX_BYTES,
   );
   const framesByBytes = Math.max(
     1,
     Math.floor((maxPayloadBytes - 56) / (2 + FRAME_PIXEL_BYTES)),
   );
+  // Use firmware product_frames; total_mb is the full animation region (77/154/308).
   const maxFrames = Math.max(1, Math.min(productFrames, framesByBytes));
 
   return {
