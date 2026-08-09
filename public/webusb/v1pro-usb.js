@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.8";
+} from "./v1pro-constants.js?v=1.2.9";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -24,7 +24,16 @@ const TRANSFER_DRAIN_INTERVAL_MS = 250;
 const PROBE_POLL_TIMEOUT_MS = 4000;
 const JEDEC_PROBE_TIMEOUT_MS = 3000;
 
-/** @type {WeakMap<USBDevice, { interfaceNumber: number, inEndpoint: number, outEndpoint: number }>} */
+/**
+ * @typedef {{
+ *   interfaceNumber: number,
+ *   inEndpoint: number,
+ *   outEndpoint: number,
+ *   pendingIn: Promise<USBInTransferResult>|null,
+ * }} DeviceSession
+ */
+
+/** @type {WeakMap<USBDevice, DeviceSession>} */
 const deviceSessions = new WeakMap();
 
 export class V1ProUsbError extends Error {
@@ -85,30 +94,73 @@ function pickBulkEndpoints(device) {
 
 /**
  * @param {USBDevice} device
+ * @returns {DeviceSession}
  */
 function getSession(device) {
-  return (
-    deviceSessions.get(device) ?? {
-      interfaceNumber: 0,
-      outEndpoint: EP_OUT,
-      inEndpoint: EP_IN,
+  const existing = deviceSessions.get(device);
+  if (existing) return existing;
+  return {
+    interfaceNumber: 0,
+    outEndpoint: EP_OUT,
+    inEndpoint: EP_IN,
+    pendingIn: null,
+  };
+}
+
+/**
+ * WebUSB cannot cancel transferIn. Never abandon a timed-out IN, or the next
+ * real reply (e.g. JED,...) will be consumed by the orphaned promise.
+ * @param {USBDevice} device
+ * @param {number} length
+ * @param {number} timeoutMs
+ */
+async function transferInTracked(device, length, timeoutMs) {
+  const session = getSession(device);
+  if (!deviceSessions.has(device)) {
+    deviceSessions.set(device, session);
+  }
+
+  if (!session.pendingIn) {
+    session.pendingIn = device.transferIn(session.inEndpoint, length);
+  }
+
+  const pending = session.pendingIn;
+  let timer;
+  try {
+    const result = await Promise.race([
+      pending,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new V1ProUsbError("io_timeout", "USB 读入超时。")),
+          timeoutMs
+        );
+      }),
+    ]);
+    if (session.pendingIn === pending) {
+      session.pendingIn = null;
     }
-  );
+    return result;
+  } catch (err) {
+    // On timeout, keep pendingIn so the next reader reuses the same transferIn.
+    // WebUSB cannot cancel an in-flight IN; abandoning it steals later replies.
+    if (!(err instanceof V1ProUsbError && err.code === "io_timeout")) {
+      if (session.pendingIn === pending) {
+        session.pendingIn = null;
+      }
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
  * @param {USBDevice} device
- * @param {number} inEndpoint
  */
-async function drainInQuick(device, inEndpoint) {
+async function drainInQuick(device) {
   for (let i = 0; i < 8; i += 1) {
     try {
-      const result = await withTimeout(
-        device.transferIn(inEndpoint, 64),
-        12,
-        "drain_timeout",
-        "drain"
-      );
+      const result = await transferInTracked(device, 64, 20);
       if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
         break;
       }
@@ -120,21 +172,17 @@ async function drainInQuick(device, inEndpoint) {
 
 /**
  * @param {USBDevice} device
- * @param {number} inEndpoint
  * @param {string[]} prefixes
  * @param {number} timeoutMs
  */
-async function readTextReply(device, inEndpoint, prefixes, timeoutMs) {
+async function readTextReply(device, prefixes, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  /** @type {string[]} */
+  const seen = [];
   while (Date.now() < deadline) {
     try {
-      const left = Math.max(30, Math.min(250, deadline - Date.now()));
-      const result = await withTimeout(
-        device.transferIn(inEndpoint, 64),
-        left,
-        "io_timeout",
-        "poll"
-      );
+      const left = Math.max(40, Math.min(400, deadline - Date.now()));
+      const result = await transferInTracked(device, 64, left);
       if (result.status !== "ok" || !result.data || result.data.byteLength === 0) {
         continue;
       }
@@ -149,12 +197,16 @@ async function readTextReply(device, inEndpoint, prefixes, timeoutMs) {
         .replace(/\0/g, "")
         .trim();
       if (!text) continue;
+      seen.push(text);
       if (prefixes.some((prefix) => text.startsWith(prefix))) {
         return text;
       }
     } catch {
-      // keep polling until deadline
+      // keep polling until deadline; pending IN stays tracked
     }
+  }
+  if (seen.length) {
+    console.warn("[V1PRO] unexpected USB text replies while waiting:", seen);
   }
   return null;
 }
@@ -231,14 +283,8 @@ export async function bulkOut(device, data, opts = {}) {
  * @param {number} [length]
  */
 export async function bulkIn(device, length = 64) {
-  const { inEndpoint } = getSession(device);
   try {
-    const result = await withTimeout(
-      device.transferIn(inEndpoint, length),
-      IO_TIMEOUT_MS,
-      "io_timeout",
-      "USB 读入超时。"
-    );
+    const result = await transferInTracked(device, length, IO_TIMEOUT_MS);
     return new Uint8Array(
       result.data.buffer,
       result.data.byteOffset,
@@ -308,10 +354,14 @@ async function openClaimed(device) {
   try {
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
-    const session = pickBulkEndpoints(device);
+    const endpoints = pickBulkEndpoints(device);
+    const session = {
+      ...endpoints,
+      pendingIn: null,
+    };
     deviceSessions.set(device, session);
     await device.claimInterface(session.interfaceNumber);
-    await drainInQuick(device, session.inEndpoint);
+    await drainInQuick(device);
   } catch (err) {
     deviceSessions.delete(device);
     try {
@@ -401,16 +451,15 @@ export function parseJedecReply(text) {
 export async function queryDeviceCapacity(device, opts = {}) {
   const wake = opts.wake !== false;
   const retries = Math.max(1, opts.retries ?? 3);
-  const { outEndpoint, inEndpoint } = getSession(device);
+  const { outEndpoint } = getSession(device);
 
   if (wake) {
     try {
-      await drainInQuick(device, inEndpoint);
+      await drainInQuick(device);
       const pingCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
       await transferOutWithRetry(device, outEndpoint, pingCmd, IO_TIMEOUT_MS, 3);
       const wakeReply = await readTextReply(
         device,
-        inEndpoint,
         ["PONG", "JED,"],
         Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
       );
@@ -427,15 +476,10 @@ export async function queryDeviceCapacity(device, opts = {}) {
   let lastError = null;
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      await drainInQuick(device, inEndpoint);
+      await drainInQuick(device);
       const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
       await transferOutWithRetry(device, outEndpoint, jedecCmd, IO_TIMEOUT_MS, 3);
-      const jedec = await readTextReply(
-        device,
-        inEndpoint,
-        ["JED,"],
-        JEDEC_PROBE_TIMEOUT_MS
-      );
+      const jedec = await readTextReply(device, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
       const parsed = parseJedecReply(jedec);
       if (parsed) return parsed;
     } catch (err) {
@@ -456,8 +500,8 @@ export async function queryDeviceCapacity(device, opts = {}) {
  * @returns {Promise<boolean>}
  */
 export async function ping(device) {
-  const { outEndpoint, inEndpoint } = getSession(device);
-  await drainInQuick(device, inEndpoint);
+  const { outEndpoint } = getSession(device);
+  await drainInQuick(device);
 
   const pingCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
   try {
@@ -469,7 +513,6 @@ export async function ping(device) {
 
   const pong = await readTextReply(
     device,
-    inEndpoint,
     ["PONG"],
     Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
   );
@@ -483,7 +526,7 @@ export async function ping(device) {
     throw new V1ProUsbError("ping_failed", formatUsbOpenHint(err), err);
   }
 
-  const jedec = await readTextReply(device, inEndpoint, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
+  const jedec = await readTextReply(device, ["JED,"], JEDEC_PROBE_TIMEOUT_MS);
   if (jedec) return true;
 
   throw new V1ProUsbError(
@@ -536,8 +579,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     );
   }
 
-  const { inEndpoint } = getSession(device);
-  await drainInQuick(device, inEndpoint);
+  await drainInQuick(device);
 
   const total = gfm1.length;
   const preamble = new Uint8Array(8);
@@ -558,7 +600,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   const writeChunk = async (chunk) => {
     const now = Date.now();
     if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
-      await drainInQuick(device, inEndpoint);
+      await drainInQuick(device);
       lastDrainAt = now;
     }
     await bulkOut(device, chunk);
@@ -573,7 +615,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
   }
 
-  await drainInQuick(device, inEndpoint);
+  await drainInQuick(device);
 }
 
 function buildStartPreamble(totalBytes) {
@@ -607,8 +649,7 @@ function validateStreamSize(totalBytes, maxPayloadBytes) {
 export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   validateStreamSize(totalBytes, maxPayloadBytes);
-  const { inEndpoint } = getSession(device);
-  await drainInQuick(device, inEndpoint);
+  await drainInQuick(device);
   await bulkOut(device, buildStartPreamble(totalBytes));
 }
 
@@ -623,10 +664,9 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   validateStreamSize(totalBytes, maxPayloadBytes);
 
-  const { inEndpoint } = getSession(device);
   const startAlreadySent = opts.startAlreadySent === true;
   if (!startAlreadySent) {
-    await drainInQuick(device, inEndpoint);
+    await drainInQuick(device);
   }
   const preamble = buildStartPreamble(totalBytes);
 
@@ -642,7 +682,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   const writeChunk = async (chunk) => {
     const now = Date.now();
     if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
-      await drainInQuick(device, inEndpoint);
+      await drainInQuick(device);
       lastDrainAt = now;
     }
     await bulkOut(device, chunk);
@@ -720,5 +760,5 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     );
   }
 
-  await drainInQuick(device, inEndpoint);
+  await drainInQuick(device);
 }
