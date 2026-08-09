@@ -243,7 +243,6 @@ export async function transferResourceViaWebUsb(
     }
     const client = sharedClient;
 
-    let preEraseStarted = false;
     try {
       const isVideo = resource.materialType === "video";
       if (isVideo) {
@@ -260,20 +259,14 @@ export async function transferResourceViaWebUsb(
         callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
         const prediction = await client.predictVideoUrl(directUrl);
         callbacks.onStatus?.(
-          `预测可装入：${prediction.frameCount} 帧，正在预擦除并下载视频…`,
+          `预测可装入：${prediction.frameCount} 帧，正在下载视频…`,
         );
-        preEraseStarted = true;
-        const [, blob] = await Promise.all([
-          client.beginPreparedVideoTransfer(prediction.totalBytes),
-          fetchTransferBlob(
-            resource,
-            (received, total) => callbacks.onStatus?.(
-              `${formatDownloadProgress(received, total)} · 设备正在预擦除`,
-            ),
-            () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载（设备继续预擦除）…"),
-            directUrl,
-          ),
-        ]);
+        const blob = await fetchTransferBlob(
+          resource,
+          (received, total) => callbacks.onStatus?.(formatDownloadProgress(received, total)),
+          () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
+          directUrl,
+        );
         await validateTransferBlob(resource, blob);
         const fileName = guessTransferFileName(resource);
         callbacks.onStatus?.("视频下载完成，正在解码并传输…");
@@ -281,7 +274,6 @@ export async function transferResourceViaWebUsb(
           fileName,
           mediaType: "video",
           pingFirst: false,
-          preparedTotalBytes: prediction.totalBytes,
           onProgress: (info) => {
             if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
               callbacks.onStatus?.(`正在解码视频… ${info.sent}/${info.frameCount} 帧`);
@@ -359,10 +351,6 @@ export async function transferResourceViaWebUsb(
       callbacks.onStatus?.(message);
       return result;
     } catch (err) {
-      if (preEraseStarted) {
-        await client.disconnect();
-        sharedClient = null;
-      }
       if (!client.busy && !client.connected) {
         sharedClient = null;
       }
