@@ -54,6 +54,7 @@ export default function ResourcesPage() {
   const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageJumpValue, setPageJumpValue] = useState("");
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -150,6 +151,16 @@ export default function ResourcesPage() {
       .filter((p) => p >= 1 && p <= totalPages)
       .sort((a, b) => a - b);
   }, [totalPages, currentPage]);
+
+  const handleJumpToPage = () => {
+    const parsed = Number.parseInt(pageJumpValue.trim(), 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    const target = Math.min(totalPages, Math.max(1, parsed));
+    setCurrentPage(target);
+    setPageJumpValue(String(target));
+  };
 
   const preloadList = useMemo(
     () =>
@@ -667,6 +678,34 @@ export default function ResourcesPage() {
             >
               下一页
             </button>
+            {totalPages > 1 ? (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleJumpToPage();
+                }}
+              >
+                <span className="text-sm text-slate-600 dark:text-slate-300">跳至</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={pageJumpValue}
+                  onChange={(event) => setPageJumpValue(event.target.value)}
+                  placeholder={String(currentPage)}
+                  aria-label="跳转到指定页"
+                  className="w-16 rounded-full border border-white/25 bg-white/55 px-3 py-2 text-center text-sm text-slate-700 outline-none ring-cyan-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+                />
+                <span className="text-sm text-slate-600 dark:text-slate-300">页</span>
+                <button
+                  type="submit"
+                  className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+                >
+                  跳转
+                </button>
+              </form>
+            ) : null}
           </section>
         ) : null}
     </SitePageLayout>
