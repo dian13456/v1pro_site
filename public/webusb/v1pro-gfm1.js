@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.11";
+} from "./v1pro-constants.js?v=1.2.12";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -467,9 +467,6 @@ async function planVideoWithSeek(blob, opts) {
             const rgb = sourceToRgb565(video, vw, vh);
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;
-            if (i > 0 && i % 2 === 0) {
-              await new Promise((resolve) => setTimeout(resolve, 0));
-            }
           }
         } finally {
           cleanup();
@@ -582,7 +579,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.11");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.12");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
@@ -635,7 +632,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
         if (frame.disposalType === 2) {
           gCtx.clearRect(frame.dims.left, frame.dims.top, frame.dims.width, frame.dims.height);
         }
-        if (i > 0 && i % 4 === 0) {
+        if (i > 0 && i % 8 === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }

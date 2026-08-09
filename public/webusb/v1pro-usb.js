@@ -15,12 +15,13 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.11";
+} from "./v1pro-constants.js?v=1.2.12";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
 const TRANSFER_OUT_RETRIES = 5;
-const TRANSFER_DRAIN_INTERVAL_MS = 250;
+const TRANSFER_DRAIN_INTERVAL_MS = 2000;
+const TRANSFER_DRAIN_BYTES = 1024 * 1024;
 const PROBE_POLL_TIMEOUT_MS = 4000;
 const JEDEC_PROBE_TIMEOUT_MS = 3000;
 
@@ -562,8 +563,30 @@ export async function probeDevice(device) {
   }
 }
 
+function createDrainTracker() {
+  let lastDrainAt = Date.now();
+  let bytesSinceDrain = 0;
+  return {
+    /**
+     * @param {USBDevice} device
+     * @param {number} bytesWritten
+     */
+    async maybeDrain(device, bytesWritten) {
+      bytesSinceDrain += bytesWritten;
+      const now = Date.now();
+      if (
+        bytesSinceDrain >= TRANSFER_DRAIN_BYTES ||
+        now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS
+      ) {
+        await drainInQuick(device);
+        lastDrainAt = now;
+        bytesSinceDrain = 0;
+      }
+    },
+  };
+}
+
 /**
- * Send START header + GFM1 payload over Bulk OUT.
  * @param {USBDevice} device
  * @param {Uint8Array} gfm1
  * @param {{ onProgress?: (sent: number, total: number) => void }} [opts]
@@ -596,24 +619,19 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   const streamLen = preamble.length + total;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   let sent = 0;
-  let lastDrainAt = Date.now();
+  const drainTracker = createDrainTracker();
 
   const writeChunk = async (chunk) => {
-    const now = Date.now();
-    if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
-      await drainInQuick(device);
-      lastDrainAt = now;
-    }
     await bulkOut(device, chunk);
     sent += chunk.length;
+    await drainTracker.maybeDrain(device, chunk.length);
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
   };
 
   await writeChunk(preamble);
 
-  const BATCH = 64 * 1024;
-  for (let i = 0; i < gfm1.length; i += BATCH) {
-    await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
+  for (let i = 0; i < gfm1.length; i += USB_CHUNK) {
+    await writeChunk(gfm1.subarray(i, Math.min(i + USB_CHUNK, gfm1.length)));
   }
 
   await drainInQuick(device);
@@ -674,29 +692,18 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   const streamLen = preamble.length + totalBytes;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   let sent = startAlreadySent ? preamble.length : 0;
-  let lastDrainAt = Date.now();
+  const drainTracker = createDrainTracker();
   const prefetchBeforeStart = Math.max(
     0,
     startAlreadySent ? 1 : (opts.prefetchBeforeStart ?? 3)
   );
 
   const writeChunk = async (chunk) => {
-    const now = Date.now();
-    if (now - lastDrainAt >= TRANSFER_DRAIN_INTERVAL_MS) {
-      await drainInQuick(device);
-      lastDrainAt = now;
-    }
+    if (!(chunk instanceof Uint8Array) || chunk.length === 0) return;
     await bulkOut(device, chunk);
     sent += chunk.length;
+    await drainTracker.maybeDrain(device, chunk.length);
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
-  };
-
-  const writePayloadChunk = async (chunk) => {
-    if (!(chunk instanceof Uint8Array) || chunk.length === 0) return;
-    const BATCH = 64 * 1024;
-    for (let i = 0; i < chunk.length; i += BATCH) {
-      await writeChunk(chunk.subarray(i, Math.min(i + BATCH, chunk.length)));
-    }
   };
 
   const iter = payloadChunks[Symbol.asyncIterator]();
@@ -739,7 +746,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     }
     if (queue.length > 0) {
       const chunk = queue.shift();
-      await writePayloadChunk(chunk);
+      await writeChunk(chunk);
       continue;
     }
     await sleep(4);

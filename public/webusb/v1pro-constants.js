@@ -15,7 +15,7 @@ export const EP_IN = 1;
  * One WebUSB transferOut submission. USB still packetizes this into 64-byte
  * endpoint packets; batching avoids thousands of browser/JS round trips.
  */
-export const USB_CHUNK = 16 * 1024;
+export const USB_CHUNK = 64 * 1024;
 
 export const USBDL_MAGIC0 = 0xa5;
 export const USBDL_MAGIC1 = 0x5a;
@@ -52,10 +52,10 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.11";
+export const WEBUSB_TRANSFER_VERSION = "1.2.12";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
-export const PREFETCH_CHUNKS_BEFORE_START = 3;
+export const PREFETCH_CHUNKS_BEFORE_START = 6;
 
 export const PING_TIMEOUT_MS = 1500;
 export const IO_TIMEOUT_MS = 15000;

@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.11";
+} from "./v1pro-constants.js?v=1.2.12";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.11";
+} from "./v1pro-gfm1.js?v=1.2.12";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -21,7 +21,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.11";
+} from "./v1pro-usb.js?v=1.2.12";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -281,11 +281,7 @@ export class V1ProWebTransfer {
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
         startAlreadySent: preparedTotalBytes != null,
-        // Video seek/decode is much slower than USB. Buffer all video frames
-        // before START so the device never waits mid-stream.
-        prefetchBeforeStart: isVideo
-          ? plan.frameCount + 1
-          : PREFETCH_CHUNKS_BEFORE_START,
+        prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
         onProgress: (sent, total) => {
           if (!onProgress) return;
           const encodeWeight = 0.12;
