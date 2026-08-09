@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.12";
+} from "./v1pro-constants.js?v=1.2.13";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.12";
+} from "./v1pro-gfm1.js?v=1.2.13";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -21,7 +21,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.12";
+} from "./v1pro-usb.js?v=1.2.13";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 

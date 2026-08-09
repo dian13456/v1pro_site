@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.12";
+} from "./v1pro-constants.js?v=1.2.13";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -259,7 +259,8 @@ async function probeVideoBrowserCompatibility(blob) {
  * @param {number} time
  */
 function seekVideoTo(video, time) {
-  if (Math.abs(video.currentTime - time) < 0.02) {
+  const alreadyAtTime = Math.abs(video.currentTime - time) < 0.02;
+  if (alreadyAtTime && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
@@ -267,7 +268,7 @@ function seekVideoTo(video, time) {
       cleanup();
       reject(new Error("视频抽帧超时，请尝试更短或更小的 MP4。"));
     }, 12000);
-    const onSeeked = () => {
+    const onFrameReady = () => {
       cleanup();
       resolve();
     };
@@ -277,12 +278,19 @@ function seekVideoTo(video, time) {
     };
     const cleanup = () => {
       clearTimeout(timer);
-      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("seeked", onFrameReady);
+      video.removeEventListener("loadeddata", onFrameReady);
       video.removeEventListener("error", onError);
     };
-    video.addEventListener("seeked", onSeeked);
+    if (alreadyAtTime) {
+      video.addEventListener("loadeddata", onFrameReady);
+    } else {
+      video.addEventListener("seeked", onFrameReady);
+    }
     video.addEventListener("error", onError);
-    video.currentTime = time;
+    if (!alreadyAtTime) {
+      video.currentTime = time;
+    }
   });
 }
 
@@ -428,6 +436,10 @@ async function planVideoWithSeek(blob, opts) {
     if (duration <= 0) {
       throw new Error("视频时长无效。");
     }
+    // loadedmetadata does not guarantee that the first decoded frame exists.
+    // Wait for frame 0 before handing the video to the payload generator,
+    // otherwise drawing it to canvas can produce a black first frame.
+    await seekVideoTo(video, 0);
 
     const schedule = planVideoSampleSchedule(duration, maxFrames, {
       maxVideoFps,
@@ -579,7 +591,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.12");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.13");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
