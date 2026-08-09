@@ -3168,7 +3168,10 @@ func main() {
 			selectedSigner = videoSigner
 		}
 
-		if !previewOnly && c.Query("blob") == "1" {
+		// Preview already grants a short-lived signed URL to the complete object.
+		// Allow the same authenticated preview request to stream the object as a
+		// CORS fallback without recording a second download.
+		if c.Query("blob") == "1" {
 			writeTransferBlob(c, selectedSigner, objectKey)
 			return
 		}

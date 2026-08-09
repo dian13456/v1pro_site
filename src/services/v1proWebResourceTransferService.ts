@@ -46,54 +46,40 @@ function formatUsbError(err: unknown): string {
   return "网页直传失败";
 }
 
-function transferBlobPath(resource: ResourceItem): string {
+function transferPath(resource: ResourceItem, mode: "direct" | "proxyFallback"): string {
   const params = new URLSearchParams({
     id: String(resource.id),
-    download: "1",
-    blob: "1",
   });
+  if (mode === "direct") {
+    params.set("download", "1");
+  } else {
+    params.set("preview", "1");
+    params.set("blob", "1");
+  }
   if (resource.materialType === "image") {
     return `/api/image/?${params.toString()}`;
   }
   return `/api/resource/?${params.toString()}`;
 }
 
-async function fetchTransferBlob(
-  resource: ResourceItem,
-  onProgress?: (received: number, total: number) => void,
-): Promise<Blob> {
-  if (!hasValidLocalAuth()) {
-    throw new Error("认证状态无效，请重新验证设备");
-  }
+async function authorizedApiResponse(path: string, signal?: AbortSignal): Promise<Response> {
   const auth = getAuthState();
   if (!auth?.token) {
     throw new Error("认证状态无效，请重新验证设备");
   }
-
-  const path = transferBlobPath(resource);
   const init = await withApiSignature(path, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${auth.token}`,
     },
   });
+  return fetch(`${API_BASE}${path}`, { ...init, signal });
+}
 
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), TRANSFER_DOWNLOAD_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    window.clearTimeout(timeout);
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("视频下载超时，请检查网络后重试");
-    }
-    throw new Error(formatClientError(err, "素材下载失败，请检查网络后重试"));
-  }
-
+async function readBlobResponse(
+  response: Response,
+  onProgress?: (received: number, total: number) => void,
+): Promise<Blob> {
   if (!response.ok) {
     let message = `素材下载失败（HTTP ${response.status}）`;
     try {
@@ -102,17 +88,12 @@ async function fetchTransferBlob(
     } catch {
       // ignore non-json body
     }
-    window.clearTimeout(timeout);
     throw new Error(message);
   }
 
   const total = Number.parseInt(response.headers.get("Content-Length") || "0", 10) || 0;
   if (!response.body) {
-    try {
-      return await response.blob();
-    } finally {
-      window.clearTimeout(timeout);
-    }
+    return response.blob();
   }
 
   const reader = response.body.getReader();
@@ -133,12 +114,8 @@ async function fetchTransferBlob(
       }
     }
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("视频下载超时，请检查网络后重试");
-    }
-    throw new Error(formatClientError(err, "视频下载中断，请重试"));
+    throw err;
   } finally {
-    window.clearTimeout(timeout);
     reader.releaseLock();
   }
 
@@ -146,6 +123,52 @@ async function fetchTransferBlob(
   return new Blob(chunks as BlobPart[], {
     type: response.headers.get("Content-Type") || "application/octet-stream",
   });
+}
+
+async function fetchTransferBlob(
+  resource: ResourceItem,
+  onProgress?: (received: number, total: number) => void,
+  onFallback?: () => void,
+): Promise<Blob> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), TRANSFER_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const directPath = transferPath(resource, "direct");
+    const signedResponse = await authorizedApiResponse(directPath, controller.signal);
+    if (!signedResponse.ok) {
+      return await readBlobResponse(signedResponse);
+    }
+    const payload = (await signedResponse.json()) as { url?: string; error?: string };
+    if (!payload.url) {
+      throw new Error(payload.error || "COS 下载地址生成失败");
+    }
+
+    try {
+      const directResponse = await fetch(payload.url, {
+        method: "GET",
+        mode: "cors",
+        signal: controller.signal,
+      });
+      return await readBlobResponse(directResponse, onProgress);
+    } catch (directError) {
+      if (controller.signal.aborted) throw directError;
+      onFallback?.();
+      const fallbackPath = transferPath(resource, "proxyFallback");
+      const fallbackResponse = await authorizedApiResponse(fallbackPath, controller.signal);
+      return await readBlobResponse(fallbackResponse, onProgress);
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("视频下载超时，请检查网络后重试");
+    }
+    throw new Error(formatClientError(err, "素材下载失败，请检查网络后重试"));
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function formatDownloadProgress(received: number, total: number): string {
@@ -206,6 +229,7 @@ export async function transferResourceViaWebUsb(
         isVideo
           ? (received, total) => callbacks.onStatus?.(formatDownloadProgress(received, total))
           : undefined,
+        () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
       ).then((blob) => {
         downloadDone = true;
         if (!connected) {
