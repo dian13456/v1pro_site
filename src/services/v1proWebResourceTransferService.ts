@@ -253,11 +253,11 @@ export async function transferResourceViaWebUsb(
           fetchDirectTransferUrl(resource),
         ]);
         const capacityLabel = client.getCapacityLabel?.() ?? "";
-        callbacks.onStatus?.(
-          capacityLabel
-            ? `正在预测设备空间… ${capacityLabel}`
-            : "正在预测设备空间…",
-        );
+        if (!client.deviceCapacity) {
+          const detail = client.capacityError ? `：${client.capacityError}` : "";
+          throw new Error(`无法读取设备容量${detail}`);
+        }
+        callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
         const prediction = await client.predictVideoUrl(directUrl);
         callbacks.onStatus?.(
           `预测可装入：${prediction.frameCount} 帧，正在预擦除并下载视频…`,

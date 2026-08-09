@@ -68,6 +68,7 @@ export class V1ProUsbError extends Error {
 export interface V1ProWebTransferClient {
   device: V1ProWebUsbDevice | null;
   deviceCapacity: V1ProDeviceCapacity | null;
+  capacityError: string | null;
   busy: boolean;
   readonly connected: boolean;
   connect(opts?: V1ProConnectOptions): Promise<V1ProWebUsbDevice>;

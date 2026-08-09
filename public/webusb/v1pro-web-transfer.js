@@ -7,12 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.7";
+} from "./v1pro-constants.js?v=1.2.8";
 import {
-  gfm1TotalBytes,
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.7";
+} from "./v1pro-gfm1.js?v=1.2.8";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -22,7 +21,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.7";
+} from "./v1pro-usb.js?v=1.2.8";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -36,26 +35,9 @@ export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
  */
 export function formatDeviceCapacityLabel(capacity) {
   if (!capacity) return "";
-  if (capacity.estimated) {
-    return `兼容模式 · 安全上限 ${capacity.maxFrames} 帧`;
-  }
   const frames = capacity.maxFrames ? `${capacity.maxFrames} 帧` : "";
   const model = capacity.model ? `${capacity.model} 档` : "";
   return [model, frames].filter(Boolean).join(" · ");
-}
-
-function fallbackDeviceCapacity() {
-  const maxFrames = DEFAULT_MAX_GIF_FRAMES;
-  return {
-    jedecHex: "",
-    model: 0,
-    totalMb: 0,
-    usableMb: 0,
-    productFrames: maxFrames,
-    maxPayloadBytes: gfm1TotalBytes(maxFrames),
-    maxFrames,
-    estimated: true,
-  };
 }
 
 export class V1ProWebTransfer {
@@ -66,6 +48,8 @@ export class V1ProWebTransfer {
     /** @type {import("./v1pro-usb.js").parseJedecReply extends (t: infer T) => infer R ? R : never|null} */
     this.deviceCapacity = null;
     this.preparedTransferBytes = null;
+    /** @type {string|null} */
+    this.capacityError = null;
   }
 
   /** @returns {boolean} */
@@ -98,18 +82,26 @@ export class V1ProWebTransfer {
   async refreshDeviceCapacity() {
     if (!this.device || !this.device.opened) {
       this.deviceCapacity = null;
+      this.capacityError = "设备未连接";
       return null;
     }
+    this.capacityError = null;
     try {
       this.deviceCapacity = await queryDeviceCapacity(this.device, {
         wake: true,
         retries: 3,
       });
-    } catch {
+      if (!this.deviceCapacity) {
+        this.capacityError = "设备未返回 JED 容量应答";
+      }
+    } catch (err) {
       this.deviceCapacity = null;
-    }
-    if (!this.deviceCapacity) {
-      this.deviceCapacity = fallbackDeviceCapacity();
+      this.capacityError =
+        err instanceof V1ProUsbError
+          ? err.message
+          : err && err.message
+            ? String(err.message)
+            : "JEDEC 查询失败";
     }
     return this.deviceCapacity;
   }
@@ -118,6 +110,7 @@ export class V1ProWebTransfer {
     const d = this.device;
     this.device = null;
     this.deviceCapacity = null;
+    this.capacityError = null;
     this.preparedTransferBytes = null;
     await closeDevice(d);
   }
@@ -130,9 +123,10 @@ export class V1ProWebTransfer {
       await this.refreshDeviceCapacity();
     }
     if (!this.deviceCapacity) {
+      const detail = this.capacityError ? `（${this.capacityError}）` : "";
       throw new V1ProUsbError(
         "capacity_unavailable",
-        "无法读取设备容量，已停止视频空间预测。请重新连接设备后重试。"
+        `无法读取设备容量${detail}，已停止视频空间预测。请重新连接设备后重试。`
       );
     }
     const prediction = await predictVideoTransferFromUrl(

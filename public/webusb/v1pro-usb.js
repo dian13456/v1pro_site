@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.7";
+} from "./v1pro-constants.js?v=1.2.8";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -408,12 +408,17 @@ export async function queryDeviceCapacity(device, opts = {}) {
       await drainInQuick(device, inEndpoint);
       const pingCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_PING]);
       await transferOutWithRetry(device, outEndpoint, pingCmd, IO_TIMEOUT_MS, 3);
-      await readTextReply(
+      const wakeReply = await readTextReply(
         device,
         inEndpoint,
         ["PONG", "JED,"],
         Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
       );
+      // Rare firmwares answer the wake with JEDEC text; accept it immediately.
+      if (wakeReply && wakeReply.startsWith("JED,")) {
+        const parsedWake = parseJedecReply(wakeReply);
+        if (parsedWake) return parsedWake;
+      }
     } catch {
       // wake is best-effort; continue to JEDEC
     }
