@@ -24,7 +24,11 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
   if (resource.category === "software") {
     return false;
   }
-  return resource.materialType === "image" || resource.materialType === "gif";
+  return (
+    resource.materialType === "image" ||
+    resource.materialType === "gif" ||
+    resource.materialType === "video"
+  );
 }
 
 let sharedClient: V1ProWebTransferClient | null = null;
@@ -119,19 +123,24 @@ export async function transferResourceViaWebUsb(
     const client = sharedClient;
 
     try {
-      callbacks.onStatus?.("正在连接并获取素材…");
+      const isVideo = resource.materialType === "video";
+      callbacks.onStatus?.(isVideo ? "正在连接并下载视频…" : "正在连接并获取素材…");
       const [, blob] = await Promise.all([
         client.connect({ reuseAuthorized: true }),
         fetchTransferBlob(resource),
       ]);
       const fileName = guessTransferFileName(resource);
 
-      callbacks.onStatus?.("正在编码并传输…");
+      callbacks.onStatus?.(isVideo ? "正在解码视频并传输…" : "正在编码并传输…");
       const result = await client.transferFile(blob, {
         fileName,
         onProgress: (info) => {
           if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
-            callbacks.onStatus?.(`正在编码… ${info.sent}/${info.frameCount} 帧`);
+            callbacks.onStatus?.(
+              isVideo
+                ? `正在解码视频… ${info.sent}/${info.frameCount} 帧`
+                : `正在编码… ${info.sent}/${info.frameCount} 帧`,
+            );
             return;
           }
           callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);

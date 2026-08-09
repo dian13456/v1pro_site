@@ -61,7 +61,7 @@ export class V1ProWebTransfer {
       throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
     }
     if (!(file instanceof Blob) || file.size <= 0) {
-      throw new V1ProUsbError("invalid_file", "请选择有效的图片或 GIF 文件。");
+      throw new V1ProUsbError("invalid_file", "请选择有效的图片、GIF 或短视频文件。");
     }
 
     const fileName =
