@@ -1,7 +1,7 @@
-import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
+﻿import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
 /** 与 public/webusb/v1pro-constants.js 中 WEBUSB_TRANSFER_VERSION 保持一致 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.13";
+export const WEBUSB_TRANSFER_VERSION = "1.2.14";
 
 type WebUsbSdkModule = {
   V1ProWebTransfer: new () => V1ProWebTransferClient;

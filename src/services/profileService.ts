@@ -18,6 +18,10 @@ export interface ProfilePayload {
   creditsDefault?: number;
   creditCost?: number;
   likeRewardCredits?: number;
+  actorLikeRewardCredits?: number;
+  actorLikeDailyCapCredits?: number;
+  downloadRewardCredits?: number;
+  downloadDailyCapCredits?: number;
   softwarePromptDismissedId?: number;
   creditLedger?: CreditLedgerEntry[];
   message?: string;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Browser-side GFM1 encoder (320×170 RGB565 LE).
  * Aligns with tools/usb_send_gif.py header layout.
  */
@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.13";
+} from "./v1pro-constants.js?v=1.2.14";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -530,7 +530,7 @@ export async function planGfm1Encode(blob, opts = {}) {
   }
 
   if (!isGif) {
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await decodeStillImageBitmap(blob);
     const frameCount = 1;
     const totalBytes = gfm1TotalBytes(frameCount);
     const headerBlock = buildGfm1HeaderBlock(frameCount, [DEFAULT_FRAME_MS]);
@@ -564,7 +564,7 @@ export async function planGfm1Encode(blob, opts = {}) {
     }
   }
 
-  const bitmap = await createImageBitmap(blob);
+  const bitmap = await decodeStillImageBitmap(blob);
   const frameCount = 1;
   const totalBytes = gfm1TotalBytes(frameCount);
   const headerBlock = buildGfm1HeaderBlock(frameCount, [DEFAULT_FRAME_MS]);
@@ -586,12 +586,58 @@ export async function planGfm1Encode(blob, opts = {}) {
 }
 
 /**
+ * Decode a still image blob to ImageBitmap with a clearer failure message.
+ * @param {Blob} blob
+ * @returns {Promise<ImageBitmap>}
+ */
+async function decodeStillImageBitmap(blob) {
+  const sizeLabel = Number.isFinite(blob?.size) ? `${blob.size} 字节` : "未知大小";
+  const typeLabel = (blob?.type || "").trim() || "未知类型";
+  try {
+    return await createImageBitmap(blob);
+  } catch (directErr) {
+    // Some COS responses omit/mislabel Content-Type; retry via HTMLImageElement.
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const image = await loadHtmlImage(objectUrl);
+      try {
+        return await createImageBitmap(image);
+      } finally {
+        // keep image eligible for GC
+      }
+    } catch {
+      const detail =
+        directErr instanceof Error && directErr.message
+          ? directErr.message
+          : "unknown decode error";
+      throw new Error(`图片无法解码（${typeLabel}，${sizeLabel}）：${detail}`);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+}
+
+/**
+ * @param {string} url
+ * @returns {Promise<HTMLImageElement>}
+ */
+function loadHtmlImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("HTMLImageElement decode failed"));
+    image.src = url;
+  });
+}
+
+/**
  * @param {Blob} blob
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.13");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.14");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

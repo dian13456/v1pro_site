@@ -253,7 +253,7 @@ export default function SharePage() {
       <SitePanel>
         <SiteSectionTitle
           title="分享素材"
-          description={`支持静态图片（8MB）、GIF（${gifMb}MB）、视频（${videoMb}MB，建议 H.264 8-bit MP4，兼容 Edge/Chrome）。他人点赞可为你的 SN 增加积分。${
+          description={`支持静态图片（8MB）、GIF（${gifMb}MB）、视频（${videoMb}MB，建议 H.264 8-bit MP4，兼容 Edge/Chrome）。他人点赞可为你的 SN 增加 1 积分，有效下载可再增加 0.5 积分。${
             shareUnlimited
               ? " 当前分享次数：无限制"
               : shareRemaining != null

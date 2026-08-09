@@ -96,15 +96,15 @@ type ShopRedeemInput struct {
 }
 
 type ShopRedeemResult struct {
-	ItemID           string `json:"itemId"`
-	Title            string `json:"title"`
-	Cost             int    `json:"cost"`
-	CreditsRemaining int    `json:"creditsRemaining"`
-	RewardCredits    int    `json:"rewardCredits,omitempty"`
-	RedeemCode       string `json:"redeemCode,omitempty"`
-	ShareCount       int    `json:"shareCount,omitempty"`
-	ShareRemaining   int    `json:"shareRemaining,omitempty"`
-	Message          string `json:"message"`
+	ItemID           string  `json:"itemId"`
+	Title            string  `json:"title"`
+	Cost             int     `json:"cost"`
+	CreditsRemaining float64 `json:"creditsRemaining"`
+	RewardCredits    int     `json:"rewardCredits,omitempty"`
+	RedeemCode       string  `json:"redeemCode,omitempty"`
+	ShareCount       int     `json:"shareCount,omitempty"`
+	ShareRemaining   int     `json:"shareRemaining,omitempty"`
+	Message          string  `json:"message"`
 }
 
 func RedeemShopItem(
@@ -136,12 +136,12 @@ func RedeemShopItem(
 		if amount <= 0 {
 			amount = item.Cost
 		}
-		next, earnErr := credits.Earn(input.Serial, amount)
+		nextUnits, earnErr := credits.EarnUnits(input.Serial, CreditsToUnits(amount))
 		if earnErr != nil {
 			return result, earnErr
 		}
 		result.RewardCredits = amount
-		result.CreditsRemaining = next
+		result.CreditsRemaining = UnitsToCredits(nextUnits)
 		result.Message = fmt.Sprintf("兑换成功，已获得 %d 积分", amount)
 	case ShopEffectResetAIShare:
 		if shareQuota == nil {
@@ -158,15 +158,15 @@ func RedeemShopItem(
 	case ShopEffectGrantCode:
 		code := strings.TrimSpace(item.Effect.Code)
 		if code == "" {
-			refund := credits.Refund(input.Serial, item.Cost)
-			result.CreditsRemaining = refund
+			refundUnits := credits.RefundUnits(input.Serial, CreditsToUnits(item.Cost))
+			result.CreditsRemaining = UnitsToCredits(refundUnits)
 			return result, fmt.Errorf("兑换码未配置")
 		}
 		result.RedeemCode = code
 		result.Message = fmt.Sprintf("兑换成功，请妥善保存兑换码：%s", code)
 	default:
-		refund := credits.Refund(input.Serial, item.Cost)
-		result.CreditsRemaining = refund
+		refundUnits := credits.RefundUnits(input.Serial, CreditsToUnits(item.Cost))
+		result.CreditsRemaining = UnitsToCredits(refundUnits)
 		return result, fmt.Errorf("不支持的商品类型")
 	}
 

@@ -37,7 +37,10 @@ func TestRedeemGrantCode(t *testing.T) {
 			},
 		},
 	}
-	credits := AICreditsStore{Balances: map[string]int{"SN001": 2000}}
+	credits := AICreditsStore{
+		UnitScale: CreditUnitScale,
+		Balances:  map[string]int{"SN001": CreditsToUnits(2000)},
+	}
 	result, err := RedeemShopItem(
 		ShopRedeemInput{Serial: "SN001", ItemID: "v1pro_miaomiao_shell_77"},
 		catalog,
@@ -51,6 +54,6 @@ func TestRedeemGrantCode(t *testing.T) {
 		t.Fatalf("expected redeem code, got %q", result.RedeemCode)
 	}
 	if result.CreditsRemaining != 650 {
-		t.Fatalf("expected 650 credits remaining, got %d", result.CreditsRemaining)
+		t.Fatalf("expected 650 credits remaining, got %v", result.CreditsRemaining)
 	}
 }

@@ -17,6 +17,7 @@ import { DEFAULT_AI_CREDITS } from "../services/profileService";
 import { fetchShopCatalog, redeemShopItem } from "../services/shopService";
 import type { ShopItem } from "../types/shop";
 import type { CreditLedgerEntry } from "../types/credits";
+import { formatCredits } from "../utils/formatCredits";
 
 export default function ShopPage() {
   const navigate = useNavigate();
@@ -25,6 +26,10 @@ export default function ShopPage() {
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
+  const [actorLikeRewardCredits, setActorLikeRewardCredits] = useState(0.5);
+  const [actorLikeDailyCapCredits, setActorLikeDailyCapCredits] = useState(10);
+  const [downloadRewardCredits, setDownloadRewardCredits] = useState(0.5);
+  const [downloadDailyCapCredits, setDownloadDailyCapCredits] = useState(20);
   const [items, setItems] = useState<ShopItem[]>([]);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
   const [notice, setNotice] = useState("");
@@ -38,6 +43,18 @@ export default function ShopPage() {
       const payload = await fetchShopCatalog();
       setCredits(typeof payload.credits === "number" ? payload.credits : DEFAULT_AI_CREDITS);
       setLikeRewardCredits(typeof payload.likeRewardCredits === "number" ? payload.likeRewardCredits : 1);
+      setActorLikeRewardCredits(
+        typeof payload.actorLikeRewardCredits === "number" ? payload.actorLikeRewardCredits : 0.5,
+      );
+      setActorLikeDailyCapCredits(
+        typeof payload.actorLikeDailyCapCredits === "number" ? payload.actorLikeDailyCapCredits : 10,
+      );
+      setDownloadRewardCredits(
+        typeof payload.downloadRewardCredits === "number" ? payload.downloadRewardCredits : 0.5,
+      );
+      setDownloadDailyCapCredits(
+        typeof payload.downloadDailyCapCredits === "number" ? payload.downloadDailyCapCredits : 20,
+      );
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setCreditLedger(Array.isArray(payload.creditLedger) ? payload.creditLedger : []);
     } catch (err) {
@@ -89,15 +106,15 @@ export default function ShopPage() {
         <SitePanel>
           <SiteSectionTitle
             title="我的积分"
-            description={`他人为你的上传素材点赞，你可获得 ${likeRewardCredits} 积分/次（不能给自己点赞得分）。`}
+            description={`被点赞 +${formatCredits(likeRewardCredits)}/次；点赞他人 +${formatCredits(actorLikeRewardCredits)}/次（日上限 ${formatCredits(actorLikeDailyCapCredits)}）；被下载 +${formatCredits(downloadRewardCredits)}/次（日上限 ${formatCredits(downloadDailyCapCredits)}）。不能给自己点赞或下载得分。`}
             action={
               <div className="text-3xl font-semibold text-violet-700 dark:text-violet-200">
-                {loading ? "—" : credits}
+                {loading ? "—" : formatCredits(credits)}
               </div>
             }
           />
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            通过 AI 生图、GIF 上传或素材被点赞获得积分。当前商城仅兑换 V1PRO CNC 喵喵壳子 77 帧兑换码。
+            通过 AI 生图、上传分享、点赞互动或素材被下载获得积分。当前商城仅兑换 V1PRO CNC 喵喵壳子 77 帧兑换码。
           </p>
           <CreditLedgerPanel entries={creditLedger} loading={loading} />
         </SitePanel>

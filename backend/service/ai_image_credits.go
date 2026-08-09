@@ -14,22 +14,30 @@ const (
 	DefaultAICredits          = 100
 	AICreditCostPerGeneration = 1
 	LikeCreditRewardAmount    = 1
+
+	CreditUnitScale                 = 2
+	DefaultAICreditUnits            = DefaultAICredits * CreditUnitScale
+	AICreditCostPerGenerationUnits  = AICreditCostPerGeneration * CreditUnitScale
+	UploaderLikeRewardUnits         = 2
+	ActorLikeRewardUnits            = 1
+	DownloadRewardUnits             = 1
 )
 
 type AICreditsStore struct {
-	Balances map[string]int `json:"balances"`
+	UnitScale int            `json:"unitScale"`
+	Balances  map[string]int `json:"balances"`
 }
 
 func LoadAICreditsStore(path string) (AICreditsStore, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return AICreditsStore{Balances: map[string]int{}}, nil
+			return newAICreditsStore(), nil
 		}
 		return AICreditsStore{}, err
 	}
 	if strings.TrimSpace(string(raw)) == "" {
-		return AICreditsStore{Balances: map[string]int{}}, nil
+		return newAICreditsStore(), nil
 	}
 	var store AICreditsStore
 	if err := json.Unmarshal(raw, &store); err != nil {
@@ -38,6 +46,7 @@ func LoadAICreditsStore(path string) (AICreditsStore, error) {
 	if store.Balances == nil {
 		store.Balances = map[string]int{}
 	}
+	store.ensureUnitScale()
 	return store, nil
 }
 
@@ -48,6 +57,7 @@ func SaveAICreditsStore(path string, store AICreditsStore) error {
 	if store.Balances == nil {
 		store.Balances = map[string]int{}
 	}
+	store.ensureUnitScale()
 	raw, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
@@ -56,17 +66,60 @@ func SaveAICreditsStore(path string, store AICreditsStore) error {
 	return os.WriteFile(path, raw, 0o644)
 }
 
-func (store AICreditsStore) Balance(serial string) int {
-	serial = strings.TrimSpace(serial)
-	if serial == "" {
-		return DefaultAICredits
+func newAICreditsStore() AICreditsStore {
+	return AICreditsStore{UnitScale: CreditUnitScale, Balances: map[string]int{}}
+}
+
+// ensureUnitScale upgrades legacy whole-credit balances exactly once.
+func (store *AICreditsStore) ensureUnitScale() {
+	if store.UnitScale == CreditUnitScale {
+		return
 	}
 	if store.Balances == nil {
-		return DefaultAICredits
+		store.Balances = map[string]int{}
+	}
+	for serial, balance := range store.Balances {
+		store.Balances[serial] = balance * CreditUnitScale
+	}
+	store.UnitScale = CreditUnitScale
+}
+
+func CreditsToUnits(credits int) int {
+	return credits * CreditUnitScale
+}
+
+func UnitsToCredits(units int) float64 {
+	return float64(units) / float64(CreditUnitScale)
+}
+
+func FormatCreditUnits(units int) string {
+	if units%CreditUnitScale == 0 {
+		return fmt.Sprintf("%d", units/CreditUnitScale)
+	}
+	return fmt.Sprintf("%.1f", UnitsToCredits(units))
+}
+
+// Balance keeps the legacy whole-credit API. New API responses should use BalanceCredits.
+func (store *AICreditsStore) Balance(serial string) int {
+	return store.BalanceUnits(serial) / CreditUnitScale
+}
+
+func (store *AICreditsStore) BalanceCredits(serial string) float64 {
+	return UnitsToCredits(store.BalanceUnits(serial))
+}
+
+func (store *AICreditsStore) BalanceUnits(serial string) int {
+	store.ensureUnitScale()
+	serial = strings.TrimSpace(serial)
+	if serial == "" {
+		return DefaultAICreditUnits
+	}
+	if store.Balances == nil {
+		return DefaultAICreditUnits
 	}
 	balance, ok := store.Balances[serial]
 	if !ok {
-		return DefaultAICredits
+		return DefaultAICreditUnits
 	}
 	if balance < 0 {
 		return 0
@@ -102,6 +155,15 @@ func (store *AICreditsStore) Spend(serial string, amount int) (int, error) {
 	if amount <= 0 {
 		amount = AICreditCostPerGeneration
 	}
+	nextUnits, err := store.SpendUnits(serial, CreditsToUnits(amount))
+	return nextUnits / CreditUnitScale, err
+}
+
+func (store *AICreditsStore) SpendUnits(serial string, amountUnits int) (int, error) {
+	store.ensureUnitScale()
+	if amountUnits <= 0 {
+		amountUnits = AICreditCostPerGenerationUnits
+	}
 	if store.Balances == nil {
 		store.Balances = map[string]int{}
 	}
@@ -109,11 +171,11 @@ func (store *AICreditsStore) Spend(serial string, amount int) (int, error) {
 	if serial == "" {
 		return 0, fmt.Errorf("设备 SN 无效")
 	}
-	balance := store.Balance(serial)
-	if balance < amount {
-		return balance, fmt.Errorf("积分不足，剩余 %d，每次生图消耗 %d 积分", balance, amount)
+	balance := store.BalanceUnits(serial)
+	if balance < amountUnits {
+		return balance, fmt.Errorf("积分不足，剩余 %s，每次消耗 %s 积分", FormatCreditUnits(balance), FormatCreditUnits(amountUnits))
 	}
-	next := balance - amount
+	next := balance - amountUnits
 	store.Balances[serial] = next
 	return next, nil
 }
@@ -123,6 +185,15 @@ func (store *AICreditsStore) Earn(serial string, amount int) (int, error) {
 	if amount <= 0 {
 		amount = LikeCreditRewardAmount
 	}
+	nextUnits, err := store.EarnUnits(serial, CreditsToUnits(amount))
+	return nextUnits / CreditUnitScale, err
+}
+
+func (store *AICreditsStore) EarnUnits(serial string, amountUnits int) (int, error) {
+	store.ensureUnitScale()
+	if amountUnits <= 0 {
+		return store.BalanceUnits(serial), fmt.Errorf("奖励积分无效")
+	}
 	if store.Balances == nil {
 		store.Balances = map[string]int{}
 	}
@@ -130,44 +201,43 @@ func (store *AICreditsStore) Earn(serial string, amount int) (int, error) {
 	if serial == "" {
 		return 0, fmt.Errorf("设备 SN 无效")
 	}
-	next := store.Balance(serial) + amount
+	next := store.BalanceUnits(serial) + amountUnits
 	store.Balances[serial] = next
 	return next, nil
 }
 
 // SpendShop deducts credits for shop redemption.
-func (store *AICreditsStore) SpendShop(serial string, amount int, itemTitle string) (int, error) {
+func (store *AICreditsStore) SpendShop(serial string, amount int, itemTitle string) (float64, error) {
 	if amount <= 0 {
-		return store.Balance(serial), fmt.Errorf("商品积分无效")
+		return store.BalanceCredits(serial), fmt.Errorf("商品积分无效")
+	}
+	nextUnits, err := store.SpendUnits(serial, CreditsToUnits(amount))
+	if err != nil {
+		return UnitsToCredits(nextUnits), fmt.Errorf("积分不足，剩余 %s，兑换「%s」需要 %d 积分", FormatCreditUnits(nextUnits), itemTitle, amount)
+	}
+	return UnitsToCredits(nextUnits), nil
+}
+
+func (store *AICreditsStore) RefundUnits(serial string, amountUnits int) int {
+	store.ensureUnitScale()
+	if amountUnits <= 0 {
+		return store.BalanceUnits(serial)
 	}
 	if store.Balances == nil {
 		store.Balances = map[string]int{}
 	}
 	serial = strings.TrimSpace(serial)
 	if serial == "" {
-		return 0, fmt.Errorf("设备 SN 无效")
+		return DefaultAICreditUnits
 	}
-	balance := store.Balance(serial)
-	if balance < amount {
-		return balance, fmt.Errorf("积分不足，剩余 %d，兑换「%s」需要 %d 积分", balance, itemTitle, amount)
-	}
-	next := balance - amount
+	next := store.BalanceUnits(serial) + amountUnits
 	store.Balances[serial] = next
-	return next, nil
+	return next
 }
 
 func (store *AICreditsStore) Refund(serial string, amount int) int {
 	if amount <= 0 {
 		return store.Balance(serial)
 	}
-	if store.Balances == nil {
-		store.Balances = map[string]int{}
-	}
-	serial = strings.TrimSpace(serial)
-	if serial == "" {
-		return DefaultAICredits
-	}
-	next := store.Balance(serial) + amount
-	store.Balances[serial] = next
-	return next
+	return store.RefundUnits(serial, CreditsToUnits(amount)) / CreditUnitScale
 }

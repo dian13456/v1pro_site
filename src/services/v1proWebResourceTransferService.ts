@@ -195,7 +195,6 @@ async function validateTransferBlob(resource: ResourceItem, blob: Blob): Promise
   if (blob.size <= 0) {
     throw new Error("下载到的素材为空，请重试");
   }
-  if (resource.materialType !== "video") return;
 
   const prefix = new TextDecoder()
     .decode(await blob.slice(0, Math.min(blob.size, 128)).arrayBuffer())
@@ -203,16 +202,28 @@ async function validateTransferBlob(resource: ResourceItem, blob: Blob): Promise
     .trimStart()
     .toLowerCase();
   const contentType = (blob.type || "").toLowerCase();
-  if (
+  const looksLikeTextPayload =
     contentType.includes("json") ||
     contentType.includes("xml") ||
     contentType.includes("html") ||
+    contentType.includes("text/") ||
     prefix.startsWith("<!doctype") ||
     prefix.startsWith("<html") ||
     prefix.startsWith("<?xml") ||
-    prefix.startsWith("{")
-  ) {
-    throw new Error("服务器返回的不是视频文件，请刷新页面后重试");
+    prefix.startsWith("{") ||
+    prefix.startsWith("[");
+
+  if (resource.materialType === "video") {
+    if (looksLikeTextPayload) {
+      throw new Error("服务器返回的不是视频文件，请刷新页面后重试");
+    }
+    return;
+  }
+
+  if (resource.materialType === "image" || resource.materialType === "gif") {
+    if (looksLikeTextPayload) {
+      throw new Error("服务器返回的不是图片文件，请刷新页面后重试");
+    }
   }
 }
 
@@ -243,6 +254,7 @@ export async function transferResourceViaWebUsb(
     }
     const client = sharedClient;
 
+    let preEraseStarted = false;
     try {
       const isVideo = resource.materialType === "video";
       if (isVideo) {
@@ -259,14 +271,20 @@ export async function transferResourceViaWebUsb(
         callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
         const prediction = await client.predictVideoUrl(directUrl);
         callbacks.onStatus?.(
-          `预测可装入：${prediction.frameCount} 帧，正在下载视频…`,
+          `预测可装入：${prediction.frameCount} 帧，正在预擦除并下载视频…`,
         );
-        const blob = await fetchTransferBlob(
-          resource,
-          (received, total) => callbacks.onStatus?.(formatDownloadProgress(received, total)),
-          () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
-          directUrl,
-        );
+        preEraseStarted = true;
+        const [, blob] = await Promise.all([
+          client.beginPreparedVideoTransfer(prediction.totalBytes),
+          fetchTransferBlob(
+            resource,
+            (received, total) => callbacks.onStatus?.(
+              `${formatDownloadProgress(received, total)} · 设备正在预擦除`,
+            ),
+            () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载（设备继续预擦除）…"),
+            directUrl,
+          ),
+        ]);
         await validateTransferBlob(resource, blob);
         const fileName = guessTransferFileName(resource);
         callbacks.onStatus?.("视频下载完成，正在解码并传输…");
@@ -274,6 +292,7 @@ export async function transferResourceViaWebUsb(
           fileName,
           mediaType: "video",
           pingFirst: false,
+          preparedTotalBytes: prediction.totalBytes,
           onProgress: (info) => {
             if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
               callbacks.onStatus?.(`正在解码视频… ${info.sent}/${info.frameCount} 帧`);
@@ -351,6 +370,10 @@ export async function transferResourceViaWebUsb(
       callbacks.onStatus?.(message);
       return result;
     } catch (err) {
+      if (preEraseStarted) {
+        await client.disconnect();
+        sharedClient = null;
+      }
       if (!client.busy && !client.connected) {
         sharedClient = null;
       }

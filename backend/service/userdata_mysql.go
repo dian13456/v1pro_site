@@ -535,8 +535,71 @@ func (m *mysqlStore) saveUserPromptPrefs(ctx context.Context, store UserPromptPr
 	return tx.Commit()
 }
 
+func (m *mysqlStore) getStorageMeta(ctx context.Context, key string) (string, bool, error) {
+	var value string
+	err := m.db.QueryRowContext(ctx, `SELECT meta_value FROM storage_meta WHERE meta_key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func (m *mysqlStore) setStorageMetaTx(ctx context.Context, tx *sql.Tx, key, value string) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO storage_meta (meta_key, meta_value) VALUES (?, ?)
+		ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value)`, key, value)
+	return err
+}
+
+func (m *mysqlStore) ensureCreditUnitScale(ctx context.Context) error {
+	const creditsMetaKey = "ai_credits_unit_scale"
+	const ledgerMetaKey = "ai_credit_ledger_unit_scale"
+	scaleValue := fmt.Sprintf("%d", CreditUnitScale)
+
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	migrateOne := func(metaKey, updateSQL string) error {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO storage_meta (meta_key, meta_value) VALUES (?, '0')
+			ON DUPLICATE KEY UPDATE meta_value = meta_value`, metaKey); err != nil {
+			return err
+		}
+		var current string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT meta_value FROM storage_meta WHERE meta_key = ? FOR UPDATE`, metaKey,
+		).Scan(&current); err != nil {
+			return err
+		}
+		if strings.TrimSpace(current) == scaleValue {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, updateSQL, CreditUnitScale); err != nil {
+			return err
+		}
+		return m.setStorageMetaTx(ctx, tx, metaKey, scaleValue)
+	}
+
+	if err := migrateOne(creditsMetaKey, `UPDATE ai_credits SET balance = balance * ?`); err != nil {
+		return err
+	}
+	if err := migrateOne(ledgerMetaKey, `UPDATE ai_credit_ledger SET amount = amount * ?`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (m *mysqlStore) loadAICredits(ctx context.Context) (AICreditsStore, error) {
-	store := AICreditsStore{Balances: map[string]int{}}
+	if err := m.ensureCreditUnitScale(ctx); err != nil {
+		return AICreditsStore{}, err
+	}
+	store := AICreditsStore{UnitScale: CreditUnitScale, Balances: map[string]int{}}
 	rows, err := m.db.QueryContext(ctx, `SELECT serial, balance FROM ai_credits`)
 	if err != nil {
 		return store, err
@@ -550,10 +613,15 @@ func (m *mysqlStore) loadAICredits(ctx context.Context) (AICreditsStore, error) 
 		}
 		store.Balances[serial] = balance
 	}
-	return store, rows.Err()
+	if err := rows.Err(); err != nil {
+		return store, err
+	}
+	store.ensureUnitScale()
+	return store, nil
 }
 
 func (m *mysqlStore) saveAICredits(ctx context.Context, store AICreditsStore) error {
+	store.ensureUnitScale()
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -570,6 +638,168 @@ func (m *mysqlStore) saveAICredits(ctx context.Context, store AICreditsStore) er
 		); err != nil {
 			return err
 		}
+	}
+	if err := m.setStorageMetaTx(ctx, tx, "ai_credits_unit_scale", fmt.Sprintf("%d", CreditUnitScale)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (m *mysqlStore) loadCreditLikeGrants(ctx context.Context) (CreditLikeGrantStore, error) {
+	store := NewCreditLikeGrantStore()
+	rows, err := m.db.QueryContext(ctx, `SELECT resource_id, liker_serial FROM credit_like_grants`)
+	if err != nil {
+		return store, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var resourceID, likerSerial string
+		if err := rows.Scan(&resourceID, &likerSerial); err != nil {
+			return store, err
+		}
+		store.Grants[likeGrantKey(resourceID, likerSerial)] = true
+	}
+	return store, rows.Err()
+}
+
+func (m *mysqlStore) saveCreditLikeGrants(ctx context.Context, store CreditLikeGrantStore) error {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credit_like_grants`); err != nil {
+		return err
+	}
+	now := time.Now().UTC().UnixMilli()
+	for key, granted := range store.Grants {
+		if !granted {
+			continue
+		}
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		resourceID := strings.TrimSpace(parts[0])
+		likerSerial := NormalizeRewardSerial(parts[1])
+		if resourceID == "" || likerSerial == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO credit_like_grants (resource_id, liker_serial, created_at)
+			VALUES (?, ?, ?)`, resourceID, likerSerial, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (m *mysqlStore) loadCreditDailyRewards(ctx context.Context) (CreditDailyRewardStore, error) {
+	store := NewCreditDailyRewardStore()
+	dayKey := ChinaDayKey(time.Now())
+	store.DayKey = dayKey
+
+	totalRows, err := m.db.QueryContext(ctx, `
+		SELECT kind, beneficiary_serial, amount_units
+		FROM credit_daily_reward_totals
+		WHERE day_key = ?`, dayKey)
+	if err != nil {
+		return store, err
+	}
+	defer totalRows.Close()
+	for totalRows.Next() {
+		var kind, beneficiary string
+		var amount int
+		if err := totalRows.Scan(&kind, &beneficiary, &amount); err != nil {
+			return store, err
+		}
+		store.Totals[dailyTotalKey(kind, beneficiary)] = amount
+	}
+	if err := totalRows.Err(); err != nil {
+		return store, err
+	}
+
+	eventRows, err := m.db.QueryContext(ctx, `
+		SELECT kind, event_id
+		FROM credit_daily_reward_events
+		WHERE day_key = ?`, dayKey)
+	if err != nil {
+		return store, err
+	}
+	defer eventRows.Close()
+	for eventRows.Next() {
+		var kind, eventID string
+		if err := eventRows.Scan(&kind, &eventID); err != nil {
+			return store, err
+		}
+		store.Events[dailyEventKey(kind, eventID)] = true
+	}
+	return store, eventRows.Err()
+}
+
+func (m *mysqlStore) saveCreditDailyRewards(ctx context.Context, store CreditDailyRewardStore) error {
+	dayKey := strings.TrimSpace(store.DayKey)
+	if dayKey == "" {
+		dayKey = ChinaDayKey(time.Now())
+	}
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credit_daily_reward_totals WHERE day_key = ?`, dayKey); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credit_daily_reward_events WHERE day_key = ?`, dayKey); err != nil {
+		return err
+	}
+	now := time.Now().UTC().UnixMilli()
+	for key, amount := range store.Totals {
+		if amount <= 0 {
+			continue
+		}
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		kind := strings.TrimSpace(parts[0])
+		beneficiary := NormalizeRewardSerial(parts[1])
+		if kind == "" || beneficiary == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO credit_daily_reward_totals (day_key, kind, beneficiary_serial, amount_units)
+			VALUES (?, ?, ?, ?)`, dayKey, kind, beneficiary, amount); err != nil {
+			return err
+		}
+	}
+	for key, ok := range store.Events {
+		if !ok {
+			continue
+		}
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		kind := strings.TrimSpace(parts[0])
+		eventID := strings.TrimSpace(parts[1])
+		if kind == "" || eventID == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO credit_daily_reward_events
+			(day_key, kind, event_id, beneficiary_serial, amount_units, created_at)
+			VALUES (?, ?, ?, '', 0, ?)`, dayKey, kind, eventID, now); err != nil {
+			return err
+		}
+	}
+	// Drop stale days to keep the tables small.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credit_daily_reward_totals WHERE day_key <> ?`, dayKey); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credit_daily_reward_events WHERE day_key <> ?`, dayKey); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -658,13 +888,21 @@ func (m *mysqlStore) saveAIShareUnlimited(ctx context.Context, store AIShareUnli
 }
 
 func (m *mysqlStore) appendCreditLedgerEntry(ctx context.Context, entry CreditLedgerEntry) error {
+	if err := m.ensureCreditUnitScale(ctx); err != nil {
+		return err
+	}
 	createdAt := time.Now().UTC().UnixMilli()
 	if entry.CreatedAt != "" {
 		if parsed, err := time.Parse(time.RFC3339, entry.CreatedAt); err == nil {
 			createdAt = parsed.UnixMilli()
 		}
 	}
-	_, err := m.db.ExecContext(ctx, `
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO ai_credit_ledger (id, serial, amount, source, label, ref_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		entry.ID,
@@ -674,11 +912,19 @@ func (m *mysqlStore) appendCreditLedgerEntry(ctx context.Context, entry CreditLe
 		strings.TrimSpace(entry.Label),
 		strings.TrimSpace(entry.RefID),
 		createdAt,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	if err := m.setStorageMetaTx(ctx, tx, "ai_credit_ledger_unit_scale", fmt.Sprintf("%d", CreditUnitScale)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (m *mysqlStore) listCreditLedger(ctx context.Context, serial string, limit int) ([]CreditLedgerEntry, error) {
+	if err := m.ensureCreditUnitScale(ctx); err != nil {
+		return nil, err
+	}
 	serial = strings.TrimSpace(serial)
 	if serial == "" {
 		return []CreditLedgerEntry{}, nil

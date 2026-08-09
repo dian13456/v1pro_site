@@ -1,4 +1,5 @@
 import type { CreditLedgerEntry } from "../types/credits";
+import { formatCreditDelta } from "../utils/formatCredits";
 
 function formatLedgerTime(value: string): string {
   const date = new Date(value);
@@ -49,7 +50,7 @@ export function CreditLedgerPanel({
                       : "text-slate-500"
                 }`}
               >
-                {entry.amount > 0 ? `+${entry.amount}` : entry.amount}
+                {formatCreditDelta(entry.amount)}
               </span>
             </li>
           ))}

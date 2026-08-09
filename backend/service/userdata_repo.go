@@ -9,16 +9,18 @@ import (
 )
 
 type UserDataPaths struct {
-	LikesPath       string
-	FavoritesPath   string
-	DownloadsPath   string
-	MessagesPath    string
-	ProfilesPath    string
-	PromptPrefsPath string
-	CreditsPath     string
+	LikesPath            string
+	FavoritesPath        string
+	DownloadsPath        string
+	MessagesPath         string
+	ProfilesPath         string
+	PromptPrefsPath      string
+	CreditsPath          string
 	SharesPath           string
 	SharesUnlimitedPath  string
 	LedgerPath           string
+	LikeGrantsPath       string
+	DailyRewardsPath     string
 }
 
 type UserDataRepo struct {
@@ -301,12 +303,49 @@ func (r *UserDataRepo) ListCreditLedger(serial string, limit int) ([]CreditLedge
 	return listCreditLedgerEntriesJSON(r.paths.LedgerPath, serial, limit)
 }
 
-func (r *UserDataRepo) RecordCreditChange(serial string, amount int, source, label, refID string) error {
-	if amount == 0 {
+// RecordCreditChange appends a ledger entry. amount is in half-units.
+func (r *UserDataRepo) RecordCreditChange(serial string, amountUnits int, source, label, refID string) error {
+	if amountUnits == 0 {
 		return nil
 	}
-	entry := NewCreditLedgerEntry(serial, amount, source, label, refID)
+	entry := NewCreditLedgerEntry(serial, amountUnits, source, label, refID)
 	return r.AppendCreditLedgerEntry(entry)
+}
+
+func (r *UserDataRepo) LoadCreditLikeGrants() (CreditLikeGrantStore, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.loadCreditLikeGrants(ctx)
+	}
+	return LoadCreditLikeGrantStore(r.paths.LikeGrantsPath)
+}
+
+func (r *UserDataRepo) SaveCreditLikeGrants(store CreditLikeGrantStore) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.saveCreditLikeGrants(ctx, store)
+	}
+	return SaveCreditLikeGrantStore(r.paths.LikeGrantsPath, store)
+}
+
+func (r *UserDataRepo) LoadCreditDailyRewards() (CreditDailyRewardStore, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.loadCreditDailyRewards(ctx)
+	}
+	return LoadCreditDailyRewardStore(r.paths.DailyRewardsPath)
+}
+
+func (r *UserDataRepo) SaveCreditDailyRewards(store CreditDailyRewardStore) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.saveCreditDailyRewards(ctx, store)
+	}
+	return SaveCreditDailyRewardStore(r.paths.DailyRewardsPath, store)
 }
 
 // ImportJSONFiles imports existing JSON config files into MySQL (one-time migration).

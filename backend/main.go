@@ -744,6 +744,14 @@ func main() {
 	if aiCreditLedgerPath == "" {
 		aiCreditLedgerPath = filepath.Join("config", "ai_credit_ledger.json")
 	}
+	creditLikeGrantsPath := os.Getenv("CREDIT_LIKE_GRANTS_PATH")
+	if creditLikeGrantsPath == "" {
+		creditLikeGrantsPath = filepath.Join("config", "credit_like_grants.json")
+	}
+	creditDailyRewardsPath := os.Getenv("CREDIT_DAILY_REWARDS_PATH")
+	if creditDailyRewardsPath == "" {
+		creditDailyRewardsPath = filepath.Join("config", "credit_daily_rewards.json")
+	}
 	shopItemsPath := os.Getenv("SHOP_ITEMS_PATH")
 	if shopItemsPath == "" {
 		shopItemsPath = filepath.Join("config", "shop_items.json")
@@ -885,6 +893,8 @@ func main() {
 		SharesPath:          aiImageSharesPath,
 		SharesUnlimitedPath: aiImageSharesUnlimitedPath,
 		LedgerPath:          aiCreditLedgerPath,
+		LikeGrantsPath:      creditLikeGrantsPath,
+		DailyRewardsPath:    creditDailyRewardsPath,
 	})
 	if err != nil {
 		log.Fatalf("init user data storage failed: %v", err)
@@ -945,6 +955,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("load ai image credits failed: %v", err)
 	}
+	creditLikeGrants, err := userDataRepo.LoadCreditLikeGrants()
+	if err != nil {
+		log.Fatalf("load credit like grants failed: %v", err)
+	}
+	creditDailyRewards, err := userDataRepo.LoadCreditDailyRewards()
+	if err != nil {
+		log.Fatalf("load credit daily rewards failed: %v", err)
+	}
 	shopCatalog, err := service.LoadShopCatalog(shopItemsPath)
 	if err != nil {
 		log.Fatalf("load shop items failed: %v", err)
@@ -952,6 +970,18 @@ func main() {
 	reloadAICreditsLocked := func() {
 		if err := userDataRepo.TryReloadAICredits(&aiCredits); err != nil {
 			log.Printf("warn: reload ai credits failed: %v", err)
+		}
+	}
+	reloadCreditRewardStoresLocked := func() {
+		if latest, loadErr := userDataRepo.LoadCreditLikeGrants(); loadErr != nil {
+			log.Printf("warn: reload credit like grants failed: %v", loadErr)
+		} else {
+			creditLikeGrants = latest
+		}
+		if latest, loadErr := userDataRepo.LoadCreditDailyRewards(); loadErr != nil {
+			log.Printf("warn: reload credit daily rewards failed: %v", loadErr)
+		} else {
+			creditDailyRewards = latest
 		}
 	}
 	reloadShareStoresLocked := func() {
@@ -1212,14 +1242,15 @@ func main() {
 
 		aiCreditsMu.Lock()
 		reloadAICreditsLocked()
-		credits := aiCredits.Balance(serial)
+		credits := aiCredits.BalanceCredits(serial)
 		aiCreditsMu.Unlock()
 
-		creditLedger, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
+		creditLedgerEntries, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
 		if ledgerErr != nil {
 			log.Printf("warn: list credit ledger failed: %v", ledgerErr)
-			creditLedger = []service.CreditLedgerEntry{}
+			creditLedgerEntries = []service.CreditLedgerEntry{}
 		}
+		creditLedger := service.ToCreditLedgerViews(creditLedgerEntries)
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":                   true,
@@ -1229,6 +1260,10 @@ func main() {
 			"creditsDefault":            service.DefaultAICredits,
 			"creditCost":                service.AICreditCostPerGeneration,
 			"likeRewardCredits":         service.LikeCreditRewardAmount,
+			"actorLikeRewardCredits":    service.UnitsToCredits(service.ActorLikeRewardUnits),
+			"actorLikeDailyCapCredits": service.UnitsToCredits(service.CreditDailyActorLikeCapUnits),
+			"downloadRewardCredits":     service.UnitsToCredits(service.DownloadRewardUnits),
+			"downloadDailyCapCredits":   service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
 			"softwarePromptDismissedId": softwarePromptDismissedID,
 			"creditLedger":              creditLedger,
 		})
@@ -1455,19 +1490,24 @@ func main() {
 		}
 		aiCreditsMu.Lock()
 		reloadAICreditsLocked()
-		balance := aiCredits.Balance(serial)
+		balance := aiCredits.BalanceCredits(serial)
 		aiCreditsMu.Unlock()
-		creditLedger, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
+		creditLedgerEntries, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
 		if ledgerErr != nil {
 			log.Printf("warn: list credit ledger failed: %v", ledgerErr)
-			creditLedger = []service.CreditLedgerEntry{}
+			creditLedgerEntries = []service.CreditLedgerEntry{}
 		}
+		creditLedger := service.ToCreditLedgerViews(creditLedgerEntries)
 		c.JSON(http.StatusOK, gin.H{
-			"success":           true,
-			"credits":           balance,
-			"likeRewardCredits": service.LikeCreditRewardAmount,
-			"items":             shopCatalog.PublicItems(),
-			"creditLedger":      creditLedger,
+			"success":                  true,
+			"credits":                  balance,
+			"likeRewardCredits":        service.LikeCreditRewardAmount,
+			"actorLikeRewardCredits":   service.UnitsToCredits(service.ActorLikeRewardUnits),
+			"actorLikeDailyCapCredits": service.UnitsToCredits(service.CreditDailyActorLikeCapUnits),
+			"downloadRewardCredits":    service.UnitsToCredits(service.DownloadRewardUnits),
+			"downloadDailyCapCredits":  service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
+			"items":                    shopCatalog.PublicItems(),
+			"creditLedger":             creditLedger,
 		})
 	})
 
@@ -1495,7 +1535,7 @@ func main() {
 			&aiShareQuota,
 		)
 		if redeemErr != nil {
-			balance := aiCredits.Balance(serial)
+			balance := aiCredits.BalanceCredits(serial)
 			aiShareMu.Unlock()
 			aiCreditsMu.Unlock()
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -1524,7 +1564,7 @@ func main() {
 
 		if ledgerErr := userDataRepo.RecordCreditChange(
 			serial,
-			-result.Cost,
+			-service.CreditsToUnits(result.Cost),
 			service.CreditSourceShopRedeem,
 			fmt.Sprintf("兑换「%s」", result.Title),
 			result.ItemID,
@@ -1534,7 +1574,7 @@ func main() {
 		if result.RewardCredits > 0 {
 			if ledgerErr := userDataRepo.RecordCreditChange(
 				serial,
-				result.RewardCredits,
+				service.CreditsToUnits(result.RewardCredits),
 				service.CreditSourceShopBonus,
 				fmt.Sprintf("兑换「%s」奖励", result.Title),
 				result.ItemID,
@@ -1596,7 +1636,7 @@ func main() {
 
 		aiCreditsMu.Lock()
 		reloadAICreditsLocked()
-		credits := aiCredits.Balance(serial)
+		credits := aiCredits.BalanceCredits(serial)
 		aiCreditsMu.Unlock()
 
 		c.JSON(http.StatusOK, gin.H{
@@ -1714,9 +1754,10 @@ func main() {
 
 		aiCreditsMu.Lock()
 		reloadAICreditsLocked()
-		creditsRemaining, spendErr := aiCredits.Spend(serial, service.AICreditCostPerGeneration)
+		remainingUnits, spendErr := aiCredits.SpendUnits(serial, service.AICreditCostPerGenerationUnits)
+		creditsRemaining := service.UnitsToCredits(remainingUnits)
 		if spendErr != nil {
-			balance := aiCredits.Balance(serial)
+			balance := aiCredits.BalanceCredits(serial)
 			aiCreditsMu.Unlock()
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"success":    false,
@@ -1727,7 +1768,7 @@ func main() {
 			return
 		}
 		if saveErr := userDataRepo.SaveAICredits(aiCredits); saveErr != nil {
-			aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+			aiCredits.RefundUnits(serial, service.AICreditCostPerGenerationUnits)
 			aiCreditsMu.Unlock()
 			log.Printf("warn: save ai image credits failed: %v", saveErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分扣减失败，请稍后重试"})
@@ -1737,7 +1778,7 @@ func main() {
 
 		if ledgerErr := userDataRepo.RecordCreditChange(
 			serial,
-			-service.AICreditCostPerGeneration,
+			-service.AICreditCostPerGenerationUnits,
 			service.CreditSourceAIGenerate,
 			"",
 			"",
@@ -1754,14 +1795,14 @@ func main() {
 		if err != nil {
 			aiCreditsMu.Lock()
 			reloadAICreditsLocked()
-			creditsRemaining = aiCredits.Refund(serial, service.AICreditCostPerGeneration)
+			creditsRemaining = service.UnitsToCredits(aiCredits.RefundUnits(serial, service.AICreditCostPerGenerationUnits))
 			if refundErr := userDataRepo.SaveAICredits(aiCredits); refundErr != nil {
 				log.Printf("warn: refund ai image credits failed: %v", refundErr)
 			}
 			aiCreditsMu.Unlock()
 			if ledgerErr := userDataRepo.RecordCreditChange(
 				serial,
-				service.AICreditCostPerGeneration,
+				service.AICreditCostPerGenerationUnits,
 				service.CreditSourceAIRefund,
 				"",
 				"",
@@ -2872,25 +2913,45 @@ func main() {
 		likesMu.Unlock()
 
 		creditRewarded := false
-		creditRewardAmount := 0
+		creditRewardAmount := 0.0
+		actorCreditRewarded := false
+		actorCreditRewardAmount := 0.0
 		if !alreadyLiked {
 			catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
 			if catalogErr != nil {
 				log.Printf("warn: load resource catalog for like reward failed: %v", catalogErr)
 			} else {
 				uploaderSerial := service.FindUploaderSerial(catalogItems, resourceID)
-				if service.ShouldAwardLikeCredit(uploaderSerial, serial) {
-					aiCreditsMu.Lock()
-					reloadAICreditsLocked()
-					if _, earnErr := aiCredits.Earn(uploaderSerial, service.LikeCreditRewardAmount); earnErr == nil {
-						if creditSaveErr := userDataRepo.SaveAICredits(aiCredits); creditSaveErr != nil {
-							log.Printf("warn: save like reward credits failed: %v", creditSaveErr)
-						} else {
+				aiCreditsMu.Lock()
+				reloadAICreditsLocked()
+				reloadCreditRewardStoresLocked()
+				award, awardErr := service.ApplyLikeCreditRewards(
+					&aiCredits,
+					&creditLikeGrants,
+					&creditDailyRewards,
+					uploaderSerial,
+					serial,
+					resourceID,
+					time.Now(),
+				)
+				if awardErr != nil {
+					log.Printf("warn: apply like credit rewards failed: %v", awardErr)
+				} else if award.UploaderRewarded || award.ActorRewarded {
+					if creditSaveErr := userDataRepo.SaveAICredits(aiCredits); creditSaveErr != nil {
+						log.Printf("warn: save like reward credits failed: %v", creditSaveErr)
+					} else {
+						if grantSaveErr := userDataRepo.SaveCreditLikeGrants(creditLikeGrants); grantSaveErr != nil {
+							log.Printf("warn: save credit like grants failed: %v", grantSaveErr)
+						}
+						if dailySaveErr := userDataRepo.SaveCreditDailyRewards(creditDailyRewards); dailySaveErr != nil {
+							log.Printf("warn: save credit daily rewards failed: %v", dailySaveErr)
+						}
+						if award.UploaderRewarded {
 							creditRewarded = true
-							creditRewardAmount = service.LikeCreditRewardAmount
+							creditRewardAmount = award.UploaderCredits()
 							if ledgerErr := userDataRepo.RecordCreditChange(
-								uploaderSerial,
-								creditRewardAmount,
+								service.NormalizeRewardSerial(uploaderSerial),
+								award.UploaderUnits,
 								service.CreditSourceLikeReward,
 								"",
 								resourceID,
@@ -2898,19 +2959,34 @@ func main() {
 								log.Printf("warn: record like reward ledger failed: %v", ledgerErr)
 							}
 						}
+						if award.ActorRewarded {
+							actorCreditRewarded = true
+							actorCreditRewardAmount = award.ActorCredits()
+							if ledgerErr := userDataRepo.RecordCreditChange(
+								service.NormalizeRewardSerial(serial),
+								award.ActorUnits,
+								service.CreditSourceLikeActorReward,
+								"",
+								resourceID,
+							); ledgerErr != nil {
+								log.Printf("warn: record actor like reward ledger failed: %v", ledgerErr)
+							}
+						}
 					}
-					aiCreditsMu.Unlock()
 				}
+				aiCreditsMu.Unlock()
 			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":            true,
-			"alreadyLiked":       alreadyLiked,
-			"liked":              true,
-			"likeCount":          likeCount,
-			"creditRewarded":     creditRewarded,
-			"creditRewardAmount": creditRewardAmount,
+			"success":                 true,
+			"alreadyLiked":            alreadyLiked,
+			"liked":                   true,
+			"likeCount":               likeCount,
+			"creditRewarded":          creditRewarded,
+			"creditRewardAmount":      creditRewardAmount,
+			"actorCreditRewarded":     actorCreditRewarded,
+			"actorCreditRewardAmount": actorCreditRewardAmount,
 		})
 	})
 
@@ -3108,6 +3184,50 @@ func main() {
 		})
 	})
 
+	awardDownloadCreditReward := func(downloaderSerial, resourceID string, now time.Time) {
+		catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
+		if catalogErr != nil {
+			log.Printf("warn: load resource catalog for download reward failed: %v", catalogErr)
+			return
+		}
+		uploaderSerial := service.FindUploaderSerial(catalogItems, resourceID)
+		aiCreditsMu.Lock()
+		defer aiCreditsMu.Unlock()
+		reloadAICreditsLocked()
+		reloadCreditRewardStoresLocked()
+		award, awardErr := service.ApplyDownloadCreditReward(
+			&aiCredits,
+			&creditDailyRewards,
+			uploaderSerial,
+			downloaderSerial,
+			resourceID,
+			now,
+		)
+		if awardErr != nil {
+			log.Printf("warn: apply download credit reward failed: %v", awardErr)
+			return
+		}
+		if !award.Rewarded {
+			return
+		}
+		if creditSaveErr := userDataRepo.SaveAICredits(aiCredits); creditSaveErr != nil {
+			log.Printf("warn: save download reward credits failed: %v", creditSaveErr)
+			return
+		}
+		if dailySaveErr := userDataRepo.SaveCreditDailyRewards(creditDailyRewards); dailySaveErr != nil {
+			log.Printf("warn: save credit daily rewards failed: %v", dailySaveErr)
+		}
+		if ledgerErr := userDataRepo.RecordCreditChange(
+			service.NormalizeRewardSerial(uploaderSerial),
+			award.Units,
+			service.CreditSourceDownloadReward,
+			"",
+			resourceID,
+		); ledgerErr != nil {
+			log.Printf("warn: record download reward ledger failed: %v", ledgerErr)
+		}
+	}
+
 	handleResource := func(c *gin.Context, id string, previewOnly bool) {
 		clientIP := ginClientIP(c)
 		token := parseBearerToken(c)
@@ -3157,6 +3277,7 @@ func main() {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
 				return
 			}
+			awardDownloadCreditReward(serial, id, now)
 		}
 
 		selectedSigner := signer
@@ -3264,7 +3385,9 @@ func main() {
 			}
 		}
 
-		if forDownload && c.Query("blob") == "1" {
+		// Allow blob streaming for CORS fallback even when this request is not
+		// counted as a download (preview + blob), matching /api/resource.
+		if c.Query("blob") == "1" {
 			writeTransferBlob(c, selectedImageSigner, objectKey)
 			return
 		}

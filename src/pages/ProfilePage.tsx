@@ -28,6 +28,7 @@ import {
 import { CreditLedgerPanel } from "../components/CreditLedgerPanel";
 import { MyUploadsPanel } from "../components/MyUploadsPanel";
 import type { CreditLedgerEntry } from "../types/credits";
+import { formatCredits } from "../utils/formatCredits";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -43,6 +44,8 @@ export default function ProfilePage() {
   const [nameHint, setNameHint] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
+  const [actorLikeRewardCredits, setActorLikeRewardCredits] = useState(0.5);
+  const [downloadRewardCredits, setDownloadRewardCredits] = useState(0.5);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
 
   useEffect(() => {
@@ -63,6 +66,12 @@ export default function ProfilePage() {
         }
         if (typeof profile.likeRewardCredits === "number") {
           setLikeRewardCredits(profile.likeRewardCredits);
+        }
+        if (typeof profile.actorLikeRewardCredits === "number") {
+          setActorLikeRewardCredits(profile.actorLikeRewardCredits);
+        }
+        if (typeof profile.downloadRewardCredits === "number") {
+          setDownloadRewardCredits(profile.downloadRewardCredits);
         }
         setCreditLedger(Array.isArray(profile.creditLedger) ? profile.creditLedger : []);
       })
@@ -139,14 +148,16 @@ export default function ProfilePage() {
             <div className="rounded-2xl border border-violet-200/70 bg-violet-50/80 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-2xl font-semibold text-violet-700 dark:text-violet-200">
-                  {loading ? "—" : credits ?? DEFAULT_AI_CREDITS}
+                  {loading ? "—" : formatCredits(credits ?? DEFAULT_AI_CREDITS)}
                 </span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST} · 素材被点赞 +{likeRewardCredits}
+                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST} · 被点赞 +
+                  {formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +
+                  {formatCredits(downloadRewardCredits)}
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                上传素材被他人点赞可获得积分，前往{" "}
+                点赞双方与有效下载都可获得积分（有日上限与去重规则），前往{" "}
                 <Link to="/shop" className="text-violet-600 hover:underline dark:text-violet-300">
                   积分商城
                 </Link>{" "}

@@ -18,6 +18,10 @@ export interface ShopCatalogPayload {
   success?: boolean;
   credits?: number;
   likeRewardCredits?: number;
+  actorLikeRewardCredits?: number;
+  actorLikeDailyCapCredits?: number;
+  downloadRewardCredits?: number;
+  downloadDailyCapCredits?: number;
   items?: ShopItem[];
   creditLedger?: CreditLedgerEntry[];
   message?: string;

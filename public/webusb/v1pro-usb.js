@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Low-level WebUSB helpers for V1PRO START + GFM1 transfer.
  */
 import {
@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.13";
+} from "./v1pro-constants.js?v=1.2.14";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
