@@ -7,8 +7,8 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.1";
-import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.2.1";
+} from "./v1pro-constants.js?v=1.2.2";
+import { planGfm1Encode } from "./v1pro-gfm1.js?v=1.2.2";
 import {
   closeDevice,
   openAuthorizedDevice,
@@ -17,7 +17,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.1";
+} from "./v1pro-usb.js?v=1.2.2";
 
 export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -117,6 +117,10 @@ export class V1ProWebTransfer {
     const maxPayloadBytes = capacity?.maxPayloadBytes;
     const pingFirst = opts.pingFirst !== false;
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+    const lowerType = (file.type || "").toLowerCase();
+    const lowerName = fileName.toLowerCase();
+    const isVideo =
+      lowerType.startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
 
     this.busy = true;
     let probeNote;
@@ -180,7 +184,11 @@ export class V1ProWebTransfer {
 
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
-        prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
+        // Video seek/decode is much slower than USB. Buffer all video frames
+        // before START so the device never waits mid-stream.
+        prefetchBeforeStart: isVideo
+          ? plan.frameCount + 1
+          : PREFETCH_CHUNKS_BEFORE_START,
         onProgress: (sent, total) => {
           if (!onProgress) return;
           const encodeWeight = 0.12;

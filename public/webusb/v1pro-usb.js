@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.1";
+} from "./v1pro-constants.js?v=1.2.2";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -175,11 +175,23 @@ async function transferOutWithRetry(device, endpoint, slice, timeoutMs, retries)
         "io_timeout",
         "USB 写出超时。请关闭「佳点V1PRO控制工具」、保持 USB 连接，大 GIF 传输时请耐心等待（设备可能在擦写 Flash）。"
       );
-      if (result.status === "ok") {
+      if (
+        result.status === "ok" &&
+        (typeof result.bytesWritten !== "number" || result.bytesWritten === slice.byteLength)
+      ) {
         return;
       }
+      if (result.status === "ok") {
+        throw new V1ProUsbError(
+          "partial_write",
+          `USB 写出不完整：${result.bytesWritten ?? 0}/${slice.byteLength} 字节。`
+        );
+      }
     } catch (err) {
-      if (err instanceof V1ProUsbError && err.code === "io_timeout") {
+      if (
+        err instanceof V1ProUsbError &&
+        (err.code === "io_timeout" || err.code === "partial_write")
+      ) {
         throw err;
       }
       if (attempt + 1 >= retries) {
@@ -517,7 +529,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
 
   await writeChunk(preamble);
 
-  const BATCH = 4096;
+  const BATCH = 64 * 1024;
   for (let i = 0; i < gfm1.length; i += BATCH) {
     await writeChunk(gfm1.subarray(i, Math.min(i + BATCH, gfm1.length)));
   }
@@ -576,7 +588,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
 
   const writePayloadChunk = async (chunk) => {
     if (!(chunk instanceof Uint8Array) || chunk.length === 0) return;
-    const BATCH = 4096;
+    const BATCH = 64 * 1024;
     for (let i = 0; i < chunk.length; i += BATCH) {
       await writeChunk(chunk.subarray(i, Math.min(i + BATCH, chunk.length)));
     }

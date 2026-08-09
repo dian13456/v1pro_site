@@ -15,7 +15,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.1";
+} from "./v1pro-constants.js?v=1.2.2";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -363,6 +363,12 @@ async function planVideoWithSeek(blob, opts) {
   video.muted = true;
   video.playsInline = true;
   video.preload = "auto";
+  let handedOff = false;
+  const cleanup = () => {
+    URL.revokeObjectURL(objectUrl);
+    video.removeAttribute("src");
+    video.load();
+  };
 
   try {
     await new Promise((resolve, reject) => {
@@ -400,28 +406,31 @@ async function planVideoWithSeek(blob, opts) {
     }
 
     const note = formatVideoPlanNote(schedule, duration);
+    handedOff = true;
 
     return {
       frameCount,
       totalBytes,
       note,
       payloadChunks: async function* () {
-        yield headerBlock;
-        for (let i = 0; i < frameCount; i += 1) {
-          await seekVideoTo(video, times[i]);
-          const rgb = sourceToRgb565(video, vw, vh);
-          onFrameEncoded?.(i + 1, frameCount);
-          yield rgb;
-          if (i > 0 && i % 2 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 0));
+        try {
+          yield headerBlock;
+          for (let i = 0; i < frameCount; i += 1) {
+            await seekVideoTo(video, times[i]);
+            const rgb = sourceToRgb565(video, vw, vh);
+            onFrameEncoded?.(i + 1, frameCount);
+            yield rgb;
+            if (i > 0 && i % 2 === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
           }
+        } finally {
+          cleanup();
         }
       },
     };
   } finally {
-    URL.revokeObjectURL(objectUrl);
-    video.removeAttribute("src");
-    video.load();
+    if (!handedOff) cleanup();
   }
 }
 
@@ -523,7 +532,7 @@ export async function planGfm1Encode(blob, opts = {}) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.1");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.2");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
