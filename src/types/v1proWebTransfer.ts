@@ -38,6 +38,7 @@ export interface V1ProTransferFileOptions {
   maxVideoSpeed?: number;
   fitMode?: "fill" | "contain";
   rotationDeg?: 0 | 90 | 180 | 270;
+  colorProfile?: "normal" | "vivid" | "professional";
   pingFirst?: boolean;
   requirePing?: boolean;
   preparedTotalBytes?: number;

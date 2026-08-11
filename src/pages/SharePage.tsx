@@ -36,6 +36,13 @@ import {
 } from "../services/v1proWebTransferClient";
 
 type ShareMediaKind = "image" | "gif" | "video";
+type VideoColorProfile = "normal" | "vivid" | "professional";
+
+const VIDEO_PREVIEW_FILTER: Record<VideoColorProfile, string> = {
+  normal: "none",
+  vivid: "saturate(1.22) contrast(1.07)",
+  professional: "saturate(0.95) contrast(1.12)",
+};
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   const parts = [err.message];
@@ -126,6 +133,7 @@ export default function SharePage() {
   const [videoFps, setVideoFps] = useState(25);
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
+  const [videoColorProfile, setVideoColorProfile] = useState<VideoColorProfile>("normal");
 
   useEffect(() => {
     if (!selectedFile) {
@@ -289,6 +297,7 @@ export default function SharePage() {
         minVideoFps: videoFps,
         fitMode,
         rotationDeg,
+        colorProfile: videoColorProfile,
         pingFirst: false,
         onProgress: (info) => {
           if (info.note && info.sent === 0) {
@@ -418,15 +427,28 @@ export default function SharePage() {
               ) : null}
             </div>
             {mediaKind === "video" ? (
-              <div className="space-y-2">
-                <SiteLabel>视频帧率</SiteLabel>
-                <SiteSelect value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
-                  <option value={10}>10 fps</option>
-                  <option value={15}>15 fps</option>
-                  <option value={20}>20 fps</option>
-                  <option value={25}>25 fps</option>
-                </SiteSelect>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <SiteLabel>视频帧率</SiteLabel>
+                  <SiteSelect value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
+                    <option value={10}>10 fps</option>
+                    <option value={15}>15 fps</option>
+                    <option value={20}>20 fps</option>
+                    <option value={25}>25 fps</option>
+                  </SiteSelect>
+                </div>
+                <div className="space-y-2">
+                  <SiteLabel>视频色彩</SiteLabel>
+                  <SiteSelect
+                    value={videoColorProfile}
+                    onChange={(event) => setVideoColorProfile(event.target.value as VideoColorProfile)}
+                  >
+                    <option value="normal">普通</option>
+                    <option value="vivid">鲜艳</option>
+                    <option value="professional">专业</option>
+                  </SiteSelect>
+                </div>
+              </>
             ) : null}
             <div className="space-y-2">
               <SiteLabel>画面显示</SiteLabel>
@@ -462,6 +484,7 @@ export default function SharePage() {
                 controls
                 playsInline
                 className="mx-auto max-h-72 w-full object-contain"
+                style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }}
               />
             ) : (
               <img

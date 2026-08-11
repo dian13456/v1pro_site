@@ -260,6 +260,7 @@ export class V1ProWebTransfer {
         mediaType: opts.mediaType,
         fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
         rotationDeg: opts.rotationDeg ?? 0,
+        colorProfile: opts.colorProfile ?? "normal",
         onFrameEncoded: (frameIndex, frameCount) => {
           if (onProgress) {
             onProgress({

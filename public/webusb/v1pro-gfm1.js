@@ -177,7 +177,14 @@ export function fillLcdImageData(source, srcW, srcH) {
  * @param {number} srcH
  * @returns {Uint8Array}
  */
-export function sourceToRgb565(source, srcW, srcH, fitMode = "contain", rotationDeg = 0) {
+export function sourceToRgb565(
+  source,
+  srcW,
+  srcH,
+  fitMode = "contain",
+  rotationDeg = 0,
+  colorProfile = "normal",
+) {
   let renderSource = source;
   let renderW = srcW;
   let renderH = srcH;
@@ -203,12 +210,25 @@ export function sourceToRgb565(source, srcW, srcH, fitMode = "contain", rotation
   const data = (fitMode === "fill"
     ? fillLcdImageData(renderSource, renderW, renderH)
     : fitToLcdImageData(renderSource, renderW, renderH)).data;
+  const profiles = {
+    normal: { saturation: 1, contrast: 1 },
+    vivid: { saturation: 1.22, contrast: 1.07 },
+    professional: { saturation: 0.95, contrast: 1.12 },
+  };
+  const profile = profiles[colorProfile] || profiles.normal;
+  const adjust = profile.saturation !== 1 || profile.contrast !== 1;
   const out = new Uint8Array(FRAME_PIXEL_BYTES);
   let o = 0;
   for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+    if (adjust) {
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      r = Math.max(0, Math.min(255, ((luma + (r - luma) * profile.saturation) - 128) * profile.contrast + 128));
+      g = Math.max(0, Math.min(255, ((luma + (g - luma) * profile.saturation) - 128) * profile.contrast + 128));
+      b = Math.max(0, Math.min(255, ((luma + (b - luma) * profile.saturation) - 128) * profile.contrast + 128));
+    }
     out[o++] = (r & 0xf8) | (g >> 5);
     out[o++] = ((g & 0x1c) << 3) | (b >> 3);
   }
@@ -449,6 +469,7 @@ async function planVideoWithSeek(blob, opts) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   const fitMode = opts.fitMode === "fill" ? "fill" : "contain";
   const rotationDeg = opts.rotationDeg ?? 0;
+  const colorProfile = opts.colorProfile ?? "normal";
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -521,7 +542,7 @@ async function planVideoWithSeek(blob, opts) {
           yield headerBlock;
           for (let i = 0; i < frameCount; i += 1) {
             await seekVideoTo(video, times[i]);
-            const rgb = sourceToRgb565(video, vw, vh, fitMode, rotationDeg);
+            const rgb = sourceToRgb565(video, vw, vh, fitMode, rotationDeg, colorProfile);
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;
           }
@@ -573,6 +594,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       maxPayloadBytes: opts.maxPayloadBytes,
       fitMode: opts.fitMode,
       rotationDeg: opts.rotationDeg,
+      colorProfile: opts.colorProfile,
       onFrameEncoded,
     });
   }
