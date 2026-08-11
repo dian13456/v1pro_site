@@ -1,13 +1,7 @@
 import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { SitePageLayout } from "../components/SitePageLayout";
-import {
-  SiteButton,
-  SiteCard,
-  SitePanel,
-  SiteSectionTitle,
-  SITE_CONTENT_MEDIUM,
-} from "../components/SiteUi";
+import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import { SiteFooter } from "../components/SiteFooter";
 import {
   ACTIVITIES,
   ACTIVITY_CATEGORY_LABELS,
@@ -16,7 +10,6 @@ import {
   type ActivityItem,
   type ActivityStatus,
 } from "../content/activityCenter";
-import { useThemeMode } from "../hooks/useThemeMode";
 import { hasValidLocalAuth } from "../services/authService";
 
 function formatActivityDate(raw: string): string {
@@ -30,6 +23,7 @@ function formatActivityDate(raw: string): string {
 }
 
 function formatActivityRange(item: ActivityItem): string {
+  if (!item.startDate) return "长期有效";
   const start = formatActivityDate(item.startDate);
   if (item.endDate) {
     return `${start} — ${formatActivityDate(item.endDate)}`;
@@ -38,17 +32,14 @@ function formatActivityRange(item: ActivityItem): string {
 }
 
 const STATUS_STYLES: Record<ActivityStatus, string> = {
-  ongoing:
-    "border-emerald-200/70 bg-emerald-50/90 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
-  upcoming:
-    "border-amber-200/70 bg-amber-50/90 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
-  ended:
-    "border-slate-200/70 bg-slate-100/90 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
+  ongoing: "bg-[#e7fbf1] text-[#32b879]",
+  upcoming: "bg-[#fff4e8] text-[#ff8a5c]",
+  ended: "bg-[#f1f3f8] text-[#8a93a8]",
 };
 
 function ActivityBadge({ status }: { status: ActivityStatus }) {
   return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-medium ${STATUS_STYLES[status]}`}>
+    <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${STATUS_STYLES[status]}`}>
       {ACTIVITY_STATUS_LABELS[status]}
     </span>
   );
@@ -56,45 +47,39 @@ function ActivityBadge({ status }: { status: ActivityStatus }) {
 
 function ActivityCard({ item }: { item: ActivityItem }) {
   return (
-    <SiteCard className="flex h-full flex-col">
+    <article className="flex h-full flex-col rounded-[16px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(43,50,69,.08)]">
       <div className="flex flex-wrap items-center gap-2">
         <ActivityBadge status={item.status} />
-        <span className="rounded-full border border-violet-200/70 bg-violet-50/80 px-3 py-1 text-xs text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
+        <span className="rounded-full bg-[#f0edff] px-3 py-1 text-[11px] font-semibold text-[#7c6cf0]">
           {ACTIVITY_CATEGORY_LABELS[item.category]}
         </span>
       </div>
 
-      <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">{item.title}</h3>
-      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{item.summary}</p>
-      <p className="mt-3 flex-1 text-sm leading-7 text-slate-700 dark:text-slate-300">{item.body}</p>
+      <h3 className="mt-3 text-[17px] font-extrabold text-[#2b3245]">{item.title}</h3>
+      <p className="mt-2 text-[13px] leading-6 text-[#6f7890]">{item.summary}</p>
+      <p className="mt-3 flex-1 text-[12px] leading-6 text-[#8a93a8]">{item.body}</p>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/25 pt-4 dark:border-white/10">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{formatActivityRange(item)}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f6] pt-4">
+        <p className="text-[11px] text-[#8a93a8]">{formatActivityRange(item)}</p>
         {item.linkTo && item.linkLabel ? (
           <div className="flex flex-wrap gap-2">
-            <Link to={item.linkTo}>
-              <SiteButton type="button">{item.linkLabel}</SiteButton>
+            <Link to={item.linkTo} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-4 py-2 text-xs font-semibold text-white shadow-[0_4px_10px_rgba(255,138,92,.2)]">
+              {item.linkLabel}
             </Link>
             {item.id === "device-lottery" ? (
-              <Link to="/activities/winners">
-                <SiteButton
-                  type="button"
-                  className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600"
-                >
-                  中奖名单公示
-                </SiteButton>
+              <Link to="/activities/winners" className="rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-xs font-semibold text-[#4a5270] hover:border-[#7c6cf0] hover:text-[#7c6cf0]">
+                中奖名单
               </Link>
             ) : null}
           </div>
         ) : null}
       </div>
-    </SiteCard>
+    </article>
   );
 }
 
 export default function ActivityCenterPage() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useThemeMode();
 
   const promoActivity = ACTIVITIES.find((item) => item.id === "promo-choice-2026");
   const lotteryActivity = ACTIVITIES.find((item) => item.id === "device-lottery");
@@ -110,59 +95,65 @@ export default function ActivityCenterPage() {
   }, [navigate]);
 
   return (
-    <SitePageLayout
-      subtitle="活动中心 · 公告与积分福利"
-      theme={theme}
-      onSetTheme={setTheme}
-      contentClassName={SITE_CONTENT_MEDIUM}
-    >
-      <SitePanel accent>
-        <SiteSectionTitle
-          title="活动中心"
-          description={ACTIVITY_CENTER_INTRO}
-          action={
-            <div className="rounded-2xl border border-white/30 bg-white/60 px-4 py-2 text-center dark:border-white/10 dark:bg-slate-950/40">
-              <p className="text-xs text-slate-500 dark:text-slate-400">进行中</p>
-              <p className="text-2xl font-semibold text-violet-700 dark:text-violet-200">{ongoingCount}</p>
+    <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
+      <ResourceLibraryHeader keyword="" onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")} />
+      <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
+          <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
+            <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">🎁</div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">Events & Rewards</p>
+              <h1 className="mt-1 text-2xl font-extrabold">活动中心</h1>
             </div>
-          }
-        />
-      </SitePanel>
+            <div className="col-start-3 row-start-1 rounded-[16px] bg-[#fff7f2] px-4 py-3 text-center sm:row-span-2 sm:px-6">
+              <p className="text-[11px] font-semibold text-[#8a93a8]">正在进行</p>
+              <p className="mt-0.5 text-2xl font-extrabold text-[#ff8a5c]">{ongoingCount}</p>
+            </div>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">{ACTIVITY_CENTER_INTRO}</p>
+          </div>
+        </section>
 
       {promoActivity ? (
-        <SitePanel className="overflow-hidden p-0">
-          <div className="bg-gradient-to-r from-violet-600/90 via-fuchsia-500/85 to-cyan-500/80 px-6 py-5 text-white">
-            <p className="text-xs uppercase tracking-[0.24em] text-white/80">Featured</p>
-            <h2 className="mt-2 text-2xl font-semibold">{promoActivity.title}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">{promoActivity.summary}</p>
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.05)]">
+          <div className="bg-gradient-to-r from-[#ff8a5c] via-[#ff6f9c] to-[#7c6cf0] px-6 py-5 text-white sm:px-8">
+            <p className="text-[11px] font-bold uppercase tracking-[.22em] text-white/80">精选活动</p>
+            <h2 className="mt-2 text-xl font-extrabold sm:text-2xl">{promoActivity.title}</h2>
+            <p className="mt-2 max-w-3xl text-[13px] leading-6 text-white/90">{promoActivity.summary}</p>
           </div>
-          <div className="space-y-4 p-6">
+          <div className="space-y-4 p-6 sm:px-8">
             <div className="flex flex-wrap items-center gap-2">
               <ActivityBadge status={promoActivity.status} />
-              <span className="rounded-full border border-violet-200/70 bg-violet-50/80 px-3 py-1 text-xs text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
+              <span className="rounded-full bg-[#f0edff] px-3 py-1 text-[11px] font-semibold text-[#7c6cf0]">
                 {ACTIVITY_CATEGORY_LABELS[promoActivity.category]}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{formatActivityRange(promoActivity)}</span>
+              <span className="text-[11px] text-[#8a93a8]">{formatActivityRange(promoActivity)}</span>
             </div>
-            <p className="text-sm leading-7 text-slate-700 dark:text-slate-300">{promoActivity.body}</p>
+            <p className="text-[13px] leading-7 text-[#6f7890]">{promoActivity.body}</p>
             {promoActivity.linkTo && promoActivity.linkLabel ? (
-              <Link to={promoActivity.linkTo}>
-                <SiteButton type="button">{promoActivity.linkLabel}</SiteButton>
+              <Link to={promoActivity.linkTo} className="inline-flex rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)]">
+                {promoActivity.linkLabel}
               </Link>
             ) : null}
           </div>
-        </SitePanel>
+        </section>
       ) : null}
 
       {lotteryActivity ? <ActivityCard item={lotteryActivity} /> : null}
 
-      <SiteSectionTitle title="全部活动" description="浏览当前可参与的活动与平台更新。" />
+      <div className="flex items-end justify-between gap-3 px-1 pt-2">
+        <div>
+          <h2 className="text-lg font-extrabold">全部活动</h2>
+          <p className="mt-1 text-xs text-[#8a93a8]">浏览当前可参与的活动与平台更新</p>
+        </div>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {others.map((item) => (
           <ActivityCard key={item.id} item={item} />
         ))}
       </div>
-    </SitePageLayout>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
