@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.16";
+} from "./v1pro-constants.js?v=1.2.18";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -465,6 +465,7 @@ function formatVideoPlanNote(schedule, duration) {
 async function planVideoWithSeek(blob, opts) {
   const maxFrames = opts.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
   const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
+  const minVideoFps = opts.minVideoFps ?? Math.min(MIN_VIDEO_FPS, maxVideoFps);
   const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   const fitMode = opts.fitMode === "fill" ? "fill" : "contain";
@@ -731,7 +732,7 @@ function loadHtmlImage(url) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.16");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.18");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
