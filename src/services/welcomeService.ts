@@ -86,8 +86,9 @@ export function getDefaultDisplayName(serial: string): string {
   return displayUsernameFromSerial(serial);
 }
 
-export function getDisplayName(serial: string): string {
-  if (!serial) return "用户";
+/** Return only a user-defined nickname, without the SN-derived fallback. */
+export function getCustomDisplayName(serial: string): string {
+  if (!serial) return "";
 
   const auth = getAuthState();
   if (auth?.serial === serial) {
@@ -97,10 +98,14 @@ export function getDisplayName(serial: string): string {
     }
   }
 
-  const fromLocal = readLocalDisplayName(serial);
-  if (fromLocal) {
-    return fromLocal;
-  }
+  return readLocalDisplayName(serial);
+}
+
+export function getDisplayName(serial: string): string {
+  if (!serial) return "用户";
+
+  const customName = getCustomDisplayName(serial);
+  if (customName) return customName;
 
   return getDefaultDisplayName(serial);
 }

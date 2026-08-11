@@ -16,6 +16,7 @@ import {
   loadV1ProWebTransferSdk,
   WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
+import { getCustomDisplayName } from "../services/welcomeService";
 import type { V1ProTransferResult, V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
 type StatusKind = "idle" | "ok" | "error";
@@ -26,14 +27,17 @@ function deviceKey(device: USBDevice): string {
 
 function usbDeviceLabel(device: USBDevice): string {
   const namedDevice = device as USBDevice & { productName?: string };
-  return `${namedDevice.productName || "V1PRO"} · SN ${device.serialNumber?.trim() || "无序列号"}`;
+  const sn = device.serialNumber?.trim() || "";
+  const nickname = getCustomDisplayName(sn);
+  return `${nickname || namedDevice.productName || "V1PRO"} · SN ${sn || "无序列号"}`;
 }
 
 function deviceLabel(client: V1ProWebTransferClient | null): string {
   const device = client?.device;
   if (!device) return "";
   const sn = device.serialNumber?.trim() || "无序列号";
-  return `${device.productName || "V1PRO"} · SN ${sn}`;
+  const nickname = getCustomDisplayName(device.serialNumber?.trim() || "");
+  return `${nickname || device.productName || "V1PRO"} · SN ${sn}`;
 }
 
 function formatError(err: unknown): string {
