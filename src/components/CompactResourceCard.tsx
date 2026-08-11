@@ -41,6 +41,7 @@ export function CompactResourceCard({
   const [previewUrl, setPreviewUrl] = useState("");
   const metrics = resourceMetricsFromCatalog(resource);
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);
+  const displayCapacity = resource.materialType === "image" ? null : capacity;
   const duration = formatMediaDuration(metrics.durationSec);
 
   useEffect(() => {
@@ -79,9 +80,9 @@ export function CompactResourceCard({
         <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${resource.materialType === "image" ? "bg-violet-500" : resource.materialType === "gif" ? "bg-orange-400" : "bg-emerald-500"}`}>
           {materialLabel(resource)}
         </span>
-        {duration || capacity ? (
+        {duration || displayCapacity ? (
           <span className="absolute bottom-3 right-3 rounded-full bg-slate-900/55 px-2.5 py-1 text-[11px] text-white backdrop-blur">
-            {duration ? `◷ ${duration}` : ""}{duration && capacity ? " · " : ""}{capacity ? `${capacity}帧` : ""}
+            {duration ? `◷ ${duration}` : ""}{duration && displayCapacity ? " · " : ""}{displayCapacity ? `${displayCapacity}帧` : ""}
           </span>
         ) : null}
       </div>

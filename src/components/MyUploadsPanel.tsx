@@ -214,7 +214,7 @@ export function MyUploadsPanel() {
   };
 
   return (
-    <SitePanel className="mt-5 space-y-4">
+    <SitePanel className="mt-0 space-y-4 !rounded-[18px] !border-[#e6e9f2] !bg-white !p-6 !shadow-[0_10px_30px_rgba(43,50,69,.06)]">
       <div className="space-y-1">
         <SiteLabel>本设备上传的素材</SiteLabel>
         <p className="text-xs text-slate-500 dark:text-slate-400">

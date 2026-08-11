@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { SitePageLayout } from "../components/SitePageLayout";
-import {
-  SiteAlert,
-  SiteButton,
-  SiteInput,
-  SiteLabel,
-  SitePanel,
-  SITE_PANEL_NESTED_CLASS,
-  SITE_CONTENT_NARROW,
-} from "../components/SiteUi";
-import { useThemeMode } from "../hooks/useThemeMode";
+import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import { SiteFooter } from "../components/SiteFooter";
+import { SiteAlert } from "../components/SiteUi";
 import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import {
   AI_CREDIT_COST,
@@ -32,7 +24,6 @@ import { formatCredits } from "../utils/formatCredits";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useThemeMode();
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [displayName, setDisplayName] = useState(() => getDisplayName(serial));
@@ -129,105 +120,75 @@ export default function ProfilePage() {
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
   return (
-    <SitePageLayout
-      subtitle="个人中心 · 昵称、积分与我的上传"
-      theme={theme}
-      onSetTheme={setTheme}
-      contentClassName={SITE_CONTENT_NARROW}
-    >
-        <SitePanel className="space-y-5">
-          <div className="space-y-2">
-            <SiteLabel>设备 SN 码</SiteLabel>
-            <div className={`break-all px-4 py-3 font-mono text-sm text-slate-800 dark:text-slate-100 ${SITE_PANEL_NESTED_CLASS}`}>
-              {serial || "—"}
+    <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
+      <ResourceLibraryHeader keyword="" onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")} />
+      <main className="mx-auto max-w-[980px] space-y-[14px] px-4 py-6 sm:px-6">
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
+          <header className="flex flex-wrap items-center gap-4 border-b border-[#e6e9f2] px-6 py-5">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-2xl text-white shadow-[0_6px_16px_rgba(124,108,240,.25)]">👤</div>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl font-extrabold">{loading ? "个人中心" : displayName}</h1>
+              <p className="mt-1 break-all font-mono text-xs text-[#8a93a8]">SN: {serial || "—"}</p>
             </div>
-          </div>
+            <div className="rounded-2xl bg-[#fff7f2] px-5 py-3 text-right">
+              <div className="text-[11px] font-semibold text-[#8a93a8]">当前积分</div>
+              <div className="mt-0.5 text-2xl font-extrabold text-[#ff8a5c]">{loading ? "—" : formatCredits(credits ?? DEFAULT_AI_CREDITS)}</div>
+            </div>
+          </header>
 
-          <div className="space-y-2">
-            <SiteLabel>AI 生图积分</SiteLabel>
-            <div className="rounded-2xl border border-violet-200/70 bg-violet-50/80 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-2xl font-semibold text-violet-700 dark:text-violet-200">
-                  {loading ? "—" : formatCredits(credits ?? DEFAULT_AI_CREDITS)}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  默认 {DEFAULT_AI_CREDITS} · 每次生图消耗 {AI_CREDIT_COST} · 被点赞 +
-                  {formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +
-                  {formatCredits(downloadRewardCredits)}
-                </span>
+          <div className="grid gap-5 p-6 md:grid-cols-[1fr_1.25fr]">
+            <section>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <label className="text-[12.5px] font-semibold text-[#4a5270]">网站昵称</label>
+                <span className="text-[11px] text-[#8a93a8]">默认：SN 后十位（{defaultName}）</span>
               </div>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                点赞双方与有效下载都可获得积分（有日上限与去重规则），前往{" "}
-                <Link to="/shop" className="text-violet-600 hover:underline dark:text-violet-300">
-                  积分商城
-                </Link>{" "}
-                兑换权益。
-              </p>
-              <CreditLedgerPanel entries={creditLedger} loading={loading} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <SiteLabel>网站昵称</SiteLabel>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                默认：SN 后十位（{defaultName}）
-              </span>
-            </div>
-            <SiteInput
-              value={nameInput}
-              disabled={loading || saving}
-              onChange={(event) => {
-                setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH));
-                setNameHint("");
-                setErrorMessage("");
-              }}
-              onBlur={() => {
-                if (!serial || !nameInput.trim() || nameInput.trim() === defaultName) {
+              <input
+                value={nameInput}
+                disabled={loading || saving}
+                onChange={(event) => {
+                  setNameInput(event.target.value.slice(0, MAX_DISPLAY_NAME_LENGTH));
                   setNameHint("");
-                  return;
-                }
-                void checkDisplayNameAvailable(serial, nameInput).then((available) => {
-                  setNameHint(available ? "" : "该昵称已被使用");
-                });
-              }}
-              placeholder={defaultName}
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              留言板、欢迎语与 AI 分享作者名将显示此昵称。自定义昵称全站不可重复。当前显示：
-              <span className="ml-1 font-medium text-violet-600 dark:text-violet-300">
-                {loading ? "加载中…" : displayName}
-              </span>
-              {usingCustomName ? null : "（默认）"}
-            </p>
-            {nameHint ? (
-              <p className="text-xs text-amber-600 dark:text-amber-300">{nameHint}</p>
-            ) : null}
-          </div>
+                  setErrorMessage("");
+                }}
+                onBlur={() => {
+                  if (!serial || !nameInput.trim() || nameInput.trim() === defaultName) {
+                    setNameHint("");
+                    return;
+                  }
+                  void checkDisplayNameAvailable(serial, nameInput).then((available) => setNameHint(available ? "" : "该昵称已被使用"));
+                }}
+                placeholder={defaultName}
+                className="w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-50"
+              />
+              <p className="mt-2 text-xs leading-relaxed text-[#8a93a8]">
+                留言板、欢迎语与分享作者名将显示此昵称。当前显示：<span className="font-semibold text-[#7c6cf0]">{loading ? "加载中…" : displayName}</span>{usingCustomName ? null : "（默认）"}
+              </p>
+              {nameHint ? <p className="mt-2 text-xs text-amber-600">{nameHint}</p> : null}
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <button type="button" disabled={loading || saving || !nameInput.trim()} onClick={() => void handleSave()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:opacity-50">{saving ? "保存中…" : "保存昵称"}</button>
+                <button type="button" disabled={loading || saving || !usingCustomName} onClick={() => void handleResetDefault()} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">恢复默认</button>
+              </div>
+              {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
+              {errorMessage ? <SiteAlert variant="error" className="mt-4">{errorMessage}</SiteAlert> : null}
+            </section>
 
-          <div className="flex flex-wrap gap-2">
-            <SiteButton
-              type="button"
-              disabled={loading || saving || !nameInput.trim()}
-              onClick={() => void handleSave()}
-            >
-              {saving ? "保存中…" : "保存昵称"}
-            </SiteButton>
-            <SiteButton
-              type="button"
-              variant="secondary"
-              disabled={loading || saving || !usingCustomName}
-              onClick={() => void handleResetDefault()}
-            >
-              恢复默认
-            </SiteButton>
+            <section className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-[13px] font-bold">积分与奖励</h2>
+                  <p className="mt-1 text-[11px] text-[#8a93a8]">默认 {DEFAULT_AI_CREDITS} · 生图消耗 {AI_CREDIT_COST}</p>
+                </div>
+                <Link to="/shop" className="rounded-full border border-[#e6e9f2] bg-white px-3 py-1.5 text-xs font-semibold text-[#7c6cf0] hover:border-[#7c6cf0]">积分商城</Link>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-[#8a93a8]">被点赞 +{formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +{formatCredits(downloadRewardCredits)}</p>
+              <CreditLedgerPanel entries={creditLedger} loading={loading} />
+            </section>
           </div>
-
-          {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
-          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
-        </SitePanel>
+        </section>
 
         <MyUploadsPanel />
-    </SitePageLayout>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
