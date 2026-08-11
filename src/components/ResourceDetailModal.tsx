@@ -178,7 +178,7 @@ export function ResourceDetailModal({
           </div>
 
           <div className="mt-auto grid grid-cols-2 gap-2.5 pt-2">
-            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#f1f3f8] px-4 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">
+            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:opacity-50">
               {transferring ? "传输中…" : "传输"}
             </button>
             <button type="button" disabled={webUsbTransferring || !canDirectTransfer} onClick={() => onWebUsbTransfer(resource, fps)} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">

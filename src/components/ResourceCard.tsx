@@ -338,7 +338,7 @@ function ResourceCardComponent({
             disabled={actionBusy}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
-            className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-cyan-600 px-1 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#32b879] px-1 text-sm font-medium text-white transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="truncate">{transferring ? "传输中..." : "传输"}</span>
           </button>

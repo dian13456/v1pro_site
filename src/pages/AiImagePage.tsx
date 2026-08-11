@@ -280,7 +280,7 @@ export default function AiImagePage() {
                     <SiteButton
                       type="button"
                       disabled={isBusy}
-                      className="rounded-xl bg-cyan-600 px-2 py-2.5 text-xs hover:bg-cyan-500 sm:px-4 sm:text-sm"
+                      className="rounded-xl bg-[#32b879] px-2 py-2.5 text-xs hover:bg-[#299f69] sm:px-4 sm:text-sm"
                       onClick={() => void handleTransfer(image, index)}
                     >
                       {transferringId === image.id ? "准备传输..." : "传输到设备"}

@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { WebUsbDropZone } from "../components/WebUsbDropZone";
-import { SitePageLayout } from "../components/SitePageLayout";
-import {
-  SiteAlert,
-  SiteButton,
-  SitePanel,
-  SiteSectionTitle,
-  SITE_CONTENT_NARROW,
-} from "../components/SiteUi";
-import { useThemeMode } from "../hooks/useThemeMode";
+import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import { SiteFooter } from "../components/SiteFooter";
 import {
   createV1ProWebTransferClient,
   isWebUsbSupported,
@@ -48,7 +42,7 @@ function formatError(err: unknown): string {
 }
 
 export default function WebUsbTransferTestPage() {
-  const { theme, setTheme } = useThemeMode();
+  const navigate = useNavigate();
   const clientRef = useRef<V1ProWebTransferClient | null>(null);
   const transferLockRef = useRef(false);
 
@@ -307,110 +301,104 @@ export default function WebUsbTransferTestPage() {
 
   const statusClass =
     statusKind === "ok"
-      ? "text-emerald-600 dark:text-emerald-300"
+      ? "border-[#ccefe0] bg-[#effbf6] text-[#29966b]"
       : statusKind === "error"
-        ? "text-rose-600 dark:text-rose-300"
-        : "text-slate-600 dark:text-slate-300";
+        ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]"
+        : "border-[#e6e9f2] bg-[#fafbfe] text-[#6f7890]";
 
   return (
-    <SitePageLayout
-      subtitle="WebUSB 网页直传 · 测试页"
-      theme={theme}
-      onSetTheme={setTheme}
-      contentClassName={SITE_CONTENT_NARROW}
-    >
-      {!webUsbSupported ? (
-        <SiteAlert variant="error">当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。</SiteAlert>
-      ) : null}
+    <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
+      <ResourceLibraryHeader keyword="" onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")} />
+      <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
+          <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
+            <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">↥</div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">WebUSB Transfer</p>
+              <h1 className="mt-1 text-2xl font-extrabold">网页直传</h1>
+            </div>
+            <div className="col-start-3 row-start-1 rounded-[16px] bg-[#f0edff] px-4 py-3 text-center sm:row-span-2 sm:px-6">
+              <p className="text-[11px] font-semibold text-[#8a93a8]">传输组件</p>
+              <p className="mt-0.5 text-sm font-extrabold text-[#7c6cf0]">v{sdkVersion}</p>
+            </div>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，将图片、GIF 或短视频直接传输到设备；完成后自动释放 USB 连接。</p>
+          </div>
+        </section>
 
-      <SitePanel>
-        <SiteSectionTitle
-          title="网页直传测试"
-          action={
-            <span className="rounded-full border border-violet-200/70 bg-violet-50/80 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
-              v{sdkVersion}
-            </span>
-          }
-        />
-
-        <div className={`mt-4 min-h-[1.4em] text-sm font-medium ${statusClass}`}>{statusText}</div>
-
-        <div className="mt-3 h-2.5 overflow-hidden rounded-full border border-white/30 bg-slate-900/10 dark:border-white/10 dark:bg-slate-950/60">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 transition-[width] duration-150"
-            style={{ width: `${progress}%` }}
-            aria-hidden="true"
-          />
-        </div>
-
-        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{metaText}</p>
-
-        <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          选择 V1PRO 设备（按 SN）
-          <select
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-            value={selectedDeviceKey}
-            disabled={busy || connected}
-            onChange={(event) => setSelectedDeviceKey(event.target.value)}
-          >
-            {authorizedDevices.length === 0 ? (
-              <option value="">尚无已授权设备，请点击连接设备授权</option>
-            ) : null}
-            {authorizedDevices.map((device) => (
-              <option key={deviceKey(device)} value={deviceKey(device)}>
-                {usbDeviceLabel(device)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {lastResult?.note ? (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-200">提示：{lastResult.note}</p>
+        {!webUsbSupported ? (
+          <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。</div>
         ) : null}
 
-        <WebUsbDropZone
-          disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey}
-          busy={busy}
-          connected={connected}
-          selectedFileName={selectedFile?.name ?? null}
-          onFile={handleIncomingFile}
-          onInvalidFile={() => {
-            setStatusText("仅支持 PNG、JPG、WebP、GIF 或 H.264 MP4 短视频（≤10 秒）");
-            setStatusKind("error");
-          }}
-        />
+        <div className="grid items-stretch gap-[14px] lg:grid-cols-[.92fr_1.08fr]">
+          <section className="rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#fff4e8] text-sm font-extrabold text-[#ff8a5c]">1</span>
+              <div>
+                <h2 className="text-[17px] font-extrabold">选择并连接设备</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">从浏览器已授权设备中选择对应 SN</p>
+              </div>
+            </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <SiteButton
-            type="button"
-            onClick={() => void handleConnect()}
-            disabled={!webUsbSupported || !sdkReady || connected || busy}
-          >
-            连接设备
-          </SiteButton>
-          <SiteButton
-            type="button"
-            variant="secondary"
-            onClick={() => void handleReadCapacity()}
-            disabled={!webUsbSupported || !sdkReady || busy}
-          >
-            读取容量
-          </SiteButton>
-          <SiteButton
-            type="button"
-            variant="secondary"
-            onClick={() => void handleDisconnect()}
-            disabled={!connected || busy}
-          >
-            断开
-          </SiteButton>
-          {selectedFile && connected && !busy ? (
-            <SiteButton type="button" variant="secondary" onClick={() => void runTransfer(selectedFile)}>
-              重新传输当前文件
-            </SiteButton>
-          ) : null}
+            <label className="mt-5 block text-[12px] font-semibold text-[#4a5270]">
+              V1PRO 设备（按 SN）
+              <select
+                className="mt-2 w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-2.5 text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-60"
+                value={selectedDeviceKey}
+                disabled={busy || connected}
+                onChange={(event) => setSelectedDeviceKey(event.target.value)}
+              >
+                {authorizedDevices.length === 0 ? <option value="">尚无已授权设备，请点击连接设备授权</option> : null}
+                {authorizedDevices.map((device) => (
+                  <option key={deviceKey(device)} value={deviceKey(device)}>{usbDeviceLabel(device)}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className={`mt-4 rounded-[12px] border px-4 py-3 text-[13px] font-semibold ${statusClass}`}>{statusText}</div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef0f6]">
+              <div className="h-full rounded-full bg-gradient-to-r from-[#ff8a5c] via-[#ff6f9c] to-[#7c6cf0] transition-[width] duration-150" style={{ width: `${progress}%` }} aria-hidden="true" />
+            </div>
+            <p className="mt-3 min-h-[3rem] text-[12px] leading-6 text-[#8a93a8]">{metaText}</p>
+            {lastResult?.note ? <p className="mt-2 text-xs text-amber-600">提示：{lastResult.note}</p> : null}
+
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
+              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
+              <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">断开</button>
+              {selectedFile && connected && !busy ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
+            </div>
+          </section>
+
+          <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#f0edff] text-sm font-extrabold text-[#7c6cf0]">2</span>
+              <div>
+                <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材</p>
+              </div>
+            </div>
+            <div className="flex flex-1 flex-col justify-center">
+              <WebUsbDropZone
+                disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey}
+                busy={busy}
+                connected={connected}
+                selectedFileName={selectedFile?.name ?? null}
+                onFile={handleIncomingFile}
+                onInvalidFile={() => {
+                  setStatusText("仅支持 PNG、JPG、WebP、GIF 或 H.264 MP4 短视频（≤10 秒）");
+                  setStatusKind("error");
+                }}
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
+              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
+              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">最高 30 fps</span>
+              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
+            </div>
+          </section>
         </div>
-      </SitePanel>
-    </SitePageLayout>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }

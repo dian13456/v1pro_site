@@ -98,11 +98,11 @@ export function WebUsbDropZone({
   };
 
   const zoneClass = [
-    "mt-4 flex min-h-[168px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-5 py-8 text-center transition",
-    inactive ? "cursor-not-allowed opacity-55" : "hover:border-violet-400/80 hover:bg-violet-50/40 dark:hover:bg-violet-500/5",
+    "mt-5 flex min-h-[238px] cursor-pointer flex-col items-center justify-center rounded-[16px] border-2 border-dashed px-5 py-8 text-center transition",
+    inactive ? "cursor-not-allowed opacity-55" : "hover:border-[#ff9b75] hover:bg-[#fffaf7]",
     dragActive && !inactive
-      ? "border-violet-500 bg-violet-50/70 dark:border-violet-400 dark:bg-violet-500/10"
-      : "border-white/40 bg-white/35 dark:border-white/15 dark:bg-slate-950/30",
+      ? "border-[#ff8a5c] bg-[#fff7f2]"
+      : "border-[#dfe3ed] bg-[#fafbfe]",
   ]
     .filter(Boolean)
     .join(" ");
@@ -128,18 +128,18 @@ export function WebUsbDropZone({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="text-3xl leading-none text-violet-500/80" aria-hidden="true">
+      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-2xl font-bold leading-none text-white shadow-[0_6px_16px_rgba(124,108,240,.2)]" aria-hidden="true">
         ↓
       </div>
-      <p className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-100">
+      <p className="mt-4 text-[14px] font-extrabold text-[#2b3245]">
         {dragActive ? "松开即可上传" : "拖拽图片 / GIF / 视频到此处"}
       </p>
-      <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{hint}</p>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+      <p className="mt-1 text-xs text-[#6f7890]">{hint}</p>
+      <p className="mt-2 max-w-md text-[11px] leading-5 text-[#8a93a8]">
         支持 PNG、JPG、WebP、GIF、MP4（H.264）；视频按设备容量自适应，最高 30fps、5 倍速
       </p>
       {selectedFileName ? (
-        <p className="mt-3 max-w-full truncate text-xs font-medium text-violet-700 dark:text-violet-200">
+        <p className="mt-3 max-w-full truncate rounded-full bg-[#f0edff] px-3 py-1 text-xs font-semibold text-[#7c6cf0]">
           当前：{selectedFileName}
         </p>
       ) : null}
