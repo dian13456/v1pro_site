@@ -25,6 +25,7 @@ import ActivityPromoAdminPage from "./pages/ActivityPromoAdminPage.tsx";
 import DownloadCenterPage from "./pages/DownloadCenterPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 import WebUsbTransferTestPage from "./pages/WebUsbTransferTestPage.tsx";
+import CreatorPage from "./pages/CreatorPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -130,6 +131,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ActivityCenterPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/creator/:author"
+            element={
+              <ProtectedRoute>
+                <CreatorPage />
               </ProtectedRoute>
             }
           />

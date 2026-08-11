@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { createImageUrl } from "../services/imageService";
@@ -227,7 +228,7 @@ function ResourceCardComponent({
             </div>
           ) : null}
           <div>总下载 {downloadCount}</div>
-          {resource.author ? <div>上传人：{resource.author}</div> : null}
+          {resource.author ? <Link to={`/creator/${encodeURIComponent(resource.author)}`} className="transition hover:text-[#7c6cf0] hover:underline">上传人：{resource.author}</Link> : null}
         </div>
       </div>
       <DevicePreviewFrame hoverGlow>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { createImageUrl } from "../services/imageService";
 import {
@@ -95,7 +96,18 @@ export function CompactResourceCard({
       <div className="p-3.5">
         <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{resource.title || resource.description}</h3>
         <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-          <span className="max-w-[70%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || resource.author || "其他"}</span>
+          {resource.author ? (
+            <Link
+              to={`/creator/${encodeURIComponent(resource.author)}`}
+              onClick={(event) => event.stopPropagation()}
+              className="max-w-[52%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 transition hover:bg-indigo-100 hover:text-indigo-600"
+              title={`查看 ${resource.author} 的全部素材`}
+            >
+              👤 {resource.author}
+            </Link>
+          ) : (
+            <span className="max-w-[52%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500">{resource.columnTag || "其他"}</span>
+          )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <button
               type="button"
