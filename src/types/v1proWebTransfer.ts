@@ -53,6 +53,7 @@ export interface V1ProVideoTransferPrediction {
 
 export interface V1ProConnectOptions {
   reuseAuthorized?: boolean;
+  device?: USBDevice;
 }
 
 export class V1ProUsbError extends Error {

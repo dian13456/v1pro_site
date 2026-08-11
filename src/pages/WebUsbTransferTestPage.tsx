@@ -12,12 +12,22 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import {
   createV1ProWebTransferClient,
   isWebUsbSupported,
+  listAuthorizedV1ProDevices,
   loadV1ProWebTransferSdk,
   WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
 import type { V1ProTransferResult, V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
 type StatusKind = "idle" | "ok" | "error";
+
+function deviceKey(device: USBDevice): string {
+  return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
+}
+
+function usbDeviceLabel(device: USBDevice): string {
+  const namedDevice = device as USBDevice & { productName?: string };
+  return `${namedDevice.productName || "V1PRO"} · SN ${device.serialNumber?.trim() || "无序列号"}`;
+}
 
 function deviceLabel(client: V1ProWebTransferClient | null): string {
   const device = client?.device;
@@ -48,8 +58,20 @@ export default function WebUsbTransferTestPage() {
   const [metaText, setMetaText] = useState("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   const [progress, setProgress] = useState(0);
   const [lastResult, setLastResult] = useState<V1ProTransferResult | null>(null);
+  const [authorizedDevices, setAuthorizedDevices] = useState<USBDevice[]>([]);
+  const [selectedDeviceKey, setSelectedDeviceKey] = useState("");
 
   const webUsbSupported = isWebUsbSupported();
+
+  const refreshAuthorizedDevices = useCallback(async () => {
+    if (!webUsbSupported) return;
+    const devices = await listAuthorizedV1ProDevices();
+    setAuthorizedDevices(devices);
+    setSelectedDeviceKey((current) => {
+      if (devices.some((device) => deviceKey(device) === current)) return current;
+      return devices[0] ? deviceKey(devices[0]) : "";
+    });
+  }, [webUsbSupported]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +82,7 @@ export default function WebUsbTransferTestPage() {
           if (mod.WEBUSB_TRANSFER_VERSION) {
             setSdkVersion(mod.WEBUSB_TRANSFER_VERSION);
           }
+          void refreshAuthorizedDevices();
         }
       })
       .catch((err) => {
@@ -78,7 +101,18 @@ export default function WebUsbTransferTestPage() {
       void clientRef.current?.disconnect();
       clientRef.current = null;
     };
-  }, []);
+  }, [refreshAuthorizedDevices]);
+
+  useEffect(() => {
+    if (!webUsbSupported) return;
+    const refresh = () => void refreshAuthorizedDevices();
+    navigator.usb.addEventListener("connect", refresh);
+    navigator.usb.addEventListener("disconnect", refresh);
+    return () => {
+      navigator.usb.removeEventListener("connect", refresh);
+      navigator.usb.removeEventListener("disconnect", refresh);
+    };
+  }, [refreshAuthorizedDevices, webUsbSupported]);
 
   const refreshConnectionState = useCallback(() => {
     const client = clientRef.current;
@@ -101,7 +135,11 @@ export default function WebUsbTransferTestPage() {
     setLastResult(null);
     try {
       const client = await ensureClient();
-      await client.connect();
+      const selectedDevice = authorizedDevices.find(
+        (device) => deviceKey(device) === selectedDeviceKey,
+      );
+      await client.connect(selectedDevice ? { device: selectedDevice } : undefined);
+      await refreshAuthorizedDevices();
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
       const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -182,7 +220,10 @@ export default function WebUsbTransferTestPage() {
             return;
           }
           setStatusText("正在连接设备…");
-          await client.connect();
+          const selectedDevice = authorizedDevices.find(
+            (device) => deviceKey(device) === selectedDeviceKey,
+          );
+          await client.connect(selectedDevice ? { device: selectedDevice } : undefined);
           setStatusText(`已连接：${deviceLabel(client)}`);
           setStatusKind("ok");
           const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -226,11 +267,26 @@ export default function WebUsbTransferTestPage() {
         setStatusKind("error");
         setProgress(0);
       } finally {
+        // Always release the interface and close the USBDevice so the desktop
+        // V1PRO GUI can claim it immediately after this transfer attempt.
+        const client = clientRef.current;
+        clientRef.current = null;
+        await client?.disconnect();
         transferLockRef.current = false;
-        refreshConnectionState();
+        setConnected(false);
+        setBusy(false);
+        void refreshAuthorizedDevices();
       }
     },
-    [ensureClient, refreshConnectionState, sdkReady, webUsbSupported],
+    [
+      authorizedDevices,
+      ensureClient,
+      refreshAuthorizedDevices,
+      refreshConnectionState,
+      sdkReady,
+      selectedDeviceKey,
+      webUsbSupported,
+    ],
   );
 
   const handleIncomingFile = (file: File) => {
@@ -276,6 +332,25 @@ export default function WebUsbTransferTestPage() {
         </div>
 
         <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{metaText}</p>
+
+        <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
+          选择 V1PRO 设备（按 SN）
+          <select
+            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            value={selectedDeviceKey}
+            disabled={busy || connected}
+            onChange={(event) => setSelectedDeviceKey(event.target.value)}
+          >
+            {authorizedDevices.length === 0 ? (
+              <option value="">尚无已授权设备，请点击连接设备授权</option>
+            ) : null}
+            {authorizedDevices.map((device) => (
+              <option key={deviceKey(device)} value={deviceKey(device)}>
+                {usbDeviceLabel(device)}
+              </option>
+            ))}
+          </select>
+        </label>
 
         {lastResult?.note ? (
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-200">提示：{lastResult.note}</p>

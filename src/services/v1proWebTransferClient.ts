@@ -7,6 +7,7 @@ type WebUsbSdkModule = {
   V1ProWebTransfer: new () => V1ProWebTransferClient;
   V1ProUsbError: typeof import("../types/v1proWebTransfer").V1ProUsbError;
   WEBUSB_TRANSFER_VERSION?: string;
+  listAuthorizedDevices: () => Promise<USBDevice[]>;
 };
 
 let sdkPromise: Promise<WebUsbSdkModule> | null = null;
@@ -34,4 +35,9 @@ export async function loadV1ProWebTransferSdk(): Promise<WebUsbSdkModule> {
 export async function createV1ProWebTransferClient(): Promise<V1ProWebTransferClient> {
   const { V1ProWebTransfer } = await loadV1ProWebTransferSdk();
   return new V1ProWebTransfer();
+}
+
+export async function listAuthorizedV1ProDevices(): Promise<USBDevice[]> {
+  const { listAuthorizedDevices } = await loadV1ProWebTransferSdk();
+  return listAuthorizedDevices();
 }

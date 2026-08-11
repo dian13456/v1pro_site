@@ -349,6 +349,41 @@ export async function openAuthorizedDevice() {
 }
 
 /**
+ * Return every previously authorized V1PRO without opening or claiming it.
+ * @returns {Promise<USBDevice[]>}
+ */
+export async function listAuthorizedDevices() {
+  if (!navigator.usb) return [];
+  const devices = await navigator.usb.getDevices();
+  return devices.filter((device) =>
+    V1PRO_USB_FILTERS.some(
+      (filter) =>
+        device.vendorId === filter.vendorId && device.productId === filter.productId
+    )
+  );
+}
+
+/**
+ * Open one exact device selected by the website UI.
+ * @param {USBDevice} device
+ * @returns {Promise<USBDevice>}
+ */
+export async function openSelectedDevice(device) {
+  if (!device) {
+    throw new V1ProUsbError("device_required", "请选择要传输的 V1PRO 设备。");
+  }
+  const allowed = V1PRO_USB_FILTERS.some(
+    (filter) =>
+      device.vendorId === filter.vendorId && device.productId === filter.productId
+  );
+  if (!allowed) {
+    throw new V1ProUsbError("device_not_allowed", "所选设备不是受支持的 V1PRO。");
+  }
+  await openClaimed(device);
+  return device;
+}
+
+/**
  * @param {USBDevice} device
  */
 async function openClaimed(device) {

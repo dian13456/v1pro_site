@@ -15,7 +15,9 @@ import {
 import {
   beginGfm1PayloadStream,
   closeDevice,
+  listAuthorizedDevices,
   openAuthorizedDevice,
+  openSelectedDevice,
   probeDevice,
   queryDeviceCapacity,
   requestAndOpenDevice,
@@ -23,7 +25,7 @@ import {
   V1ProUsbError,
 } from "./v1pro-usb.js?v=1.2.14";
 
-export { V1ProUsbError, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
+export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
 /**
  * @param {{
@@ -64,6 +66,11 @@ export class V1ProWebTransfer {
       throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
     }
     await this.disconnect();
+    if (opts.device) {
+      this.device = await openSelectedDevice(opts.device);
+      await this.refreshDeviceCapacity();
+      return this.device;
+    }
     if (opts.reuseAuthorized) {
       const existing = await openAuthorizedDevice();
       if (existing) {
