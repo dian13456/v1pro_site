@@ -588,11 +588,11 @@ export default function ResourcesPage() {
         <ResourceDetailModal
           resource={selectedResource}
           downloadCount={displayDownloadCount(totalDownloadCounts[selectedResource.id] || 0)}
-          downloading={downloadingId === selectedResource.id}
-          transferring={webUsbTransferringId === selectedResource.id}
+          transferring={transferringId === selectedResource.id}
+          webUsbTransferring={webUsbTransferringId === selectedResource.id}
           onClose={() => setSelectedResource(null)}
-          onDownload={handleDownload}
-          onTransfer={handleWebUsbTransfer}
+          onTransfer={handleTransfer}
+          onWebUsbTransfer={handleWebUsbTransfer}
         />
       ) : null}
     </div>
