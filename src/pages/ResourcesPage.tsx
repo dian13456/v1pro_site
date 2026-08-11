@@ -564,7 +564,11 @@ export default function ResourcesPage() {
                     key={resource.id}
                     resource={resource}
                     downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                    likeCount={likeCounts[resource.id] || 0}
+                    liked={likedIds.has(resource.id)}
+                    liking={likingId === resource.id}
                     onOpen={setSelectedResource}
+                    onLike={(item) => void handleLike(item)}
                   />
                 ))}
               </section>

@@ -24,11 +24,19 @@ function materialLabel(resource: ResourceItem): string {
 export function CompactResourceCard({
   resource,
   downloadCount,
+  likeCount,
+  liked,
+  liking,
   onOpen,
+  onLike,
 }: {
   resource: ResourceItem;
   downloadCount: number;
+  likeCount: number;
+  liked: boolean;
+  liking: boolean;
   onOpen: (resource: ResourceItem) => void;
+  onLike: (resource: ResourceItem) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const metrics = resourceMetricsFromCatalog(resource);
@@ -48,9 +56,16 @@ export function CompactResourceCard({
   }, [resource.download, resource.id, resource.image]);
 
   return (
-    <button
-      type="button"
+    <article
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(resource)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(resource);
+        }
+      }}
       className="group overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900"
     >
       <div className={`relative aspect-[1.618] overflow-hidden bg-gradient-to-br ${PREVIEW_BACKGROUNDS[resource.id % PREVIEW_BACKGROUNDS.length]}`}>
@@ -72,11 +87,27 @@ export function CompactResourceCard({
       </div>
       <div className="p-3.5">
         <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{resource.title || resource.description}</h3>
-        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-400">
+        <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
           <span className="max-w-[70%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || resource.author || "其他"}</span>
-          <span>⬇ {downloadCount}</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label={liked ? "已点赞" : "点赞"}
+              aria-pressed={liked}
+              disabled={liked || liking}
+              onClick={(event) => {
+                event.stopPropagation();
+                onLike(resource);
+              }}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition disabled:cursor-not-allowed ${liked ? "bg-rose-50 text-rose-500" : "hover:bg-rose-50 hover:text-rose-500"}`}
+            >
+              <span aria-hidden="true">♥</span>
+              <span>{liking ? "…" : likeCount}</span>
+            </button>
+            <span>⬇ {downloadCount}</span>
+          </div>
         </div>
       </div>
-    </button>
+    </article>
   );
 }
