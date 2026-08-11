@@ -1,18 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { SitePageLayout } from "../components/SitePageLayout";
-import {
-  SiteAlert,
-  SiteButton,
-  SiteInput,
-  SiteLabel,
-  SiteMediaPreview,
-  SitePanel,
-  SiteSectionTitle,
-  SiteSelect,
-  SITE_CONTENT_NARROW,
-} from "../components/SiteUi";
-import { useThemeMode } from "../hooks/useThemeMode";
+import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import { SiteFooter } from "../components/SiteFooter";
+import { SiteAlert } from "../components/SiteUi";
 import { useColumnTags } from "../hooks/useColumnTags";
 import { buildShareColumnTagOptions } from "../data/columnTags";
 import {
@@ -109,7 +99,6 @@ function kindLabel(kind: ShareMediaKind): string {
 
 export default function SharePage() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useThemeMode();
   const { columnTagOptions } = useColumnTags();
   const shareColumnOptions = useMemo(
     () => buildShareColumnTagOptions(columnTagOptions),
@@ -145,9 +134,7 @@ export default function SharePage() {
     return () => URL.revokeObjectURL(url);
   }, [selectedFile]);
 
-  const handlePick = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const selectFile = (file?: File) => {
     setErrorMessage("");
     setNotice("");
     if (!file) return;
@@ -173,6 +160,12 @@ export default function SharePage() {
     setTitle(baseName);
     setDescription(baseName);
     setColumnTag("");
+  };
+
+  const handlePick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    selectFile(file);
   };
 
   const handleShare = async () => {
@@ -320,200 +313,153 @@ export default function SharePage() {
 
   const gifMb = Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024));
   const videoMb = Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024));
+  const fieldClass = "w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] text-[#2b3245] outline-none transition focus:border-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-50";
+  const fieldLabelClass = "mb-[7px] block text-[12.5px] font-semibold text-[#4a5270]";
 
   return (
-    <SitePageLayout
-      subtitle="分享素材到素材库"
-      theme={theme}
-      onSetTheme={setTheme}
-      contentClassName={SITE_CONTENT_NARROW}
-    >
-      <SitePanel>
-        <SiteSectionTitle
-          title="分享素材"
-          description={`支持静态图片（8MB）、GIF（${gifMb}MB）、视频（${videoMb}MB，建议 H.264 8-bit MP4，兼容 Edge/Chrome）。他人点赞可为你的 SN 增加 1 积分，有效下载可再增加 0.5 积分。${
-            shareUnlimited
-              ? " 当前分享次数：无限制"
-              : shareRemaining != null
-                ? ` 当前剩余分享次数：${shareRemaining}`
-                : ""
-          }`}
-        />
+    <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
+      <ResourceLibraryHeader
+        keyword=""
+        onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")}
+      />
+      <main className="mx-auto flex max-w-[1280px] justify-center px-4 py-6 sm:px-6">
+        <section className="w-full max-w-[640px] overflow-hidden rounded-[18px] bg-white shadow-[0_24px_60px_rgba(43,50,69,.16)]">
+          <header className="border-b border-[#e6e9f2] px-[26px] pb-3.5 pt-5">
+            <h1 className="text-[17px] font-bold">分享素材</h1>
+            <p className="mt-1.5 text-xs leading-[1.6] text-[#8a93a8]">
+              支持静态图片（8MB）、GIF（{gifMb}MB）、视频（{videoMb}MB，建议 H.264 8-bit MP4）。
+              他人点赞可增加 <b className="text-[#2b3245]">1 积分</b>，有效下载再增加 <b className="text-[#2b3245]">0.5 积分</b>。
+              {shareUnlimited ? " 当前分享次数：无限制。" : shareRemaining != null ? ` 当前剩余分享次数：${shareRemaining}。` : ""}
+            </p>
+          </header>
 
-        <div className="flex flex-wrap gap-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".gif,.mp4,.webm,.mov,.m4v,image/png,image/jpeg,image/jpg,image/webp,image/bmp"
-            className="hidden"
-            onChange={handlePick}
-          />
-          <SiteButton type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-            选择文件
-          </SiteButton>
-          {selectedFile ? (
-            <SiteButton
-              type="button"
-              variant="success"
-              disabled={uploading}
-              onClick={() => void handleShare()}
-            >
-              {uploading ? progress || "分享中..." : "分享到素材库"}
-            </SiteButton>
-          ) : null}
-          {selectedFile && mediaKind ? (
-            <SiteButton
-              type="button"
-              variant="secondary"
-              disabled={uploading || transferring || targetFrameOptions.length === 0}
-              onClick={() => void handleDeviceTransfer()}
-            >
-              {transferring ? progress || "下传中..." : "下传到当前设备"}
-            </SiteButton>
-          ) : null}
-        </div>
-
-        {selectedFile && mediaKind ? (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <SiteLabel>标题</SiteLabel>
-              <SiteInput value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
-            </div>
-            <div className="space-y-2">
-              <SiteLabel>描述</SiteLabel>
-              <SiteInput
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={500}
+          <div className="px-[26px] py-5">
+            <div className="mb-4">
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 素材文件</label>
+              <button
+                type="button"
+                disabled={uploading || transferring}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  selectFile(event.dataTransfer.files?.[0]);
+                }}
+                className="flex min-h-[118px] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-[1.5px] border-dashed border-[#cfd5ea] bg-[#fafbfe] px-5 py-4 text-center text-[12.5px] text-[#8a93a8] transition hover:border-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {previewUrl && mediaKind ? (
+                  mediaKind === "video" ? (
+                    <video src={previewUrl} muted playsInline className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }} />
+                  ) : (
+                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" />
+                  )
+                ) : <span className="mb-1.5 text-[28px]">📁</span>}
+                <span>点击选择文件，或拖拽到此处</span>
+                <strong className="mt-1 max-w-full truncate text-[#2b3245]">
+                  {selectedFile ? `${selectedFile.name}（${(selectedFile.size / 1048576).toFixed(1)} MB）` : "未选择"}
+                </strong>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".gif,.mp4,.webm,.mov,.m4v,image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                className="hidden"
+                onChange={handlePick}
               />
             </div>
+
+            <div className="mb-4">
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 标题</label>
+              <input className={fieldClass} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={80} placeholder="例如：初音未来 · 眨眼循环" />
+            </div>
+
+            <div className="mb-4">
+              <label className={fieldLabelClass}>描述</label>
+              <textarea className={`${fieldClass} h-14 resize-none`} value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} placeholder="简单描述素材内容、动作、适用场景…" />
+            </div>
+
             {mediaKind === "video" ? (
-              <div className="space-y-2">
-                <SiteLabel>专栏</SiteLabel>
-                <SiteSelect value={columnTag} onChange={(event) => setColumnTag(event.target.value)}>
-                  {shareColumnOptions.map((item) => (
-                    <option key={item.value || "none"} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </SiteSelect>
+              <div className="mb-4">
+                <label className={fieldLabelClass}>专栏</label>
+                <select className={fieldClass} value={columnTag} onChange={(event) => setColumnTag(event.target.value)}>
+                  {shareColumnOptions.map((item) => <option key={item.value || "none"} value={item.value}>{item.label}</option>)}
+                </select>
               </div>
             ) : null}
-            <div className="space-y-2 sm:col-span-2">
-              <SiteLabel>目标设备容量</SiteLabel>
-              <div className="flex flex-wrap gap-3">
-                {[77, 154, 308].map((frames) => (
-                  <label
-                    key={frames}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={targetFrameOptions.includes(frames)}
-                      onChange={(event) => {
-                        setTargetFrameOptions((current) =>
-                          event.target.checked
-                            ? Array.from(new Set([...current, frames])).sort((a, b) => a - b)
-                            : current.filter((item) => item !== frames),
-                        );
-                      }}
-                    />
-                    {frames} 帧设备
-                  </label>
+
+            <div className="mb-4">
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 目标设备容量（可多选）</label>
+              <div className="grid grid-cols-3 gap-2.5">
+                {[77, 154, 308].map((frames) => {
+                  const selected = targetFrameOptions.includes(frames);
+                  return (
+                    <button
+                      key={frames}
+                      type="button"
+                      onClick={() => setTargetFrameOptions((current) => selected ? current.filter((item) => item !== frames) : [...current, frames].sort((a, b) => a - b))}
+                      className={`rounded-xl border-[1.5px] px-2.5 py-3 text-center transition ${selected ? "border-[#ff8a5c] bg-[#fff7f2] shadow-[0_0_0_2px_rgba(255,138,92,.18)]" : "border-[#e6e9f2] bg-white hover:border-[#ff8a5c]"}`}
+                    >
+                      <span className="block text-[19px] font-extrabold">{frames} 帧</span>
+                      <span className="mt-1 block text-[11px] leading-[1.5] text-[#8a93a8]">约 {frames} 张图片<br />{videoFps}fps 约 {(frames / videoFps).toFixed(1)}s</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {targetFrameOptions.length === 0 ? <p className="mt-2 text-xs text-rose-600">请至少选择一种目标设备容量</p> : null}
+            </div>
+
+            <div className="mb-4 grid grid-cols-2 gap-3.5">
+              <div>
+                <label className={fieldLabelClass}>视频帧率</label>
+                <select className={fieldClass} value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
+                  <option value={20}>20 fps</option><option value={25}>25 fps</option><option value={30}>30 fps</option>
+                </select>
+              </div>
+              <div>
+                <label className={fieldLabelClass}>画面方向</label>
+                <select className={fieldClass} value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value) as 0 | 90 | 180 | 270)}>
+                  <option value={0}>0° 原方向</option><option value={90}>90° 顺时针</option><option value={180}>180°</option><option value={270}>270° 顺时针</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className={fieldLabelClass}>画面显示</label>
+              <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 pt-1 text-[13px] text-[#4a5270]">
+                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "fill"} onChange={() => setFitMode("fill")} /> 铺满全屏</label>
+                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "contain"} onChange={() => setFitMode("contain")} /> 适应屏幕</label>
+              </div>
+            </div>
+
+            <div>
+              <label className={fieldLabelClass}>视频色彩</label>
+              <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 pt-1 text-[13px] text-[#4a5270]">
+                {([ ["normal", "普通"], ["vivid", "鲜艳"], ["professional", "专业"] ] as const).map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="videoColor" checked={videoColorProfile === value} onChange={() => setVideoColorProfile(value)} /> {label}</label>
                 ))}
               </div>
-              {targetFrameOptions.length === 0 ? (
-                <p className="text-xs text-rose-600 dark:text-rose-300">请至少选择一种目标设备容量</p>
-              ) : null}
             </div>
-            {mediaKind === "video" ? (
-              <>
-                <div className="space-y-2">
-                  <SiteLabel>视频帧率</SiteLabel>
-                  <SiteSelect value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
-                    <option value={20}>20 fps</option>
-                    <option value={25}>25 fps</option>
-                    <option value={30}>30 fps</option>
-                  </SiteSelect>
-                </div>
-                <div className="space-y-2">
-                  <SiteLabel>视频色彩</SiteLabel>
-                  <SiteSelect
-                    value={videoColorProfile}
-                    onChange={(event) => setVideoColorProfile(event.target.value as VideoColorProfile)}
-                  >
-                    <option value="normal">普通</option>
-                    <option value="vivid">鲜艳</option>
-                    <option value="professional">专业</option>
-                  </SiteSelect>
-                </div>
-              </>
-            ) : null}
-            <div className="space-y-2">
-              <SiteLabel>画面显示</SiteLabel>
-              <SiteSelect value={fitMode} onChange={(event) => setFitMode(event.target.value as "fill" | "contain")}>
-                <option value="fill">铺满全屏</option>
-                <option value="contain">等比例完整显示</option>
-              </SiteSelect>
-            </div>
-            <div className="space-y-2">
-              <SiteLabel>画面方向</SiteLabel>
-              <SiteSelect
-                value={rotationDeg}
-                onChange={(event) => setRotationDeg(Number(event.target.value) as 0 | 90 | 180 | 270)}
-              >
-                <option value={0}>0° 原方向</option>
-                <option value={90}>90° 顺时针</option>
-                <option value={180}>180°</option>
-                <option value={270}>270° 顺时针</option>
-              </SiteSelect>
-            </div>
-            <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
-              已选：{kindLabel(mediaKind)} · {selectedFile.name}（
-              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB）
-            </div>
+
+            {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
+            {errorMessage ? <SiteAlert variant="error" className="mt-4">{errorMessage}</SiteAlert> : null}
           </div>
-        ) : null}
 
-        {previewUrl && mediaKind ? (
-          <SiteMediaPreview className="mt-6">
-            {mediaKind === "video" ? (
-              <video
-                src={previewUrl}
-                controls
-                playsInline
-                className="mx-auto max-h-72 w-full object-contain"
-                style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }}
-              />
-            ) : (
-              <img
-                src={previewUrl}
-                alt={`${kindLabel(mediaKind)} 预览`}
-                className="mx-auto max-h-72 object-contain"
-              />
-            )}
-          </SiteMediaPreview>
-        ) : null}
+          <footer className="flex flex-wrap justify-end gap-3 border-t border-[#e6e9f2] px-[26px] pb-[22px] pt-4">
+            <button type="button" disabled={uploading || transferring} onClick={() => navigate("/")} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">取消</button>
+            <button type="button" disabled={!selectedFile || !mediaKind || uploading || transferring || targetFrameOptions.length === 0} onClick={() => void handleDeviceTransfer()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">
+              {transferring ? progress || "下传中…" : "⬇ 下载到当前设备"}
+            </button>
+            <button type="button" disabled={!selectedFile || !mediaKind || uploading || !title.trim()} onClick={() => void handleShare()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.3)] disabled:opacity-50">
+              {uploading ? progress || "分享中…" : "🚀 分享到素材库"}
+            </button>
+          </footer>
+        </section>
+      </main>
 
-        {notice ? (
-          <SiteAlert variant="success" className="mt-4">
-            {notice}
-          </SiteAlert>
-        ) : null}
-        {errorMessage ? (
-          <SiteAlert variant="error" className="mt-4">
-            {errorMessage}
-          </SiteAlert>
-        ) : null}
-
-        <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-          内容需符合站点使用规范，上传后将经腾讯云内容安全审核。AI 生成的图片可在{" "}
-          <Link to="/ai-image" className="text-violet-600 underline dark:text-violet-300">
-            AI 生图页
-          </Link>{" "}
-          生成并分享。
-        </p>
-      </SitePanel>
-    </SitePageLayout>
+      <div className="mx-auto max-w-[640px] px-4 pb-6 text-center text-xs text-[#8a93a8]">
+        内容需符合站点使用规范，上传后将经腾讯云内容安全审核。AI 图片可在 <Link to="/ai-image" className="text-[#7c6cf0] underline">AI 生图页</Link> 生成并分享。
+      </div>
+      <SiteFooter />
+    </div>
   );
 }
