@@ -567,8 +567,11 @@ export default function ResourcesPage() {
                     likeCount={likeCounts[resource.id] || 0}
                     liked={likedIds.has(resource.id)}
                     liking={likingId === resource.id}
+                    favorited={favoriteIds.includes(resource.id)}
+                    favoriting={favoritingId === resource.id}
                     onOpen={setSelectedResource}
                     onLike={(item) => void handleLike(item)}
+                    onFavorite={(item) => void handleFavorite(item)}
                   />
                 ))}
               </section>

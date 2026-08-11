@@ -47,7 +47,7 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
           <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-[17px] text-white">🐱</span>
           <span className="hidden sm:inline">佳点电子素材库</span>
         </Link>
-        <form onSubmit={submit} className="flex h-9 min-w-0 max-w-[420px] flex-1 items-center rounded-full border border-[#e6e9f2] bg-[#f8f9fd] px-4">
+        <form onSubmit={submit} className="flex h-9 min-w-0 max-w-[300px] flex-1 items-center rounded-full border border-[#e6e9f2] bg-[#f8f9fd] px-4">
           <span className="mr-2 text-slate-400">⌕</span>
           <input
             value={draft}
@@ -74,6 +74,12 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
           className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] lg:inline-flex"
         >
           活动中心
+        </Link>
+        <Link
+          to="/favorites"
+          className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] xl:inline-flex"
+        >
+          我的收藏
         </Link>
         <Link
           to="/downloads"

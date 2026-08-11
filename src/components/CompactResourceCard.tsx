@@ -27,16 +27,22 @@ export function CompactResourceCard({
   likeCount,
   liked,
   liking,
+  favorited,
+  favoriting,
   onOpen,
   onLike,
+  onFavorite,
 }: {
   resource: ResourceItem;
   downloadCount: number;
   likeCount: number;
   liked: boolean;
   liking: boolean;
+  favorited: boolean;
+  favoriting: boolean;
   onOpen: (resource: ResourceItem) => void;
   onLike: (resource: ResourceItem) => void;
+  onFavorite: (resource: ResourceItem) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const metrics = resourceMetricsFromCatalog(resource);
@@ -91,6 +97,19 @@ export function CompactResourceCard({
         <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
           <span className="max-w-[70%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || resource.author || "其他"}</span>
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label={favorited ? "取消收藏" : "收藏"}
+              aria-pressed={favorited}
+              disabled={favoriting}
+              onClick={(event) => {
+                event.stopPropagation();
+                onFavorite(resource);
+              }}
+              className={`inline-flex items-center rounded-full px-1.5 py-1 text-sm transition disabled:cursor-not-allowed ${favorited ? "bg-amber-50 text-amber-500" : "hover:bg-amber-50 hover:text-amber-500"}`}
+            >
+              <span aria-hidden="true">{favoriting ? "…" : favorited ? "★" : "☆"}</span>
+            </button>
             <button
               type="button"
               aria-label={liked ? "已点赞" : "点赞"}
