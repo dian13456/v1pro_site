@@ -1,5 +1,6 @@
 import type { ResourceItem } from "../types/resource";
 import { apiFetch } from "./httpClient";
+import bundledResources from "../data/resources.json";
 
 type ResourceRecord = Partial<ResourceItem> & {
   id?: number;
@@ -70,6 +71,22 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     category: sanitized.category,
     materialType: sanitized.materialType || "v1pro-pack",
     updatedAt: updated,
+    durationSec:
+      typeof sanitized.durationSec === "number" && Number.isFinite(sanitized.durationSec)
+        ? Math.max(0, sanitized.durationSec)
+        : undefined,
+    sourceFrameCount:
+      typeof sanitized.sourceFrameCount === "number" && Number.isFinite(sanitized.sourceFrameCount)
+        ? Math.max(1, Math.floor(sanitized.sourceFrameCount))
+        : undefined,
+    width:
+      typeof sanitized.width === "number" && Number.isFinite(sanitized.width)
+        ? Math.max(1, Math.floor(sanitized.width))
+        : undefined,
+    height:
+      typeof sanitized.height === "number" && Number.isFinite(sanitized.height)
+        ? Math.max(1, Math.floor(sanitized.height))
+        : undefined,
   };
 }
 
@@ -119,5 +136,8 @@ export async function fetchResources(): Promise<ResourceItem[]> {
     // 无本地打包 fallback，避免 COS 直链进入 JS 产物。
   }
 
+  if (import.meta.env.DEV) {
+    return sortByUpdatedAtDesc(parseResourcePayload(bundledResources));
+  }
   return [];
 }

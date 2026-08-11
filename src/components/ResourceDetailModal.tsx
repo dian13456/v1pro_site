@@ -1,0 +1,188 @@
+import { useEffect, useMemo, useState } from "react";
+import type { ResourceItem } from "../types/resource";
+import { createImageUrl } from "../services/imageService";
+import { probeResourceMedia } from "../services/resourceMediaProbe";
+import {
+  assessDeviceCapacities,
+  formatMediaDuration,
+  mergeResourceMetrics,
+  requiredFramesForResource,
+  resourceMetricsFromCatalog,
+  VIDEO_FPS_OPTIONS,
+  type ResourceMediaMetrics,
+  type VideoFpsOption,
+} from "../utils/resourceCapacity";
+
+interface ResourceDetailModalProps {
+  resource: ResourceItem;
+  downloadCount: number;
+  transferring: boolean;
+  downloading: boolean;
+  onClose: () => void;
+  onDownload: (resource: ResourceItem) => void;
+  onTransfer: (resource: ResourceItem, fps: VideoFpsOption) => void;
+}
+
+function materialLabel(resource: ResourceItem): string {
+  if (resource.materialType === "video") return "视频素材";
+  if (resource.materialType === "gif") return "GIF素材";
+  return "图片素材";
+}
+
+export function ResourceDetailModal({
+  resource,
+  downloadCount,
+  transferring,
+  downloading,
+  onClose,
+  onDownload,
+  onTransfer,
+}: ResourceDetailModalProps) {
+  const [fps, setFps] = useState<VideoFpsOption>(20);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
+  const [probing, setProbing] = useState(false);
+  const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    let active = true;
+    setMetrics(resourceMetricsFromCatalog(resource));
+    setPreviewUrl("");
+    setProbing(true);
+    const task = isAnimated
+      ? probeResourceMedia(resource)
+      : createImageUrl(resource.id, resource.image || resource.download).then((result) => ({
+          url: result.url,
+          metrics: { durationSec: null, sourceFrameCount: 1 } as ResourceMediaMetrics,
+        }));
+    void task
+      .then((result) => {
+        if (!active) return;
+        setPreviewUrl(result.url || "");
+        setMetrics((current) => mergeResourceMetrics(resource, { ...current, ...result.metrics }));
+      })
+      .catch(() => {
+        if (!active) return;
+        void createImageUrl(resource.id, resource.image || resource.download)
+          .then((result) => active && setPreviewUrl(result.url || ""))
+          .catch(() => undefined);
+      })
+      .finally(() => active && setProbing(false));
+    return () => {
+      active = false;
+    };
+  }, [isAnimated, resource]);
+
+  const assessments = useMemo(
+    () => assessDeviceCapacities(resource, metrics, fps),
+    [fps, metrics, resource],
+  );
+  const measuredFrames = requiredFramesForResource(resource, metrics, fps);
+  const requiredFrames = measuredFrames ?? 0;
+  const metricsKnown = measuredFrames != null;
+  const durationText = formatMediaDuration(metrics.durationSec);
+  const canDirectTransfer = resource.materialType === "image" || resource.materialType === "gif" || resource.materialType === "video";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${resource.title} 详情`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="grid max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[28px] bg-white shadow-2xl md:grid-cols-[1.05fr_1fr] dark:bg-slate-900">
+        <div className="relative flex min-h-[320px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-5 md:min-h-[560px]">
+          {previewUrl ? (
+            resource.materialType === "video" ? (
+              <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[500px] w-full rounded-2xl object-contain" />
+            ) : (
+              <img src={previewUrl} alt={resource.title} className="max-h-[500px] w-full rounded-2xl object-contain" />
+            )
+          ) : (
+            <div className="text-center text-slate-500">{probing ? "正在读取素材信息…" : "暂无预览"}</div>
+          )}
+          <div className="absolute inset-x-5 bottom-5 rounded-full bg-slate-900/30 px-4 py-2 text-center text-xs text-white backdrop-blur">
+            动态循环预览 · {resource.description || resource.title}
+          </div>
+        </div>
+
+        <div className="flex flex-col p-6 sm:p-8">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{resource.title || resource.description}</h2>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{materialLabel(resource)}</span>
+                <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || "其他"}</span>
+                {durationText ? <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">◷ {durationText}</span> : null}
+                {metricsKnown && requiredFrames > 308 ? <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-500 dark:bg-orange-500/10">大占用 {requiredFrames}帧</span> : null}
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800">×</button>
+          </div>
+
+          <dl className="mt-5 space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><dt className="text-slate-400">上传时间</dt><dd className="font-semibold">{new Date(resource.updatedAt).toLocaleDateString("zh-CN")}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-400">下载量</dt><dd className="font-semibold">{downloadCount} 次</dd></div>
+          </dl>
+
+          {isAnimated ? (
+            <>
+              <p className="mt-5 text-sm font-semibold text-slate-500">视频帧率（实时换算占用帧）</p>
+              <div className="mt-2 grid grid-cols-4 gap-2">
+                {VIDEO_FPS_OPTIONS.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFps(value)}
+                    className={`rounded-xl border px-2 py-3 text-sm font-semibold transition ${fps === value ? "border-orange-400 bg-orange-50 text-orange-500 ring-2 ring-orange-100 dark:bg-orange-500/10" : "border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"}`}
+                  >
+                    {value} fps
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/40">
+            <p className="text-slate-600 dark:text-slate-300">
+              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 占用 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 占用 <strong>1 帧</strong></>}
+            </p>
+            {metricsKnown ? <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold">
+              {assessments.map((item) => (
+                <span key={item.capacity} className={item.originalSpeed ? "text-emerald-500" : item.fits ? "text-orange-500" : "text-rose-500"}>
+                  {item.capacity} 帧设备 ✓ {item.originalSpeed ? "原速可放" : item.fits ? `自动加速 ${item.speed.toFixed(2)}×${item.playbackSec ? `(${item.playbackSec.toFixed(1)}s)` : ""}` : "无法完整装入"}
+                </span>
+              ))}
+            </div> : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
+            <p className="mt-2 text-xs text-slate-500">✓ 实际下传使用相同帧率与容量算法，不只是页面预估</p>
+          </div>
+
+          <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
+            <button type="button" disabled={downloading} onClick={() => onDownload(resource)} className="rounded-2xl bg-slate-100 px-4 py-3.5 font-semibold text-slate-600 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">
+              {downloading ? "下载中…" : "下载文件"}
+            </button>
+            <button type="button" disabled={transferring || !canDirectTransfer} onClick={() => onTransfer(resource, fps)} className="rounded-2xl bg-gradient-to-r from-violet-500 to-blue-500 px-4 py-3.5 font-semibold text-white shadow-lg shadow-violet-500/25 disabled:opacity-50">
+              {!canDirectTransfer ? "该格式需先下载" : transferring ? "正在下传…" : "⬇ 下载到当前设备"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

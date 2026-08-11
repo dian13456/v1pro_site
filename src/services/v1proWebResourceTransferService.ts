@@ -253,6 +253,9 @@ export async function transferResourceViaWebUsb(
   callbacks: {
     onStatus?: (message: string) => void;
   } = {},
+  options: {
+    videoFps?: number;
+  } = {},
 ): Promise<{ bytes: number; frameCount: number; note?: string }> {
   if (!canWebUsbDirectTransfer(resource)) {
     throw new Error("当前素材或浏览器不支持网页直传");
@@ -287,7 +290,11 @@ export async function transferResourceViaWebUsb(
           throw new Error(`无法读取设备容量${detail}`);
         }
         callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
-        const prediction = await client.predictVideoUrl(directUrl);
+        const videoFps = options.videoFps;
+        const prediction = await client.predictVideoUrl(directUrl, {
+          maxVideoFps: videoFps,
+          minVideoFps: videoFps,
+        });
         callbacks.onStatus?.(
           `预测可装入：${prediction.frameCount} 帧，正在预擦除并下载视频…`,
         );
@@ -309,6 +316,8 @@ export async function transferResourceViaWebUsb(
         const result = await client.transferFile(blob, {
           fileName,
           mediaType: "video",
+          maxVideoFps: videoFps,
+          minVideoFps: videoFps,
           pingFirst: false,
           preparedTotalBytes: prediction.totalBytes,
           onProgress: (info) => {

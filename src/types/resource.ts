@@ -15,6 +15,12 @@ export interface ResourceItem {
   category: Exclude<ResourceCategory, "all">;
   materialType: MaterialType;
   updatedAt: string;
+  /** Media duration generated during upload/catalog indexing. */
+  durationSec?: number;
+  /** Original animation/video frame count when known. */
+  sourceFrameCount?: number;
+  width?: number;
+  height?: number;
   likeCount?: number;
   liked?: boolean;
 }

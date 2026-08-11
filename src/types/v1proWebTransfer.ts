@@ -80,7 +80,10 @@ export interface V1ProWebTransferClient {
   disconnect(): Promise<void>;
   refreshDeviceCapacity(): Promise<V1ProDeviceCapacity | null>;
   getCapacityLabel(): string;
-  predictVideoUrl(url: string): Promise<V1ProVideoTransferPrediction>;
+  predictVideoUrl(
+    url: string,
+    opts?: Pick<V1ProTransferFileOptions, "maxFrames" | "maxVideoFps" | "minVideoFps" | "maxVideoSpeed">,
+  ): Promise<V1ProVideoTransferPrediction>;
   beginPreparedVideoTransfer(totalBytes: number): Promise<void>;
   transferFile(file: Blob, opts?: V1ProTransferFileOptions): Promise<V1ProTransferResult>;
 }

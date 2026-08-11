@@ -5,6 +5,12 @@ import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { SearchBar } from "../components/SearchBar";
 import { SitePageLayout } from "../components/SitePageLayout";
+import { SitePageShell } from "../components/SitePageShell";
+import { SiteFooter } from "../components/SiteFooter";
+import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
+import { CompactResourceCard } from "../components/CompactResourceCard";
+import { ResourceDetailModal } from "../components/ResourceDetailModal";
 import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -18,6 +24,12 @@ import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
+import {
+  requiredFramesForResource,
+  resourceMetricsFromCatalog,
+  type DeviceFrameCapacity,
+  type VideoFpsOption,
+} from "../utils/resourceCapacity";
 import { pickRandomItems } from "../utils/randomPick";
 import {
   V1PRO_TRANSFER_LAUNCHED_MESSAGE,
@@ -58,6 +70,8 @@ export default function ResourcesPage() {
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [capacityFilter, setCapacityFilter] = useState<"all" | DeviceFrameCapacity>("all");
+  const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -109,7 +123,16 @@ export default function ResourcesPage() {
     }
     return filtered;
   }, [filtered, sortMode, likeCounts, weeklyDownloadCounts, totalDownloadCounts]);
-  const totalItems = sortedResources.length;
+  const capacityFilteredResources = useMemo(() => {
+    if (capacityFilter === "all") return sortedResources;
+    return sortedResources.filter((resource) => {
+      const frames = requiredFramesForResource(resource, resourceMetricsFromCatalog(resource), 25);
+      // Legacy catalog entries without indexed media metrics stay visible until
+      // their detail dialog probes the file. New uploads can filter precisely.
+      return frames == null || frames <= capacityFilter;
+    });
+  }, [capacityFilter, sortedResources]);
+  const totalItems = capacityFilteredResources.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
@@ -136,11 +159,11 @@ export default function ResourcesPage() {
       return randomItems;
     }
     if (sortMode === "weeklyTop") {
-      return sortedResources;
+      return capacityFilteredResources;
     }
     const start = (currentPage - 1) * pageSize;
-    return sortedResources.slice(start, start + pageSize);
-  }, [randomMode, randomItems, sortMode, sortedResources, currentPage, pageSize]);
+    return capacityFilteredResources.slice(start, start + pageSize);
+  }, [randomMode, randomItems, sortMode, capacityFilteredResources, currentPage, pageSize]);
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -296,7 +319,7 @@ export default function ResourcesPage() {
     // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
-  const handleWebUsbTransfer = (resource: ResourceItem) => {
+  const handleWebUsbTransfer = (resource: ResourceItem, videoFps?: VideoFpsOption) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -309,6 +332,8 @@ export default function ResourcesPage() {
     setWebUsbTransferringId(resource.id);
     void transferResourceViaWebUsb(resource, {
       onStatus: (message) => setTransferNotice(message),
+    }, {
+      videoFps: resource.materialType === "video" ? videoFps : undefined,
     })
       .then((result) => {
         let message = `网页直传完成：${result.frameCount} 帧`;
@@ -452,262 +477,122 @@ export default function ResourcesPage() {
   };
 
   return (
-    <SitePageLayout
-      subtitle="素材中心 · 浏览、下载与传输到 V1PRO 设备"
-      theme={theme}
-      onSetTheme={setTheme}
-      beforeContent={
-        <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
-      }
-    >
-        <section className="mb-6 grid gap-3 md:grid-cols-[1fr_auto]">
-          <SearchBar value={keyword} onChange={setKeyword} />
-          <CategoryTabs value={category} onChange={setCategory} />
-        </section>
+    <div className="site-page-shell min-h-screen text-slate-900 dark:text-slate-100">
+      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      <ResourceLibraryHeader
+        keyword={keyword}
+        onSearch={(value) => {
+          setKeyword(value);
+          setCurrentPage(1);
+        }}
+      />
+      <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-6">
+        <details className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 lg:hidden dark:border-slate-800 dark:bg-slate-900">
+          <summary className="cursor-pointer font-semibold">筛选素材</summary>
+          <div className="mt-4">
+            <ResourceLibrarySidebar
+              resources={resources}
+              materialType={materialType}
+              onMaterialType={setMaterialType}
+              capacity={capacityFilter}
+              onCapacity={setCapacityFilter}
+              sortMode={randomMode ? "random" : sortMode}
+              onSortMode={(value) => {
+                if (value === "random") handleRandomRecommend();
+                else {
+                  handleExitRandomMode();
+                  setSortMode(value);
+                }
+              }}
+              columnTag={columnTag}
+              onColumnTag={setColumnTag}
+              columnOptions={columnTagFilterOptions}
+            />
+          </div>
+        </details>
 
-        <section className="mb-4 flex flex-wrap gap-2">
-          {[
-            { value: "all", label: "全部类型" },
-            { value: "image", label: "图片素材" },
-            { value: "video", label: "视频素材" },
-            { value: "gif", label: "GIF素材" },
-            { value: "v1pro-pack", label: "V1PRO素材包" },
-          ].map((item) => {
-            const active = materialType === item.value;
-            return (
-              <SiteFilterChip
-                key={item.value}
-                active={active}
-                onClick={() => setMaterialType(item.value as typeof materialType)}
-              >
-                {item.label}
-              </SiteFilterChip>
-            );
-          })}
-        </section>
-        <section className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-slate-500 dark:text-slate-300">专栏</span>
-          {columnTagFilterOptions.map((item) => {
-            const active = columnTag === item.value;
-            return (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setColumnTag(item.value)}
-                className={`rounded-full px-4 py-2 text-sm transition ${
-                  active
-                    ? "bg-amber-500 text-white"
-                    : "border border-amber-200/70 bg-amber-50/80 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </section>
-        <section className="mb-6 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-slate-500 dark:text-slate-300">排序</span>
-          {[
-            { value: "earliest", label: "最早优先" },
-            { value: "latest", label: "最新优先" },
-            { value: "hot", label: "热门排行" },
-            { value: "weeklyTop", label: "周下载TOP20" },
-          ].map((item) => {
-            const active = sortMode === item.value;
-            return (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setSortMode(item.value as typeof sortMode)}
-                className={`rounded-full px-4 py-2 text-sm transition ${
-                  active
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                    : "border border-white/25 bg-white/55 text-slate-700 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={handleRandomRecommend}
-            disabled={loading || resources.length === 0}
-            className={`rounded-full px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
-              randomMode
-                ? "bg-violet-600 text-white"
-                : "border border-violet-300/60 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200 dark:hover:bg-violet-500/25"
-            }`}
-          >
-            随机推荐
-          </button>
-          {randomMode ? (
-            <>
-              <button
-                type="button"
-                onClick={handleRandomRecommend}
-                className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-              >
-                换一批
-              </button>
-              <button
-                type="button"
-                onClick={handleExitRandomMode}
-                className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-              >
-                退出随机
-              </button>
-            </>
-          ) : null}
-        </section>
-        <section className="mb-6 flex flex-wrap items-center gap-3">
-          {randomMode ? (
-            <span className="text-sm text-violet-700 dark:text-violet-200">
-              随机推荐 {visibleItems.length} 张素材（从素材库随机抽取）
-            </span>
-          ) : sortMode === "weeklyTop" ? (
-            <span className="text-sm text-sky-700 dark:text-sky-200">
-              周下载 TOP20{downloadWeekKey ? `（${downloadWeekKey}）` : ""}，显示 {visibleItems.length} 张
-            </span>
-          ) : (
-            <>
-              <span className="text-sm text-slate-500 dark:text-slate-300">每页</span>
+        <div className="grid gap-7 lg:grid-cols-[248px_minmax(0,1fr)]">
+          <div className="hidden lg:block">
+            <ResourceLibrarySidebar
+              resources={resources}
+              materialType={materialType}
+              onMaterialType={setMaterialType}
+              capacity={capacityFilter}
+              onCapacity={setCapacityFilter}
+              sortMode={randomMode ? "random" : sortMode}
+              onSortMode={(value) => {
+                if (value === "random") handleRandomRecommend();
+                else {
+                  handleExitRandomMode();
+                  setSortMode(value);
+                }
+              }}
+              columnTag={columnTag}
+              onColumnTag={setColumnTag}
+              columnOptions={columnTagFilterOptions}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-400">
+                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{totalItems}</strong> 张，{totalPages} 页 · 每页
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                  {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
+                </select>
+              </div>
               <select
-                value={pageSize}
-                onChange={(event) => setPageSize(Number(event.target.value))}
-                className="rounded-full border border-white/25 bg-white/55 px-3 py-2 text-sm text-slate-700 outline-none dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
               >
-                {[16, 20, 40, 60, 100].map((size) => (
-                  <option key={size} value={size}>
-                    {size} 张
-                  </option>
-                ))}
+                <option value="latest">最新优先</option>
+                <option value="earliest">最早优先</option>
+                <option value="hot">热门排行</option>
+                <option value="weeklyTop">周下载 TOP20</option>
               </select>
-              <span className="text-sm text-slate-500 dark:text-slate-300">
-                共 {totalItems} 张，{totalPages} 页
-              </span>
-            </>
-          )}
-        </section>
+            </div>
 
-        {error || errorMessage ? (
-          <div className="mb-4 rounded-xl border border-rose-300/60 bg-rose-100/70 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-            {error || errorMessage}
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="rounded-2xl border border-white/20 bg-white/45 p-8 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-            正在加载资源...
-          </div>
-        ) : null}
-
-        {!loading ? (
-          <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {visibleItems.map((resource) => (
-              <ResourceCard
-                key={resource.id}
-                resource={resource}
-                onDownload={handleDownload}
-                onTransfer={handleTransfer}
-                onTransferPrepare={handleTransferPrepare}
-                onWebUsbTransfer={handleWebUsbTransfer}
-                onWebUsbTransferPrepare={handleWebUsbTransferPrepare}
-                onPlay={handlePlay}
-                onPlayPrepare={handlePlayPrepare}
-                onStopPlay={() => {
-                  setPlayingResourceId(null);
-                  setPlayingUrl("");
-                }}
-                onLike={handleLike}
-                onFavorite={handleFavorite}
-                downloading={downloadingId === resource.id}
-                transferring={transferringId === resource.id}
-                webUsbTransferring={webUsbTransferringId === resource.id}
-                playing={playingId === resource.id}
-                isPlaying={playingResourceId === resource.id}
-                playUrl={playingResourceId === resource.id ? playingUrl : ""}
-                liking={likingId === resource.id}
-                liked={likedIds.has(resource.id)}
-                likeCount={likeCounts[resource.id] || 0}
-                favorited={favoriteIds.includes(resource.id)}
-                favoriting={favoritingId === resource.id}
-                downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
-                weeklyDownloadCount={displayDownloadCount(weeklyDownloadCounts[resource.id] || 0)}
-                showWeeklyDownloadCount={sortMode === "weeklyTop"}
-              />
-            ))}
-          </section>
-        ) : null}
-
-        {!loading && visibleItems.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-white/30 bg-white/55 p-6 text-center text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-            {randomMode ? "素材库暂无可推荐的素材。" : "没有匹配的资源，请尝试修改关键词或分类。"}
-          </div>
-        ) : null}
-
-        {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
-          <section className="mt-6 flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-            >
-              上一页
-            </button>
-            {pageList.map((page) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => setCurrentPage(page)}
-                className={`rounded-full px-3 py-2 text-sm transition ${
-                  currentPage === page
-                    ? "bg-cyan-600 text-white"
-                    : "border border-white/25 bg-white/55 text-slate-700 hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              type="button"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-              className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-            >
-              下一页
-            </button>
-            {totalPages > 1 ? (
-              <form
-                className="flex items-center gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleJumpToPage();
-                }}
-              >
-                <span className="text-sm text-slate-600 dark:text-slate-300">跳至</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={totalPages}
-                  value={pageJumpValue}
-                  onChange={(event) => setPageJumpValue(event.target.value)}
-                  placeholder={String(currentPage)}
-                  aria-label="跳转到指定页"
-                  className="w-16 rounded-full border border-white/25 bg-white/55 px-3 py-2 text-center text-sm text-slate-700 outline-none ring-cyan-400/40 focus:ring-2 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
-                />
-                <span className="text-sm text-slate-600 dark:text-slate-300">页</span>
-                <button
-                  type="submit"
-                  className="rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
-                >
-                  跳转
-                </button>
-              </form>
+            {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
+            {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
+            {!loading ? (
+              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {visibleItems.map((resource) => (
+                  <CompactResourceCard
+                    key={resource.id}
+                    resource={resource}
+                    downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                    onOpen={setSelectedResource}
+                  />
+                ))}
+              </section>
             ) : null}
-          </section>
-        ) : null}
-    </SitePageLayout>
+            {!loading && visibleItems.length === 0 ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">没有匹配的素材，请调整筛选条件。</div> : null}
+
+            {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
+              <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
+                <button type="button" disabled={currentPage <= 1} onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                {pageList.map((page) => (
+                  <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
+                ))}
+                <button type="button" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
+              </nav>
+            ) : null}
+          </div>
+        </div>
+      </main>
+      <SiteFooter />
+      {selectedResource ? (
+        <ResourceDetailModal
+          resource={selectedResource}
+          downloadCount={displayDownloadCount(totalDownloadCounts[selectedResource.id] || 0)}
+          downloading={downloadingId === selectedResource.id}
+          transferring={webUsbTransferringId === selectedResource.id}
+          onClose={() => setSelectedResource(null)}
+          onDownload={handleDownload}
+          onTransfer={handleWebUsbTransfer}
+        />
+      ) : null}
+    </div>
   );
 }
