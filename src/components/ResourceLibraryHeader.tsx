@@ -70,6 +70,12 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
           活动中心
         </Link>
         <Link
+          to="/downloads"
+          className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] lg:inline-flex"
+        >
+          资料中心
+        </Link>
+        <Link
           to="/profile"
           className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] sm:inline-flex"
         >

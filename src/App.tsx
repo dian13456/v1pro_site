@@ -22,6 +22,7 @@ import ActivityWinnerListPage from "./pages/ActivityWinnerListPage.tsx";
 import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
 import ActivityPromoPage from "./pages/ActivityPromoPage.tsx";
 import ActivityPromoAdminPage from "./pages/ActivityPromoAdminPage.tsx";
+import DownloadCenterPage from "./pages/DownloadCenterPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 import WebUsbTransferTestPage from "./pages/WebUsbTransferTestPage.tsx";
 
@@ -129,6 +130,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ActivityCenterPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/downloads"
+            element={
+              <ProtectedRoute>
+                <DownloadCenterPage />
               </ProtectedRoute>
             }
           />
