@@ -268,13 +268,23 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
     throw new Error("当前页面不是安全上下文，请通过 localhost 或 HTTPS 访问");
   }
 
-  const granted = await findBestGrantedUsbDevice();
-  if (granted) {
-    return authorizeUsbDevice(granted);
-  }
-
+  // This path is called from an explicit user click. Always show Chrome/Edge's
+  // chooser so a site with multiple authorized V1PROs never picks the first
+  // device behind the user's back.
   const picked = await requestFilteredUsbDevice();
-  return authorizeUsbDevice(picked);
+  try {
+    return await authorizeUsbDevice(picked);
+  } finally {
+    // Reading a missing serial descriptor may have opened the USBDevice.
+    // Authentication must not retain that handle or block WebUSB/desktop GUI.
+    if (picked.opened) {
+      try {
+        await picked.close();
+      } catch {
+        // The device may have been unplugged while authentication completed.
+      }
+    }
+  }
 }
 
 export { ALLOWED_USB_DEVICES };
