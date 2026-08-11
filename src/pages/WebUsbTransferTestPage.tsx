@@ -69,7 +69,7 @@ export default function WebUsbTransferTestPage() {
     setAuthorizedDevices(devices);
     setSelectedDeviceKey((current) => {
       if (devices.some((device) => deviceKey(device) === current)) return current;
-      return devices[0] ? deviceKey(devices[0]) : "";
+      return "";
     });
   }, [webUsbSupported]);
 
@@ -139,6 +139,9 @@ export default function WebUsbTransferTestPage() {
         (device) => deviceKey(device) === selectedDeviceKey,
       );
       await client.connect(selectedDevice ? { device: selectedDevice } : undefined);
+      if (client.device) {
+        setSelectedDeviceKey(deviceKey(client.device as USBDevice));
+      }
       await refreshAuthorizedDevices();
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
@@ -223,7 +226,12 @@ export default function WebUsbTransferTestPage() {
           const selectedDevice = authorizedDevices.find(
             (device) => deviceKey(device) === selectedDeviceKey,
           );
-          await client.connect(selectedDevice ? { device: selectedDevice } : undefined);
+          if (!selectedDevice) {
+            setStatusText("请先从设备列表中选择要传输的 V1PRO（SN）");
+            setStatusKind("error");
+            return;
+          }
+          await client.connect({ device: selectedDevice });
           setStatusText(`已连接：${deviceLabel(client)}`);
           setStatusKind("ok");
           const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -357,7 +365,7 @@ export default function WebUsbTransferTestPage() {
         ) : null}
 
         <WebUsbDropZone
-          disabled={!webUsbSupported || !sdkReady}
+          disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey}
           busy={busy}
           connected={connected}
           selectedFileName={selectedFile?.name ?? null}

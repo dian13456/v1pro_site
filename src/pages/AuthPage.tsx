@@ -47,7 +47,7 @@ async function runSilentConnect(
 export default function AuthPage() {
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(false);
-  const [autoConnecting, setAutoConnecting] = useState(true);
+  const [autoConnecting, setAutoConnecting] = useState(false);
   const [canSilentConnect, setCanSilentConnect] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -79,7 +79,9 @@ export default function AuthPage() {
       setLoading(true);
       setError("");
 
-      const silent = await attemptSilentConnect();
+      // A button click must always open the browser device picker. Do not
+      // silently reuse the first authorized device when several V1PROs exist.
+      const silent = "failed" as SilentConnectResult;
       if (silent === "ok") {
         return;
       }
@@ -98,6 +100,8 @@ export default function AuthPage() {
   };
 
   useEffect(() => {
+    // Device selection is always user initiated; never connect on page load.
+    return;
     if (autoTriedRef.current) return;
     autoTriedRef.current = true;
 
@@ -131,6 +135,8 @@ export default function AuthPage() {
   }, [attemptSilentConnect]);
 
   useEffect(() => {
+    // Plugging in a device only updates browser state. It must not claim USB.
+    return;
     if (!("usb" in navigator)) {
       return;
     }
