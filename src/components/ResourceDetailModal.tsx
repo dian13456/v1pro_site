@@ -98,7 +98,7 @@ export function ResourceDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(30,35,55,.45)] p-3 backdrop-blur-[3px]"
       role="dialog"
       aria-modal="true"
       aria-label={`${resource.title} 详情`}
@@ -106,27 +106,27 @@ export function ResourceDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="grid max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[28px] bg-white shadow-2xl md:grid-cols-[1.05fr_1fr] dark:bg-slate-900">
-        <div className="relative flex min-h-[320px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-5 md:min-h-[560px]">
+      <div className="grid max-h-[90vh] w-full max-w-[780px] overflow-auto rounded-[18px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.15fr_1fr]">
+        <div className="relative flex min-h-[220px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-4 md:min-h-[400px]">
           {previewUrl ? (
             resource.materialType === "video" ? (
-              <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[500px] w-full rounded-2xl object-contain" />
+              <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[380px] w-full rounded-xl object-contain" />
             ) : (
-              <img src={previewUrl} alt={resource.title} className="max-h-[500px] w-full rounded-2xl object-contain" />
+              <img src={previewUrl} alt={resource.title} className="max-h-[380px] w-full rounded-xl object-contain" />
             )
           ) : (
             <div className="text-center text-slate-500">{probing ? "正在读取素材信息…" : "暂无预览"}</div>
           )}
-          <div className="absolute inset-x-5 bottom-5 rounded-full bg-slate-900/30 px-4 py-2 text-center text-xs text-white backdrop-blur">
+          <div className="absolute inset-x-4 bottom-4 rounded-xl bg-black/25 px-3 py-1.5 text-center text-[11.5px] text-white backdrop-blur-sm">
             动态循环预览 · {resource.description || resource.title}
           </div>
         </div>
 
-        <div className="flex flex-col p-6 sm:p-8">
+        <div className="flex flex-col gap-[13px] border-t border-[#e6e9f2] p-6 md:border-l md:border-t-0">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{resource.title || resource.description}</h2>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <h2 className="text-[17px] font-bold text-[#2b3245]">{resource.title || resource.description}</h2>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11.5px]">
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{materialLabel(resource)}</span>
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || "其他"}</span>
                 {durationText ? <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">◷ {durationText}</span> : null}
@@ -136,21 +136,21 @@ export function ResourceDetailModal({
             <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800">×</button>
           </div>
 
-          <dl className="mt-5 space-y-3 text-sm">
+          <dl className="space-y-2 text-[12.5px]">
             <div className="flex justify-between gap-4"><dt className="text-slate-400">上传时间</dt><dd className="font-semibold">{new Date(resource.updatedAt).toLocaleDateString("zh-CN")}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-400">下载量</dt><dd className="font-semibold">{downloadCount} 次</dd></div>
           </dl>
 
           {isAnimated ? (
             <>
-              <p className="mt-5 text-sm font-semibold text-slate-500">下传设备帧率（实际编码）</p>
-              <div className="mt-2 grid grid-cols-4 gap-2">
+              <p className="text-xs font-bold tracking-[1px] text-[#8a93a8]">下传设备帧率（实际编码）</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
                 {VIDEO_FPS_OPTIONS.map((value) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => setFps(value)}
-                    className={`rounded-xl border px-2 py-3 text-sm font-semibold transition ${fps === value ? "border-orange-400 bg-orange-50 text-orange-500 ring-2 ring-orange-100 dark:bg-orange-500/10" : "border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"}`}
+                    className={`rounded-[10px] border-[1.5px] px-2 py-[9px] text-[12.5px] font-semibold transition ${fps === value ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
                   >
                     {value} fps
                   </button>
@@ -159,7 +159,7 @@ export function ResourceDetailModal({
             </>
           ) : null}
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/40">
+          <div className="rounded-xl border border-[#e6e9f2] bg-[#fafbfe] px-3.5 py-3 text-[12.5px] leading-[1.9]">
             <p className="text-slate-600 dark:text-slate-300">
               素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
             </p>
@@ -177,11 +177,11 @@ export function ResourceDetailModal({
             <p className="mt-2 text-xs text-slate-500">✓ 所选帧率用于“网页直传”；“传输”将交给佳点 V1PRO 控制工具处理</p>
           </div>
 
-          <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
-            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-2xl bg-slate-100 px-4 py-3.5 font-semibold text-slate-600 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">
+          <div className="mt-auto grid grid-cols-2 gap-2.5 pt-2">
+            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#f1f3f8] px-4 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">
               {transferring ? "传输中…" : "传输"}
             </button>
-            <button type="button" disabled={webUsbTransferring || !canDirectTransfer} onClick={() => onWebUsbTransfer(resource, fps)} className="rounded-2xl bg-gradient-to-r from-violet-500 to-blue-500 px-4 py-3.5 font-semibold text-white shadow-lg shadow-violet-500/25 disabled:opacity-50">
+            <button type="button" disabled={webUsbTransferring || !canDirectTransfer} onClick={() => onWebUsbTransfer(resource, fps)} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">
               {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
             </button>
           </div>

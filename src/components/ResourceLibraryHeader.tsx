@@ -35,31 +35,31 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/90">
-      <div className="mx-auto flex max-w-[1500px] items-center gap-4 px-4 py-3 sm:px-6">
-        <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-amber-400 via-rose-400 to-violet-500 text-lg shadow-sm">🐱</span>
+    <header className="sticky top-0 z-30 h-[60px] border-b border-[#e6e9f2] bg-white">
+      <div className="flex h-full items-center gap-6 px-4 sm:px-8">
+        <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold text-[#2b3245]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-[17px] text-white">🐱</span>
           <span className="hidden sm:inline">佳点电子素材库</span>
         </Link>
-        <form onSubmit={submit} className="flex min-w-0 max-w-xl flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-900">
+        <form onSubmit={submit} className="flex h-9 min-w-0 max-w-[420px] flex-1 items-center rounded-full border border-[#e6e9f2] bg-[#f8f9fd] px-4">
           <span className="mr-2 text-slate-400">⌕</span>
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[#8a93a8]"
             placeholder="搜索素材，如「孤独摇滚」「眨眼」…"
           />
         </form>
         <Link
           to="/profile"
-          className="hidden max-w-xs truncate rounded-full bg-slate-50 px-4 py-2 text-xs text-slate-500 md:block dark:bg-slate-900 dark:text-slate-300"
+          className="hidden max-w-xs truncate rounded-full bg-[#f5f6fb] px-3 py-1.5 text-xs text-[#8a93a8] md:block"
           title={`SN: ${serial}`}
         >
           {nickname ? `${nickname} · ` : ""}SN: {serial}{credits != null ? ` · ${credits} 积分` : ""}
         </Link>
         <Link
           to="/share"
-          className="shrink-0 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-rose-400/20 transition hover:-translate-y-0.5"
+          className="shrink-0 rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-[9px] text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.35)] transition hover:-translate-y-0.5"
         >
           ＋ 分享素材
         </Link>

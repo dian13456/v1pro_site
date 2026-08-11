@@ -479,7 +479,7 @@ export default function ResourcesPage() {
   };
 
   return (
-    <div className="site-page-shell min-h-screen text-slate-900 dark:text-slate-100">
+    <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
       <ResourceLibraryHeader
         keyword={keyword}
@@ -488,7 +488,7 @@ export default function ResourcesPage() {
           setCurrentPage(1);
         }}
       />
-      <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-6">
+      <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6">
         <details className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 lg:hidden dark:border-slate-800 dark:bg-slate-900">
           <summary className="cursor-pointer font-semibold">筛选素材</summary>
           <div className="mt-4">
@@ -513,8 +513,8 @@ export default function ResourcesPage() {
           </div>
         </details>
 
-        <div className="grid gap-7 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <div className="hidden lg:block">
+        <div className="grid items-start gap-6 lg:grid-cols-[218px_minmax(0,1fr)]">
+          <div className="hidden lg:sticky lg:top-[84px] lg:block">
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}
@@ -536,7 +536,7 @@ export default function ResourcesPage() {
           </div>
 
           <div className="min-w-0">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
                 共 <strong className="text-lg text-slate-700 dark:text-slate-200">{totalItems}</strong> 张，{totalPages} 页 · 每页
                 <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
@@ -558,7 +558,7 @@ export default function ResourcesPage() {
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
             {!loading ? (
-              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 min-[960px]:grid-cols-3 min-[1200px]:grid-cols-4">
                 {visibleItems.map((resource) => (
                   <CompactResourceCard
                     key={resource.id}

@@ -50,6 +50,14 @@ html[data-theme="doro"] {
   background: var(--site-shell-bg);
 }
 
+.resource-library-shell {
+  background: #f4f6fb !important;
+}
+
+html[data-theme] .resource-library-shell::before {
+  display: none;
+}
+
 html[data-theme="cat"] .site-page-shell {
   color: #831843;
 }

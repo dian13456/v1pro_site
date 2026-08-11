@@ -22,9 +22,9 @@ function FilterGroup<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <h2 className="px-5 pb-2 pt-4 text-xs font-semibold tracking-wide text-slate-400">{title}</h2>
-      <div className="pb-3">
+    <section className="overflow-hidden rounded-[14px] border border-[#e6e9f2] bg-white">
+      <h2 className="px-[18px] pb-2.5 pt-[18px] text-xs font-normal tracking-[1px] text-[#8a93a8]">{title}</h2>
+      <div className="pb-3.5">
         {options.map((option) => {
           const active = option.value === value;
           return (
@@ -32,17 +32,17 @@ function FilterGroup<T extends string | number>({
               key={String(option.value)}
               type="button"
               onClick={() => onChange(option.value)}
-              className={`relative flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm transition ${
+              className={`relative flex w-full items-center gap-[9px] px-[18px] py-2 text-left text-[13.5px] transition ${
                 active
-                  ? "bg-orange-50 font-semibold text-orange-500 dark:bg-orange-500/10"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                  ? "font-bold text-[#ff8a5c]"
+                  : "text-[#4a5270] hover:bg-[#f6f7fd] hover:text-[#ff8a5c]"
               }`}
             >
-              {active ? <span className="absolute inset-y-0 left-0 w-0.5 bg-gradient-to-b from-orange-400 to-violet-500" /> : null}
-              <span className="w-4 text-center">{option.icon || "◇"}</span>
+              {active ? <span className="absolute inset-y-0 left-0 w-[3px] rounded-r bg-gradient-to-b from-[#ff8a5c] to-[#7c6cf0]" /> : null}
+              <span className="w-5 text-center text-[15px]">{option.icon || "◇"}</span>
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {option.note ? <span className="text-[11px] font-normal text-slate-400">{option.note}</span> : null}
-              {option.count != null ? <span className="text-xs font-normal text-slate-400">{option.count}</span> : null}
+              {option.note ? <span className="text-[11px] font-normal text-[#c2c8da]">{option.note}</span> : null}
+              {option.count != null ? <span className="text-[11px] font-normal text-[#c2c8da]">{option.count}</span> : null}
             </button>
           );
         })}
@@ -67,7 +67,7 @@ interface ResourceLibrarySidebarProps {
 export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
   const count = (type: ResourceItem["materialType"]) => props.resources.filter((item) => item.materialType === type).length;
   return (
-    <aside className="space-y-4">
+    <aside className="space-y-[14px]">
       <FilterGroup
         title="素材类型"
         value={props.materialType}
