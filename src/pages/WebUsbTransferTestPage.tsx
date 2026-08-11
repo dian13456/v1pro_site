@@ -19,11 +19,16 @@ function deviceKey(device: USBDevice): string {
   return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
 }
 
+function displayUsbProductName(productName?: string | null): string {
+  const name = productName?.trim() || "";
+  return !name || /^paired(?:\s+device)?$/i.test(name) ? "V1PRO" : name;
+}
+
 function usbDeviceLabel(device: USBDevice): string {
   const namedDevice = device as USBDevice & { productName?: string };
   const sn = device.serialNumber?.trim() || "";
   const nickname = getCustomDisplayName(sn);
-  return `${nickname || namedDevice.productName || "V1PRO"} · SN ${sn || "无序列号"}`;
+  return `${nickname || displayUsbProductName(namedDevice.productName)} · SN ${sn || "无序列号"}`;
 }
 
 function deviceLabel(client: V1ProWebTransferClient | null): string {
@@ -31,7 +36,7 @@ function deviceLabel(client: V1ProWebTransferClient | null): string {
   if (!device) return "";
   const sn = device.serialNumber?.trim() || "无序列号";
   const nickname = getCustomDisplayName(device.serialNumber?.trim() || "");
-  return `${nickname || device.productName || "V1PRO"} · SN ${sn}`;
+  return `${nickname || displayUsbProductName(device.productName)} · SN ${sn}`;
 }
 
 function formatError(err: unknown): string {
