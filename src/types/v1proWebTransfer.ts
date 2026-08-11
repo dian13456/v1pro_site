@@ -34,7 +34,10 @@ export interface V1ProTransferFileOptions {
   mediaType?: "image" | "gif" | "video";
   maxFrames?: number;
   maxVideoFps?: number;
+  minVideoFps?: number;
   maxVideoSpeed?: number;
+  fitMode?: "fill" | "contain";
+  rotationDeg?: 0 | 90 | 180 | 270;
   pingFirst?: boolean;
   requirePing?: boolean;
   preparedTotalBytes?: number;

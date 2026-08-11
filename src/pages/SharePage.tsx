@@ -20,7 +20,7 @@ import {
   readLocalImageFile,
   shareAiImageToCatalog,
 } from "../services/aiImageService";
-import { hasValidLocalAuth } from "../services/authService";
+import { getAuthState, hasValidLocalAuth } from "../services/authService";
 import { formatClientError } from "../services/httpClient";
 import {
   MAX_GIF_UPLOAD_BYTES,
@@ -30,6 +30,10 @@ import {
   MAX_VIDEO_UPLOAD_BYTES,
   shareVideoToCatalog,
 } from "../services/videoUploadService";
+import {
+  createV1ProWebTransferClient,
+  listAuthorizedV1ProDevices,
+} from "../services/v1proWebTransferClient";
 
 type ShareMediaKind = "image" | "gif" | "video";
 
@@ -117,6 +121,11 @@ export default function SharePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [shareRemaining, setShareRemaining] = useState<number | null>(null);
   const [shareUnlimited, setShareUnlimited] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [targetFrames, setTargetFrames] = useState(154);
+  const [videoFps, setVideoFps] = useState(25);
+  const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
+  const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -240,6 +249,57 @@ export default function SharePage() {
     }
   };
 
+  const handleDeviceTransfer = async () => {
+    if (!selectedFile || !mediaKind || transferring) return;
+    const serial = getAuthState()?.serial?.trim();
+    if (!serial) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    setTransferring(true);
+    setErrorMessage("");
+    setNotice("");
+    setProgress("正在查找认证设备...");
+    let client: Awaited<ReturnType<typeof createV1ProWebTransferClient>> | null = null;
+    try {
+      client = await createV1ProWebTransferClient();
+      const devices = await listAuthorizedV1ProDevices();
+      const device = devices.find((item) => item.serialNumber?.trim() === serial);
+      if (!device) {
+        throw new Error(`未找到当前认证的 V1PRO（SN ${serial}），请重新认证`);
+      }
+
+      setProgress(`正在连接 SN ${serial}...`);
+      await client.connect({ device });
+      const result = await client.transferFile(selectedFile, {
+        fileName: selectedFile.name,
+        mediaType: mediaKind,
+        maxFrames: targetFrames,
+        maxVideoFps: videoFps,
+        minVideoFps: videoFps,
+        fitMode,
+        rotationDeg,
+        pingFirst: false,
+        onProgress: (info) => {
+          if (info.note && info.sent === 0) {
+            setProgress(info.note);
+            return;
+          }
+          const percent = Math.round(info.ratio * 100);
+          setProgress(info.phase === "encode" ? `正在编码 ${percent}%` : `正在下传 ${percent}%`);
+        },
+      });
+      setNotice(`下传完成：SN ${serial} · ${result.frameCount} 帧`);
+    } catch (err) {
+      setErrorMessage(formatClientError(err, "设备下传失败"));
+    } finally {
+      await client?.disconnect();
+      setTransferring(false);
+      setProgress("");
+    }
+  };
+
   const gifMb = Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024));
   const videoMb = Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024));
 
@@ -283,6 +343,16 @@ export default function SharePage() {
               {uploading ? progress || "分享中..." : "分享到素材库"}
             </SiteButton>
           ) : null}
+          {selectedFile && mediaKind ? (
+            <SiteButton
+              type="button"
+              variant="secondary"
+              disabled={uploading || transferring}
+              onClick={() => void handleDeviceTransfer()}
+            >
+              {transferring ? progress || "下传中..." : "下传到当前设备"}
+            </SiteButton>
+          ) : null}
         </div>
 
         {selectedFile && mediaKind ? (
@@ -311,6 +381,44 @@ export default function SharePage() {
                 </SiteSelect>
               </div>
             ) : null}
+            <div className="space-y-2">
+              <SiteLabel>目标设备容量</SiteLabel>
+              <SiteSelect value={targetFrames} onChange={(event) => setTargetFrames(Number(event.target.value))}>
+                <option value={77}>77 帧设备</option>
+                <option value={154}>154 帧设备</option>
+                <option value={308}>308 帧设备</option>
+              </SiteSelect>
+            </div>
+            {mediaKind === "video" ? (
+              <div className="space-y-2">
+                <SiteLabel>视频帧率</SiteLabel>
+                <SiteSelect value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
+                  <option value={10}>10 fps</option>
+                  <option value={15}>15 fps</option>
+                  <option value={20}>20 fps</option>
+                  <option value={25}>25 fps</option>
+                </SiteSelect>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <SiteLabel>画面显示</SiteLabel>
+              <SiteSelect value={fitMode} onChange={(event) => setFitMode(event.target.value as "fill" | "contain")}>
+                <option value="fill">铺满全屏</option>
+                <option value="contain">等比例完整显示</option>
+              </SiteSelect>
+            </div>
+            <div className="space-y-2">
+              <SiteLabel>画面方向</SiteLabel>
+              <SiteSelect
+                value={rotationDeg}
+                onChange={(event) => setRotationDeg(Number(event.target.value) as 0 | 90 | 180 | 270)}
+              >
+                <option value={0}>0° 原方向</option>
+                <option value={90}>90° 顺时针</option>
+                <option value={180}>180°</option>
+                <option value={270}>270° 顺时针</option>
+              </SiteSelect>
+            </div>
             <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400">
               已选：{kindLabel(mediaKind)} · {selectedFile.name}（
               {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB）

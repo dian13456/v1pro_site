@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.14";
+} from "./v1pro-constants.js?v=1.2.16";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -30,6 +30,10 @@ let gifCtx = null;
 let patchCanvas = null;
 /** @type {CanvasRenderingContext2D|null} */
 let patchCtx = null;
+/** @type {HTMLCanvasElement|null} */
+let transformCanvas = null;
+/** @type {CanvasRenderingContext2D|null} */
+let transformCtx = null;
 
 function ensureSharedCanvases() {
   if (!lcdCanvas) {
@@ -154,13 +158,51 @@ export function fitToLcdImageData(source, srcW, srcH) {
 }
 
 /**
+ * Stretch a frame to the full LCD dimensions (PC tool "fill").
+ * This intentionally fills every screen pixel without letterboxing.
+ * @param {CanvasImageSource} source
+ * @param {number} srcW
+ * @param {number} srcH
+ * @returns {ImageData}
+ */
+export function fillLcdImageData(source, srcW, srcH) {
+  const ctx = ensureSharedCanvases();
+  ctx.drawImage(source, 0, 0, srcW, srcH, 0, 0, LCD_W, LCD_H);
+  return ctx.getImageData(0, 0, LCD_W, LCD_H);
+}
+
+/**
  * @param {CanvasImageSource} source
  * @param {number} srcW
  * @param {number} srcH
  * @returns {Uint8Array}
  */
-export function sourceToRgb565(source, srcW, srcH) {
-  const data = fitToLcdImageData(source, srcW, srcH).data;
+export function sourceToRgb565(source, srcW, srcH, fitMode = "contain", rotationDeg = 0) {
+  let renderSource = source;
+  let renderW = srcW;
+  let renderH = srcH;
+  const rotation = ((Number(rotationDeg) % 360) + 360) % 360;
+  if (rotation === 90 || rotation === 180 || rotation === 270) {
+    const swap = rotation === 90 || rotation === 270;
+    renderW = swap ? srcH : srcW;
+    renderH = swap ? srcW : srcH;
+    if (!transformCanvas) transformCanvas = document.createElement("canvas");
+    transformCanvas.width = renderW;
+    transformCanvas.height = renderH;
+    transformCtx = transformCanvas.getContext("2d", { alpha: false });
+    if (!transformCtx) throw new Error("Canvas 不可用。");
+    transformCtx.save();
+    transformCtx.fillStyle = "#000000";
+    transformCtx.fillRect(0, 0, renderW, renderH);
+    transformCtx.translate(renderW / 2, renderH / 2);
+    transformCtx.rotate((rotation * Math.PI) / 180);
+    transformCtx.drawImage(source, 0, 0, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
+    transformCtx.restore();
+    renderSource = transformCanvas;
+  }
+  const data = (fitMode === "fill"
+    ? fillLcdImageData(renderSource, renderW, renderH)
+    : fitToLcdImageData(renderSource, renderW, renderH)).data;
   const out = new Uint8Array(FRAME_PIXEL_BYTES);
   let o = 0;
   for (let i = 0; i < data.length; i += 4) {
@@ -303,7 +345,7 @@ function seekVideoTo(video, time) {
  */
 export function planVideoSampleSchedule(duration, maxFrames, opts = {}) {
   const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
-  const minVideoFps = opts.minVideoFps ?? MIN_VIDEO_FPS;
+  const minVideoFps = opts.minVideoFps ?? Math.min(MIN_VIDEO_FPS, maxVideoFps);
   const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
   const safeDuration = Math.max(0.001, duration);
   const budget = Math.max(1, maxFrames);
@@ -405,6 +447,8 @@ async function planVideoWithSeek(blob, opts) {
   const maxVideoFps = opts.maxVideoFps ?? MAX_VIDEO_FPS;
   const maxVideoSpeed = opts.maxVideoSpeed ?? MAX_VIDEO_SPEED;
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
+  const fitMode = opts.fitMode === "fill" ? "fill" : "contain";
+  const rotationDeg = opts.rotationDeg ?? 0;
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -443,6 +487,7 @@ async function planVideoWithSeek(blob, opts) {
 
     const schedule = planVideoSampleSchedule(duration, maxFrames, {
       maxVideoFps,
+      minVideoFps,
       maxVideoSpeed,
     });
     const { frameCount, fps, sourceSpan } = schedule;
@@ -476,7 +521,7 @@ async function planVideoWithSeek(blob, opts) {
           yield headerBlock;
           for (let i = 0; i < frameCount; i += 1) {
             await seekVideoTo(video, times[i]);
-            const rgb = sourceToRgb565(video, vw, vh);
+            const rgb = sourceToRgb565(video, vw, vh, fitMode, rotationDeg);
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;
           }
@@ -523,8 +568,11 @@ export async function planGfm1Encode(blob, opts = {}) {
     return planVideoWithSeek(blob, {
       maxFrames,
       maxVideoFps: opts.maxVideoFps,
+      minVideoFps: opts.minVideoFps,
       maxVideoSpeed: opts.maxVideoSpeed,
       maxPayloadBytes: opts.maxPayloadBytes,
+      fitMode: opts.fitMode,
+      rotationDeg: opts.rotationDeg,
       onFrameEncoded,
     });
   }
@@ -540,7 +588,13 @@ export async function planGfm1Encode(blob, opts = {}) {
       payloadChunks: async function* () {
         try {
           yield headerBlock;
-          const rgb = sourceToRgb565(bitmap, bitmap.width, bitmap.height);
+          const rgb = sourceToRgb565(
+            bitmap,
+            bitmap.width,
+            bitmap.height,
+            opts.fitMode,
+            opts.rotationDeg,
+          );
           onFrameEncoded?.(1, 1);
           yield rgb;
         } finally {
@@ -551,14 +605,26 @@ export async function planGfm1Encode(blob, opts = {}) {
   }
 
   try {
-    return await planGifWithGifuct(blob, maxFrames, onFrameEncoded);
+    return await planGifWithGifuct(
+      blob,
+      maxFrames,
+      onFrameEncoded,
+      opts.fitMode,
+      opts.rotationDeg,
+    );
   } catch (err) {
     console.warn("[V1PRO] gifuct GIF failed:", err);
   }
 
   if (typeof ImageDecoder !== "undefined") {
     try {
-      return await planGifWithImageDecoder(blob, maxFrames, onFrameEncoded);
+      return await planGifWithImageDecoder(
+        blob,
+        maxFrames,
+        onFrameEncoded,
+        opts.fitMode,
+        opts.rotationDeg,
+      );
     } catch (err) {
       console.warn("[V1PRO] ImageDecoder GIF failed:", err);
     }
@@ -575,7 +641,13 @@ export async function planGfm1Encode(blob, opts = {}) {
     payloadChunks: async function* () {
       try {
         yield headerBlock;
-        const rgb = sourceToRgb565(bitmap, bitmap.width, bitmap.height);
+        const rgb = sourceToRgb565(
+          bitmap,
+          bitmap.width,
+          bitmap.height,
+          opts.fitMode,
+          opts.rotationDeg,
+        );
         onFrameEncoded?.(1, 1);
         yield rgb;
       } finally {
@@ -636,8 +708,8 @@ function loadHtmlImage(url) {
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.14");
+async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.16");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
@@ -684,7 +756,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
         patchData.data.set(frame.patch);
         pCtx.putImageData(patchData, 0, 0);
         gCtx.drawImage(pCanvas, frame.dims.left, frame.dims.top);
-        const rgb = sourceToRgb565(gifCanvas, gifW, gifH);
+        const rgb = sourceToRgb565(gifCanvas, gifW, gifH, fitMode, rotationDeg);
         onFrameEncoded?.(i + 1, frameCount);
         yield rgb;
         if (frame.disposalType === 2) {
@@ -703,7 +775,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded) {
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded) {
+async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
   const buffer = await blob.arrayBuffer();
   const decoder = new ImageDecoder({ data: buffer, type: "image/gif" });
 
@@ -756,7 +828,13 @@ async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded) {
         for (let i = 0; i < frameCount; i++) {
           const { bitmap } = decoded[i];
           try {
-            const rgb = sourceToRgb565(bitmap, bitmap.displayWidth, bitmap.displayHeight);
+            const rgb = sourceToRgb565(
+              bitmap,
+              bitmap.displayWidth,
+              bitmap.displayHeight,
+              fitMode,
+              rotationDeg,
+            );
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;
           } finally {

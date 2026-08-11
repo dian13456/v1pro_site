@@ -7,6 +7,7 @@ import { isStaticMode } from "./runtimeMode";
 import {
   createV1ProWebTransferClient,
   isWebUsbSupported,
+  listAuthorizedV1ProDevices,
   loadV1ProWebTransferSdk,
   WEBUSB_TRANSFER_VERSION,
 } from "./v1proWebTransferClient";
@@ -35,6 +36,22 @@ let sharedClient: V1ProWebTransferClient | null = null;
 let transferInflight: Promise<{ bytes: number; frameCount: number; note?: string }> | null = null;
 let transferInflightResourceId: number | null = null;
 const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+async function resolveAuthenticatedV1ProDevice(): Promise<USBDevice> {
+  const authenticatedSerial = getAuthState()?.serial?.trim();
+  if (!authenticatedSerial) {
+    throw new Error("认证 SN 无效，请重新选择设备进行认证");
+  }
+
+  const devices = await listAuthorizedV1ProDevices();
+  const matched = devices.find(
+    (device) => device.serialNumber?.trim() === authenticatedSerial,
+  );
+  if (!matched) {
+    throw new Error(`未找到当前认证的 V1PRO（SN ${authenticatedSerial}），请重新认证该设备`);
+  }
+  return matched;
+}
 
 function formatUsbError(err: unknown): string {
   if (err && typeof err === "object" && "name" in err && err.name === "V1ProUsbError" && "message" in err) {
@@ -256,11 +273,12 @@ export async function transferResourceViaWebUsb(
 
     let preEraseStarted = false;
     try {
+      const targetDevice = await resolveAuthenticatedV1ProDevice();
       const isVideo = resource.materialType === "video";
       if (isVideo) {
         callbacks.onStatus?.("正在连接设备并获取视频信息…");
         const [, directUrl] = await Promise.all([
-          client.connect({ reuseAuthorized: true }),
+          client.connect({ device: targetDevice }),
           fetchDirectTransferUrl(resource),
         ]);
         const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -310,7 +328,7 @@ export async function transferResourceViaWebUsb(
       let connected = false;
       let downloadDone = false;
       callbacks.onStatus?.("正在连接设备…");
-      const connectTask = client.connect({ reuseAuthorized: true }).then((device) => {
+      const connectTask = client.connect({ device: targetDevice }).then((device) => {
         connected = true;
         callbacks.onStatus?.(
           downloadDone
@@ -378,6 +396,11 @@ export async function transferResourceViaWebUsb(
         sharedClient = null;
       }
       throw new Error(formatUsbError(err));
+    } finally {
+      // Website transfers are one-shot. Always release the selected device so
+      // another V1PRO or the desktop GUI can claim its interface immediately.
+      await client.disconnect();
+      sharedClient = null;
     }
   })();
 

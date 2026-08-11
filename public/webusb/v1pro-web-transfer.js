@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.14";
+} from "./v1pro-constants.js?v=1.2.16";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.14";
+} from "./v1pro-gfm1.js?v=1.2.16";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -23,7 +23,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.14";
+} from "./v1pro-usb.js?v=1.2.16";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -139,6 +139,7 @@ export class V1ProWebTransfer {
       opts.maxFrames ?? this.deviceCapacity.maxFrames,
       {
         maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
+        minVideoFps: opts.minVideoFps,
         maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
       }
     );
@@ -252,10 +253,13 @@ export class V1ProWebTransfer {
       const plan = await planGfm1Encode(file, {
         maxFrames,
         maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
+        minVideoFps: opts.minVideoFps,
         maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
         maxPayloadBytes,
         fileName,
         mediaType: opts.mediaType,
+        fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
+        rotationDeg: opts.rotationDeg ?? 0,
         onFrameEncoded: (frameIndex, frameCount) => {
           if (onProgress) {
             onProgress({
