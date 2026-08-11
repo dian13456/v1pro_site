@@ -122,7 +122,7 @@ export default function SharePage() {
   const [shareRemaining, setShareRemaining] = useState<number | null>(null);
   const [shareUnlimited, setShareUnlimited] = useState(false);
   const [transferring, setTransferring] = useState(false);
-  const [targetFrames, setTargetFrames] = useState(154);
+  const [targetFrameOptions, setTargetFrameOptions] = useState<number[]>([77, 154, 308]);
   const [videoFps, setVideoFps] = useState(25);
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
@@ -272,10 +272,19 @@ export default function SharePage() {
 
       setProgress(`正在连接 SN ${serial}...`);
       await client.connect({ device });
+      const detectedFrames = client.deviceCapacity?.maxFrames;
+      if (!detectedFrames) {
+        throw new Error("无法读取设备容量，请重新连接后重试");
+      }
+      if (!targetFrameOptions.includes(detectedFrames)) {
+        throw new Error(
+          `当前设备为 ${detectedFrames} 帧，未在目标设备容量中勾选该型号`,
+        );
+      }
       const result = await client.transferFile(selectedFile, {
         fileName: selectedFile.name,
         mediaType: mediaKind,
-        maxFrames: targetFrames,
+        maxFrames: detectedFrames,
         maxVideoFps: videoFps,
         minVideoFps: videoFps,
         fitMode,
@@ -347,7 +356,7 @@ export default function SharePage() {
             <SiteButton
               type="button"
               variant="secondary"
-              disabled={uploading || transferring}
+              disabled={uploading || transferring || targetFrameOptions.length === 0}
               onClick={() => void handleDeviceTransfer()}
             >
               {transferring ? progress || "下传中..." : "下传到当前设备"}
@@ -381,13 +390,32 @@ export default function SharePage() {
                 </SiteSelect>
               </div>
             ) : null}
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <SiteLabel>目标设备容量</SiteLabel>
-              <SiteSelect value={targetFrames} onChange={(event) => setTargetFrames(Number(event.target.value))}>
-                <option value={77}>77 帧设备</option>
-                <option value={154}>154 帧设备</option>
-                <option value={308}>308 帧设备</option>
-              </SiteSelect>
+              <div className="flex flex-wrap gap-3">
+                {[77, 154, 308].map((frames) => (
+                  <label
+                    key={frames}
+                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={targetFrameOptions.includes(frames)}
+                      onChange={(event) => {
+                        setTargetFrameOptions((current) =>
+                          event.target.checked
+                            ? Array.from(new Set([...current, frames])).sort((a, b) => a - b)
+                            : current.filter((item) => item !== frames),
+                        );
+                      }}
+                    />
+                    {frames} 帧设备
+                  </label>
+                ))}
+              </div>
+              {targetFrameOptions.length === 0 ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">请至少选择一种目标设备容量</p>
+              ) : null}
             </div>
             {mediaKind === "video" ? (
               <div className="space-y-2">
