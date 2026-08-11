@@ -33,7 +33,7 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
 }
 
 let sharedClient: V1ProWebTransferClient | null = null;
-let transferInflight: Promise<{ bytes: number; frameCount: number; note?: string }> | null = null;
+let transferInflight: Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> | null = null;
 let transferInflightResourceId: number | null = null;
 const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
 
@@ -256,7 +256,7 @@ export async function transferResourceViaWebUsb(
   options: {
     videoFps?: number;
   } = {},
-): Promise<{ bytes: number; frameCount: number; note?: string }> {
+): Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> {
   if (!canWebUsbDirectTransfer(resource)) {
     throw new Error("当前素材或浏览器不支持网页直传");
   }
@@ -291,12 +291,18 @@ export async function transferResourceViaWebUsb(
         }
         callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
         const videoFps = options.videoFps;
+        if (!videoFps) {
+          throw new Error("未指定视频下传帧率，请重新选择 20、25 或 30 fps。");
+        }
         const prediction = await client.predictVideoUrl(directUrl, {
           maxVideoFps: videoFps,
           minVideoFps: videoFps,
         });
+        if (prediction.fps !== videoFps) {
+          throw new Error(`视频帧率预处理不一致：选择 ${videoFps} fps，实际为 ${prediction.fps} fps。`);
+        }
         callbacks.onStatus?.(
-          `预测可装入：${prediction.frameCount} 帧，正在预擦除并下载视频…`,
+          `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在预擦除并下载视频…`,
         );
         preEraseStarted = true;
         const [, blob] = await Promise.all([
@@ -328,10 +334,16 @@ export async function transferResourceViaWebUsb(
             callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
           },
         });
-        let message = `网页直传完成：${result.frameCount} 帧`;
+        if (result.fps !== videoFps) {
+          throw new Error(`视频实际编码帧率不一致：选择 ${videoFps} fps，实际为 ${result.fps ?? "未知"} fps。`);
+        }
+        if (result.frameCount !== prediction.frameCount) {
+          throw new Error(`视频写入帧数不一致：预计 ${prediction.frameCount} 帧，实际 ${result.frameCount} 帧。`);
+        }
+        let message = `网页直传完成：${result.frameCount} 帧 · ${result.fps}fps`;
         if (result.note) message += `（${result.note}）`;
         callbacks.onStatus?.(message);
-        return result;
+        return { ...result, predictedFrameCount: prediction.frameCount };
       }
 
       let connected = false;

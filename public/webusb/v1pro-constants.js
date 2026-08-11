@@ -37,7 +37,7 @@ export const ANIM_FLASH_MAX_BYTES = 0x02000000 - 0x1000;
 export const DEFAULT_MAX_GIF_FRAMES = 70;
 
 /** Video encode: prefer up to this output fps (device capacity may lower it). */
-export const MAX_VIDEO_FPS = 25;
+export const MAX_VIDEO_FPS = 30;
 
 /** Lowest permitted video output fps before applying playback speed-up. */
 export const MIN_VIDEO_FPS = 20;
@@ -52,7 +52,7 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.18";
+export const WEBUSB_TRANSFER_VERSION = "1.2.20";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
 export const PREFETCH_CHUNKS_BEFORE_START = 6;

@@ -152,7 +152,7 @@ export default function WebUsbTransferTestPage() {
       const capacityLabel = client.getCapacityLabel?.() ?? "";
       setMetaText(
         capacityLabel
-          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（视频最高 25fps，必要时自动倍速）。`
+          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（视频最高 30fps，必要时自动倍速）。`
           : "设备已连接，将图片、GIF 或视频拖入下方区域即可自动传输。",
       );
     } catch (err) {

@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.18";
+} from "./v1pro-constants.js?v=1.2.20";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.18";
+} from "./v1pro-gfm1.js?v=1.2.20";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -23,7 +23,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.18";
+} from "./v1pro-usb.js?v=1.2.20";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -274,6 +274,15 @@ export class V1ProWebTransfer {
         },
       });
 
+      const requestedVideoFps =
+        isVideo && opts.maxVideoFps === opts.minVideoFps ? opts.maxVideoFps : null;
+      if (requestedVideoFps != null && plan.fps !== requestedVideoFps) {
+        throw new V1ProUsbError(
+          "video_fps_mismatch",
+          `视频实际编码帧率不一致：选择 ${requestedVideoFps}fps，实际为 ${plan.fps ?? "未知"}fps。`
+        );
+      }
+
       if (maxPayloadBytes && plan.totalBytes > maxPayloadBytes) {
         throw new V1ProUsbError(
           "gfm1_too_large",
@@ -321,7 +330,12 @@ export class V1ProWebTransfer {
         });
       }
 
-      return { bytes: plan.totalBytes, frameCount: plan.frameCount, note };
+      return {
+        bytes: plan.totalBytes,
+        frameCount: plan.frameCount,
+        fps: isVideo ? plan.fps : undefined,
+        note,
+      };
     } finally {
       this.preparedTransferBytes = null;
       this.busy = false;

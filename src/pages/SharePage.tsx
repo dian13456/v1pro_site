@@ -431,10 +431,9 @@ export default function SharePage() {
                 <div className="space-y-2">
                   <SiteLabel>视频帧率</SiteLabel>
                   <SiteSelect value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
-                    <option value={10}>10 fps</option>
-                    <option value={15}>15 fps</option>
                     <option value={20}>20 fps</option>
                     <option value={25}>25 fps</option>
+                    <option value={30}>30 fps</option>
                   </SiteSelect>
                 </div>
                 <div className="space-y-2">

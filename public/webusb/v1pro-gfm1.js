@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.18";
+} from "./v1pro-constants.js?v=1.2.20";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -357,7 +357,7 @@ function seekVideoTo(video, time) {
 }
 
 /**
- * Plan a complete-video conversion. First lower fps from 25 to 20, then apply
+ * Plan a complete-video conversion. First lower fps from 30 to 20, then apply
  * up to 5x playback speed. Never truncate the source video.
  * @param {number} duration source seconds
  * @param {number} maxFrames device frame budget
@@ -536,6 +536,7 @@ async function planVideoWithSeek(blob, opts) {
 
     return {
       frameCount,
+      fps,
       totalBytes,
       note,
       payloadChunks: async function* () {
@@ -562,6 +563,7 @@ async function planVideoWithSeek(blob, opts) {
  * @param {{ maxFrames?: number, fileName?: string, onFrameEncoded?: (index: number, total: number) => void }} [opts]
  * @returns {Promise<{
  *   frameCount: number,
+ *   fps?: number,
  *   totalBytes: number,
  *   note?: string,
  *   payloadChunks: () => AsyncGenerator<Uint8Array, void, void>,
@@ -732,7 +734,7 @@ function loadHtmlImage(url) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.18");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.20");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

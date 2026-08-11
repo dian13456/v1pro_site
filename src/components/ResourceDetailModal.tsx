@@ -143,7 +143,7 @@ export function ResourceDetailModal({
 
           {isAnimated ? (
             <>
-              <p className="mt-5 text-sm font-semibold text-slate-500">视频帧率（实时换算占用帧）</p>
+              <p className="mt-5 text-sm font-semibold text-slate-500">下传设备帧率（实际编码）</p>
               <div className="mt-2 grid grid-cols-4 gap-2">
                 {VIDEO_FPS_OPTIONS.map((value) => (
                   <button
@@ -161,24 +161,28 @@ export function ResourceDetailModal({
 
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/40">
             <p className="text-slate-600 dark:text-slate-300">
-              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 占用 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 占用 <strong>1 帧</strong></>}
+              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
             </p>
             {metricsKnown ? <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold">
               {assessments.map((item) => (
                 <span key={item.capacity} className={item.originalSpeed ? "text-emerald-500" : item.fits ? "text-orange-500" : "text-rose-500"}>
-                  {item.capacity} 帧设备 ✓ {item.originalSpeed ? "原速可放" : item.fits ? `自动加速 ${item.speed.toFixed(2)}×${item.playbackSec ? `(${item.playbackSec.toFixed(1)}s)` : ""}` : "无法完整装入"}
+                  {item.capacity} 帧设备：{item.originalSpeed
+                    ? `原速写入 ${item.encodedFrames} 帧`
+                    : item.fits
+                      ? `实际写入 ${item.encodedFrames} 帧 · 自动加速 ${item.speed.toFixed(2)}×${item.playbackSec ? `(${item.playbackSec.toFixed(1)}s)` : ""}`
+                      : `无法装入 · 至少需要 ${item.minimumFrames} 帧容量`}
                 </span>
               ))}
             </div> : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
-            <p className="mt-2 text-xs text-slate-500">✓ 实际下传使用相同帧率与容量算法，不只是页面预估</p>
+            <p className="mt-2 text-xs text-slate-500">✓ 所选帧率会写入设备动画；“下载原文件”不会转换源视频帧率</p>
           </div>
 
           <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
             <button type="button" disabled={downloading} onClick={() => onDownload(resource)} className="rounded-2xl bg-slate-100 px-4 py-3.5 font-semibold text-slate-600 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">
-              {downloading ? "下载中…" : "下载文件"}
+              {downloading ? "下载中…" : "下载原文件"}
             </button>
             <button type="button" disabled={transferring || !canDirectTransfer} onClick={() => onTransfer(resource, fps)} className="rounded-2xl bg-gradient-to-r from-violet-500 to-blue-500 px-4 py-3.5 font-semibold text-white shadow-lg shadow-violet-500/25 disabled:opacity-50">
-              {!canDirectTransfer ? "该格式需先下载" : transferring ? "正在下传…" : "⬇ 下载到当前设备"}
+              {!canDirectTransfer ? "该格式需先下载" : transferring ? `正在以 ${fps} fps 下传…` : `⬇ 以 ${fps} fps 下传设备`}
             </button>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import type { ResourceItem } from "../types/resource";
 
 export const DEVICE_FRAME_CAPACITIES = [77, 154, 308] as const;
-export const VIDEO_FPS_OPTIONS = [10, 15, 20, 25] as const;
+export const VIDEO_FPS_OPTIONS = [20, 25, 30] as const;
 export const MAX_AUTOMATIC_SPEED = 5;
 
 export type DeviceFrameCapacity = (typeof DEVICE_FRAME_CAPACITIES)[number];
@@ -17,6 +17,8 @@ export interface ResourceMediaMetrics {
 export interface CapacityAssessment {
   capacity: DeviceFrameCapacity;
   requiredFrames: number;
+  encodedFrames: number | null;
+  minimumFrames: number;
   speed: number;
   playbackSec: number | null;
   fits: boolean;
@@ -79,6 +81,8 @@ export function assessDeviceCapacities(
     return {
       capacity,
       requiredFrames: required,
+      encodedFrames: speed <= MAX_AUTOMATIC_SPEED ? Math.min(required, capacity) : null,
+      minimumFrames: Math.ceil(required / MAX_AUTOMATIC_SPEED),
       speed,
       playbackSec: metrics.durationSec ? metrics.durationSec / speed : null,
       fits: speed <= MAX_AUTOMATIC_SPEED,

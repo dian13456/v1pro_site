@@ -336,7 +336,9 @@ export default function ResourcesPage() {
       videoFps: resource.materialType === "video" ? videoFps : undefined,
     })
       .then((result) => {
-        let message = `网页直传完成：${result.frameCount} 帧`;
+        let message = result.predictedFrameCount != null
+          ? `网页直传完成：预计 ${result.predictedFrameCount} 帧 · 实际 ${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`
+          : `网页直传完成：${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`;
         if (result.note) {
           message += `（${result.note}）`;
         }

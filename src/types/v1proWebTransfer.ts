@@ -26,6 +26,7 @@ export interface V1ProTransferProgress {
 export interface V1ProTransferResult {
   bytes: number;
   frameCount: number;
+  fps?: number;
   note?: string;
 }
 
