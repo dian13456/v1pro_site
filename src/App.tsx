@@ -26,6 +26,7 @@ import DownloadCenterPage from "./pages/DownloadCenterPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 import WebUsbTransferTestPage from "./pages/WebUsbTransferTestPage.tsx";
 import CreatorPage from "./pages/CreatorPage.tsx";
+import CreditLeaderboardPage from "./pages/CreditLeaderboardPage.tsx";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -196,6 +197,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ActivityPromoAdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leaderboard"
+            element={
+              <ProtectedRoute>
+                <CreditLeaderboardPage />
               </ProtectedRoute>
             }
           />
