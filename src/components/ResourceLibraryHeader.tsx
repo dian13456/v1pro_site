@@ -1,9 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { clearAuthState, getAuthState } from "../services/authService";
-import { fetchProfile } from "../services/profileService";
-import { getCustomDisplayName } from "../services/welcomeService";
-import { PROFILE_AVATAR_CHANGED_EVENT } from "../services/avatarService";
+import { clearAuthState } from "../services/authService";
 
 interface ResourceLibraryHeaderProps {
   keyword: string;
@@ -13,33 +10,8 @@ interface ResourceLibraryHeaderProps {
 export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHeaderProps) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(keyword);
-  const [credits, setCredits] = useState<number | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState("");
-  const auth = getAuthState();
-  const serial = auth?.serial?.trim() || "未认证";
-  const nickname = auth?.serial ? getCustomDisplayName(auth.serial) : "";
 
   useEffect(() => setDraft(keyword), [keyword]);
-  useEffect(() => {
-    let active = true;
-    void fetchProfile()
-      .then((profile) => {
-        if (!active) return;
-        if (typeof profile.credits === "number") setCredits(profile.credits);
-        setAvatarUrl(profile.avatarUrl || "");
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [serial]);
-  useEffect(() => {
-    const handleAvatarChanged = (event: Event) => {
-      setAvatarUrl((event as CustomEvent<{ avatarUrl?: string }>).detail?.avatarUrl || "");
-    };
-    window.addEventListener(PROFILE_AVATAR_CHANGED_EVENT, handleAvatarChanged);
-    return () => window.removeEventListener(PROFILE_AVATAR_CHANGED_EVENT, handleAvatarChanged);
-  }, []);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -68,12 +40,10 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
           />
         </form>
         <Link
-          to="/profile"
-          className="hidden max-w-xs items-center gap-2 truncate rounded-full bg-[#f5f6fb] px-2.5 py-1.5 text-xs text-[#8a93a8] 2xl:inline-flex"
-          title={`SN: ${serial}`}
+          to="/"
+          className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] sm:inline-flex"
         >
-          {avatarUrl ? <img src={avatarUrl} alt="个人头像" className="h-6 w-6 shrink-0 rounded-full object-cover" /> : null}
-          <span className="truncate">{nickname ? `${nickname} · ` : ""}SN: {serial}{credits != null ? ` · ${credits} 积分` : ""}</span>
+          素材主页
         </Link>
         <Link
           to="/share"
