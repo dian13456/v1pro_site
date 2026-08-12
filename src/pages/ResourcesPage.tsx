@@ -53,6 +53,7 @@ export default function ResourcesPage() {
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
+  const [webUsbProgress, setWebUsbProgress] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
   const [playingUrl, setPlayingUrl] = useState<string>("");
@@ -330,8 +331,10 @@ export default function ResourcesPage() {
 
     setErrorMessage("");
     setWebUsbTransferringId(resource.id);
+    setWebUsbProgress(0);
     void transferResourceViaWebUsb(resource, {
       onStatus: (message) => setTransferNotice(message),
+      onProgress: setWebUsbProgress,
     }, {
       videoFps: resource.materialType === "video" ? videoFps : undefined,
     })
@@ -343,9 +346,15 @@ export default function ResourcesPage() {
           message += `（${result.note}）`;
         }
         setTransferNotice(message);
-        window.setTimeout(() => setTransferNotice(""), 6000);
+        setWebUsbProgress(100);
+        window.setTimeout(() => {
+          setTransferNotice("");
+          setWebUsbProgress(null);
+        }, 6000);
       })
       .catch((err) => {
+        setTransferNotice("");
+        setWebUsbProgress(null);
         setErrorMessage((err as Error)?.message || "网页直传失败");
       })
       .finally(() => {
@@ -360,6 +369,7 @@ export default function ResourcesPage() {
     }
 
     setErrorMessage("");
+    setWebUsbProgress(null);
     void handleTransferButtonClick(
       resource,
       {
@@ -480,7 +490,7 @@ export default function ResourcesPage() {
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
-      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      <V1ProTransferNotice message={transferNotice} progress={webUsbProgress} onDismiss={() => { setTransferNotice(""); setWebUsbProgress(null); }} />
       <ResourceLibraryHeader
         keyword={keyword}
         onSearch={(value) => {

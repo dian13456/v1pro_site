@@ -23,6 +23,7 @@ export default function CreatorPage() {
   const { resources, loading, error } = useResourceCatalog();
   const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
+  const [webUsbProgress, setWebUsbProgress] = useState<number | null>(null);
   const [avatarUrl, setAvatarUrl] = useState("");
   const {
     transferringId,
@@ -91,9 +92,10 @@ export default function CreatorPage() {
     if (webUsbTransferringId !== null) return;
     setErrorMessage("");
     setWebUsbTransferringId(resource.id);
+    setWebUsbProgress(0);
     void transferResourceViaWebUsb(
       resource,
-      { onStatus: (message) => setTransferNotice(message) },
+      { onStatus: (message) => setTransferNotice(message), onProgress: setWebUsbProgress },
       { videoFps: resource.materialType === "video" ? videoFps : undefined },
     )
       .then((result) => {
@@ -101,15 +103,23 @@ export default function CreatorPage() {
         let message = `网页直传完成：${predicted}实际 ${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`;
         if (result.note) message += `（${result.note}）`;
         setTransferNotice(message);
-        window.setTimeout(() => setTransferNotice(""), 6000);
+        setWebUsbProgress(100);
+        window.setTimeout(() => {
+          setTransferNotice("");
+          setWebUsbProgress(null);
+        }, 6000);
       })
-      .catch((err) => setErrorMessage((err as Error)?.message || "网页直传失败"))
+      .catch((err) => {
+        setTransferNotice("");
+        setWebUsbProgress(null);
+        setErrorMessage((err as Error)?.message || "网页直传失败");
+      })
       .finally(() => setWebUsbTransferringId(null));
   };
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
-      <V1ProTransferNotice message={transferNotice} onDismiss={() => setTransferNotice("")} />
+      <V1ProTransferNotice message={transferNotice} progress={webUsbProgress} onDismiss={() => { setTransferNotice(""); setWebUsbProgress(null); }} />
       <ResourceLibraryHeader keyword="" onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")} />
       <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">

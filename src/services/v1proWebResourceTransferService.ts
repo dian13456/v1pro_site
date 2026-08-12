@@ -252,6 +252,7 @@ export async function transferResourceViaWebUsb(
   resource: ResourceItem,
   callbacks: {
     onStatus?: (message: string) => void;
+    onProgress?: (progress: number) => void;
   } = {},
   options: {
     videoFps?: number;
@@ -268,6 +269,10 @@ export async function transferResourceViaWebUsb(
   }
 
   const task = (async () => {
+    const reportProgress = (progress: number) => callbacks.onProgress?.(
+      Math.max(0, Math.min(100, progress)),
+    );
+    reportProgress(2);
     await loadV1ProWebTransferSdk();
     if (!sharedClient) {
       sharedClient = await createV1ProWebTransferClient();
@@ -279,6 +284,7 @@ export async function transferResourceViaWebUsb(
       const targetDevice = await resolveAuthenticatedV1ProDevice();
       const isVideo = resource.materialType === "video";
       if (isVideo) {
+        reportProgress(5);
         callbacks.onStatus?.("正在连接设备并获取视频信息…");
         const [, directUrl] = await Promise.all([
           client.connect({ device: targetDevice }),
@@ -290,6 +296,7 @@ export async function transferResourceViaWebUsb(
           throw new Error(`无法读取设备容量${detail}`);
         }
         callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
+        reportProgress(12);
         const videoFps = options.videoFps;
         if (!videoFps) {
           throw new Error("未指定视频下传帧率，请重新选择 20、25 或 30 fps。");
@@ -304,14 +311,16 @@ export async function transferResourceViaWebUsb(
         callbacks.onStatus?.(
           `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在预擦除并下载视频…`,
         );
+        reportProgress(18);
         preEraseStarted = true;
         const [, blob] = await Promise.all([
           client.beginPreparedVideoTransfer(prediction.totalBytes),
           fetchTransferBlob(
             resource,
-            (received, total) => callbacks.onStatus?.(
-              `${formatDownloadProgress(received, total)} · 设备正在预擦除`,
-            ),
+            (received, total) => {
+              callbacks.onStatus?.(`${formatDownloadProgress(received, total)} · 设备正在预擦除`);
+              if (total > 0) reportProgress(18 + (received / total) * 27);
+            },
             () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载（设备继续预擦除）…"),
             directUrl,
           ),
@@ -319,6 +328,7 @@ export async function transferResourceViaWebUsb(
         await validateTransferBlob(resource, blob);
         const fileName = guessTransferFileName(resource);
         callbacks.onStatus?.("视频下载完成，正在解码并传输…");
+        reportProgress(45);
         const result = await client.transferFile(blob, {
           fileName,
           mediaType: "video",
@@ -329,9 +339,11 @@ export async function transferResourceViaWebUsb(
           onProgress: (info) => {
             if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
               callbacks.onStatus?.(`正在解码视频… ${info.sent}/${info.frameCount} 帧`);
+              reportProgress(45 + (info.sent / info.frameCount) * 15);
               return;
             }
             callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
+            reportProgress(60 + info.ratio * 39);
           },
         });
         if (result.fps !== videoFps) {
@@ -343,12 +355,14 @@ export async function transferResourceViaWebUsb(
         let message = `网页直传完成：${result.frameCount} 帧 · ${result.fps}fps`;
         if (result.note) message += `（${result.note}）`;
         callbacks.onStatus?.(message);
+        reportProgress(100);
         return { ...result, predictedFrameCount: prediction.frameCount };
       }
 
       let connected = false;
       let downloadDone = false;
       callbacks.onStatus?.("正在连接设备…");
+      reportProgress(5);
       const connectTask = client.connect({ device: targetDevice }).then((device) => {
         connected = true;
         callbacks.onStatus?.(
@@ -360,7 +374,9 @@ export async function transferResourceViaWebUsb(
       });
       const downloadTask = fetchTransferBlob(
         resource,
-        undefined,
+        (received, total) => {
+          if (total > 0) reportProgress(5 + (received / total) * 30);
+        },
         () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
       ).then((blob) => {
         downloadDone = true;
@@ -378,6 +394,7 @@ export async function transferResourceViaWebUsb(
       const fileName = guessTransferFileName(resource);
 
       callbacks.onStatus?.("正在编码并传输…");
+      reportProgress(38);
       const result = await client.transferFile(blob, {
         fileName,
         mediaType:
@@ -396,9 +413,11 @@ export async function transferResourceViaWebUsb(
             callbacks.onStatus?.(
               `正在编码… ${info.sent}/${info.frameCount} 帧`,
             );
+            reportProgress(38 + (info.sent / info.frameCount) * 17);
             return;
           }
           callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
+          reportProgress(55 + info.ratio * 44);
         },
       });
 
@@ -407,6 +426,7 @@ export async function transferResourceViaWebUsb(
         message += `（${result.note}）`;
       }
       callbacks.onStatus?.(message);
+      reportProgress(100);
       return result;
     } catch (err) {
       if (preEraseStarted) {

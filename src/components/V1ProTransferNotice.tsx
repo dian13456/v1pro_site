@@ -1,9 +1,10 @@
 interface V1ProTransferNoticeProps {
   message: string;
   onDismiss: () => void;
+  progress?: number | null;
 }
 
-export function V1ProTransferNotice({ message, onDismiss }: V1ProTransferNoticeProps) {
+export function V1ProTransferNotice({ message, onDismiss, progress = null }: V1ProTransferNoticeProps) {
   if (!message) {
     return null;
   }
@@ -21,6 +22,24 @@ export function V1ProTransferNotice({ message, onDismiss }: V1ProTransferNoticeP
           ×
         </button>
       </div>
+      {progress != null ? (
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            <span>{progress >= 100 ? "传输完成" : "网页直传进度"}</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#32b879] via-[#32c89a] to-[#5a9cff] transition-[width] duration-200 ease-out"
+              style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
