@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { MallProductImage } from "../components/MallProductImage";
@@ -59,6 +60,18 @@ export default function ActivityPromoAdminPage() {
       void loadList(adminToken);
     }
   }, []);
+
+  useEffect(() => {
+    if (!detail) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDetail(null);
+        setSelectedId("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [detail]);
 
   const handleLoggedIn = () => {
     refreshSession();
@@ -197,8 +210,37 @@ export default function ActivityPromoAdminPage() {
             </div>
           </SitePanel>
 
-          {detail ? (
-            <SitePanel>
+          {detail
+            ? createPortal(
+                <div
+                  className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-sm"
+                  role="presentation"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) {
+                      setDetail(null);
+                      setSelectedId("");
+                    }
+                  }}
+                >
+                  <div
+                    className="relative my-auto max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl shadow-2xl"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="报名审核详情"
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-slate-900/70 text-xl leading-none text-white transition hover:bg-slate-900"
+                      aria-label="关闭审核详情"
+                      onClick={() => {
+                        setDetail(null);
+                        setSelectedId("");
+                      }}
+                    >
+                      ×
+                    </button>
+                    <SitePanel>
               <SiteSectionTitle title="报名详情" description={detail.id} />
               <div className="mt-3 grid gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <p>活动：{PROMO_CAMPAIGN_LABEL[detail.campaignId]}</p>
@@ -253,8 +295,12 @@ export default function ActivityPromoAdminPage() {
                   </SiteButton>
                 </div>
               </div>
-            </SitePanel>
-          ) : null}
+                    </SitePanel>
+                  </div>
+                </div>,
+                document.body,
+              )
+            : null}
         </>
       ) : null}
     </SitePageLayout>
