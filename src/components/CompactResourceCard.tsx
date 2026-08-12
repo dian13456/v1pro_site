@@ -74,16 +74,18 @@ export function CompactResourceCard({
           onOpen(resource);
         }
       }}
-      className="group overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900"
+      className="group cursor-pointer touch-manipulation overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900"
     >
       <div className={`relative aspect-[1.618] overflow-hidden bg-gradient-to-br ${PREVIEW_BACKGROUNDS[resource.id % PREVIEW_BACKGROUNDS.length]}`}>
-        {previewUrl ? (
-          <img src={previewUrl} alt={resource.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" loading="lazy" />
-        ) : (
-          <div className="grid h-full place-items-center text-5xl opacity-80">
-            {resource.materialType === "video" ? "🎬" : resource.materialType === "gif" ? "🔁" : "🖼️"}
-          </div>
-        )}
+        <div className="grid h-full place-items-center text-5xl opacity-80" aria-hidden={Boolean(previewUrl)}>
+          {resource.materialType === "video" ? "🎬" : resource.materialType === "gif" ? "🔁" : "🖼️"}
+        </div>
+        <img
+          src={previewUrl || undefined}
+          alt={resource.title}
+          className={`absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] ${previewUrl ? "opacity-100" : "pointer-events-none opacity-0"}`}
+          loading="lazy"
+        />
         <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${resource.materialType === "image" ? "bg-violet-500" : resource.materialType === "gif" ? "bg-orange-400" : "bg-emerald-500"}`}>
           {materialLabel(resource)}
         </span>
