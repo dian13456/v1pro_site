@@ -19,6 +19,8 @@ interface ResourceDetailModalProps {
   downloadCount: number;
   transferring: boolean;
   webUsbTransferring: boolean;
+  webUsbProgress?: number | null;
+  transferMessage?: string;
   onClose: () => void;
   onTransfer: (resource: ResourceItem) => void;
   onWebUsbTransfer: (resource: ResourceItem, fps: VideoFpsOption) => void;
@@ -35,6 +37,8 @@ export function ResourceDetailModal({
   downloadCount,
   transferring,
   webUsbTransferring,
+  webUsbProgress = null,
+  transferMessage = "",
   onClose,
   onTransfer,
   onWebUsbTransfer,
@@ -174,6 +178,29 @@ export function ResourceDetailModal({
             </div> : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
             <p className="mt-2 text-xs text-slate-500">✓ 所选帧率用于“网页直传”；“传输”将交给佳点 V1PRO 控制工具处理</p>
           </div>
+
+          {webUsbProgress != null ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-3">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+                <span>{webUsbProgress >= 100 ? "网页直传完成" : transferMessage || "正在网页直传…"}</span>
+                <span className="shrink-0 text-emerald-600">{Math.round(webUsbProgress)}%</span>
+              </div>
+              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#32b879] via-[#32c89a] to-[#5a9cff] transition-[width] duration-200 ease-out"
+                  style={{ width: `${Math.max(0, Math.min(100, webUsbProgress))}%` }}
+                  role="progressbar"
+                  aria-label="网页直传进度"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(webUsbProgress)}
+                />
+              </div>
+              {transferMessage && webUsbProgress >= 100 ? (
+                <p className="mt-2 text-xs leading-5 text-slate-500">{transferMessage}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-auto grid grid-cols-2 gap-2.5 pt-2">
             <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:opacity-50">

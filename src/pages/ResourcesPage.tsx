@@ -490,7 +490,7 @@ export default function ResourcesPage() {
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
-      <V1ProTransferNotice message={transferNotice} progress={webUsbProgress} onDismiss={() => { setTransferNotice(""); setWebUsbProgress(null); }} />
+      <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
       <ResourceLibraryHeader
         keyword={keyword}
         onSearch={(value) => {
@@ -607,6 +607,8 @@ export default function ResourcesPage() {
           downloadCount={displayDownloadCount(totalDownloadCounts[selectedResource.id] || 0)}
           transferring={transferringId === selectedResource.id}
           webUsbTransferring={webUsbTransferringId === selectedResource.id}
+          webUsbProgress={webUsbTransferringId === selectedResource.id || webUsbProgress === 100 ? webUsbProgress : null}
+          transferMessage={transferNotice}
           onClose={() => setSelectedResource(null)}
           onTransfer={handleTransfer}
           onWebUsbTransfer={handleWebUsbTransfer}
