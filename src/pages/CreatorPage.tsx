@@ -14,6 +14,7 @@ import { fetchResourceLikes } from "../services/likeService";
 import { transferResourceViaWebUsb } from "../services/v1proWebResourceTransferService";
 import type { ResourceItem } from "../types/resource";
 import type { VideoFpsOption } from "../utils/resourceCapacity";
+import { fetchCreatorProfile } from "../services/avatarService";
 
 export default function CreatorPage() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function CreatorPage() {
   const { resources, loading, error } = useResourceCatalog();
   const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState("");
   const {
     transferringId,
     transferNotice,
@@ -60,6 +62,22 @@ export default function CreatorPage() {
     }).catch(() => undefined);
   }, [navigate, setFavoriteIds, setLikeCounts, setLikedIds, setTotalDownloadCounts, setWeeklyDownloadCounts]);
 
+  useEffect(() => {
+    let active = true;
+    if (!author) {
+      setAvatarUrl("");
+      return () => { active = false; };
+    }
+    void fetchCreatorProfile(author)
+      .then((profile) => {
+        if (active) setAvatarUrl(profile.avatarUrl || "");
+      })
+      .catch(() => {
+        if (active) setAvatarUrl("");
+      });
+    return () => { active = false; };
+  }, [author]);
+
   const authorResources = useMemo(() => {
     const normalized = author.toLocaleLowerCase("zh-CN");
     return resources.filter((item) => item.author?.trim().toLocaleLowerCase("zh-CN") === normalized);
@@ -96,7 +114,7 @@ export default function CreatorPage() {
       <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
-            <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">👤</div>
+            <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">{avatarUrl ? <img src={avatarUrl} alt={`${author}的头像`} className="h-full w-full object-cover" /> : "👤"}</div>
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">Creator Profile</p>
               <h1 className="mt-1 truncate text-2xl font-extrabold">{author || "未知上传人"}</h1>

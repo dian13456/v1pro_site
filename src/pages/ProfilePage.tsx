@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
@@ -21,6 +22,7 @@ import { CreditLedgerPanel } from "../components/CreditLedgerPanel";
 import { MyUploadsPanel } from "../components/MyUploadsPanel";
 import type { CreditLedgerEntry } from "../types/credits";
 import { formatCredits } from "../utils/formatCredits";
+import { removeProfileAvatar, uploadProfileAvatar } from "../services/avatarService";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -38,6 +40,9 @@ export default function ProfilePage() {
   const [actorLikeRewardCredits, setActorLikeRewardCredits] = useState(0.5);
   const [downloadRewardCredits, setDownloadRewardCredits] = useState(0.5);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -50,6 +55,7 @@ export default function ProfilePage() {
       .then(([name, profile]) => {
         setDisplayName(name);
         setNameInput(name);
+        setAvatarUrl(profile.avatarUrl || "");
         if (typeof profile.credits === "number") {
           setCredits(profile.credits);
         } else {
@@ -116,6 +122,40 @@ export default function ProfilePage() {
     }
   };
 
+  const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAvatarSaving(true);
+    setErrorMessage("");
+    setNotice("");
+    try {
+      const nextAvatarUrl = await uploadProfileAvatar(file);
+      setAvatarUrl(nextAvatarUrl);
+      setNotice("头像已上传到 COS 并保存");
+      window.setTimeout(() => setNotice(""), 4000);
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "头像上传失败");
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    setAvatarSaving(true);
+    setErrorMessage("");
+    try {
+      await removeProfileAvatar();
+      setAvatarUrl("");
+      setNotice("头像已恢复为默认样式");
+      window.setTimeout(() => setNotice(""), 4000);
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "头像删除失败");
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
   const defaultName = serial ? getDefaultDisplayName(serial) : "—";
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
@@ -125,7 +165,17 @@ export default function ProfilePage() {
       <main className="mx-auto max-w-[980px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
           <header className="flex flex-wrap items-center gap-4 border-b border-[#e6e9f2] px-6 py-5">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-2xl text-white shadow-[0_6px_16px_rgba(124,108,240,.25)]">👤</div>
+            <button
+              type="button"
+              disabled={loading || avatarSaving}
+              onClick={() => avatarInputRef.current?.click()}
+              className="group relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-2xl text-white shadow-[0_6px_16px_rgba(124,108,240,.25)] disabled:opacity-60"
+              title="上传或更换头像"
+            >
+              {avatarUrl ? <img src={avatarUrl} alt="个人头像" className="h-full w-full object-cover" /> : "👤"}
+              <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[9px] font-semibold opacity-0 transition group-hover:opacity-100">更换</span>
+            </button>
+            <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => void handleAvatarChange(event)} />
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl font-extrabold">{loading ? "个人中心" : displayName}</h1>
               <p className="mt-1 break-all font-mono text-xs text-[#8a93a8]">SN: {serial || "—"}</p>
@@ -133,6 +183,10 @@ export default function ProfilePage() {
             <div className="rounded-2xl bg-[#fff7f2] px-5 py-3 text-right">
               <div className="text-[11px] font-semibold text-[#8a93a8]">当前积分</div>
               <div className="mt-0.5 text-2xl font-extrabold text-[#ff8a5c]">{loading ? "—" : formatCredits(credits ?? DEFAULT_AI_CREDITS)}</div>
+            </div>
+            <div className="flex flex-col gap-1 text-[11px]">
+              <button type="button" disabled={loading || avatarSaving} onClick={() => avatarInputRef.current?.click()} className="font-semibold text-[#7c6cf0] disabled:opacity-50">{avatarSaving ? "处理中…" : avatarUrl ? "更换头像" : "上传头像"}</button>
+              {avatarUrl ? <button type="button" disabled={avatarSaving} onClick={() => void handleAvatarRemove()} className="text-[#8a93a8] disabled:opacity-50">删除头像</button> : null}
             </div>
           </header>
 

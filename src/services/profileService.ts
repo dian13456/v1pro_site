@@ -3,6 +3,7 @@ import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 
 import type { CreditLedgerEntry } from "../types/credits";
+import { getDevProfileAvatar } from "./avatarService";
 
 export const DEFAULT_AI_CREDITS = 100;
 export const AI_CREDIT_COST = 1;
@@ -14,6 +15,7 @@ export interface ProfilePayload {
   success?: boolean;
   serial?: string;
   displayName?: string;
+  avatarUrl?: string;
   credits?: number;
   creditsDefault?: number;
   creditCost?: number;
@@ -109,6 +111,7 @@ export async function fetchProfile(): Promise<ProfilePayload> {
     return {
       success: true,
       serial,
+      avatarUrl: getDevProfileAvatar(serial),
       credits: readDevCredits(serial),
       creditsDefault: DEFAULT_AI_CREDITS,
       creditCost: AI_CREDIT_COST,

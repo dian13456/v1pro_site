@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { clearAuthState, getAuthState } from "../services/authService";
 import { fetchProfile } from "../services/profileService";
 import { getCustomDisplayName } from "../services/welcomeService";
+import { PROFILE_AVATAR_CHANGED_EVENT } from "../services/avatarService";
 
 interface ResourceLibraryHeaderProps {
   keyword: string;
@@ -13,6 +14,7 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
   const navigate = useNavigate();
   const [draft, setDraft] = useState(keyword);
   const [credits, setCredits] = useState<number | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState("");
   const auth = getAuthState();
   const serial = auth?.serial?.trim() || "未认证";
   const nickname = auth?.serial ? getCustomDisplayName(auth.serial) : "";
@@ -22,13 +24,22 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
     let active = true;
     void fetchProfile()
       .then((profile) => {
-        if (active && typeof profile.credits === "number") setCredits(profile.credits);
+        if (!active) return;
+        if (typeof profile.credits === "number") setCredits(profile.credits);
+        setAvatarUrl(profile.avatarUrl || "");
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
   }, [serial]);
+  useEffect(() => {
+    const handleAvatarChanged = (event: Event) => {
+      setAvatarUrl((event as CustomEvent<{ avatarUrl?: string }>).detail?.avatarUrl || "");
+    };
+    window.addEventListener(PROFILE_AVATAR_CHANGED_EVENT, handleAvatarChanged);
+    return () => window.removeEventListener(PROFILE_AVATAR_CHANGED_EVENT, handleAvatarChanged);
+  }, []);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -58,10 +69,11 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
         </form>
         <Link
           to="/profile"
-          className="hidden max-w-xs truncate rounded-full bg-[#f5f6fb] px-3 py-1.5 text-xs text-[#8a93a8] 2xl:block"
+          className="hidden max-w-xs items-center gap-2 truncate rounded-full bg-[#f5f6fb] px-2.5 py-1.5 text-xs text-[#8a93a8] 2xl:inline-flex"
           title={`SN: ${serial}`}
         >
-          {nickname ? `${nickname} · ` : ""}SN: {serial}{credits != null ? ` · ${credits} 积分` : ""}
+          {avatarUrl ? <img src={avatarUrl} alt="个人头像" className="h-6 w-6 shrink-0 rounded-full object-cover" /> : null}
+          <span className="truncate">{nickname ? `${nickname} · ` : ""}SN: {serial}{credits != null ? ` · ${credits} 积分` : ""}</span>
         </Link>
         <Link
           to="/share"
