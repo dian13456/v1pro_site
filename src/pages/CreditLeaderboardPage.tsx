@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
 import {
@@ -27,6 +27,20 @@ function Avatar({ entry, large = false }: { entry: CreditLeaderboardEntry; large
     <div className={`${size} grid shrink-0 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-[#ff9d72] to-[#7c6cf0] font-extrabold text-white shadow-md`}>
       {entry.displayName.trim().slice(0, 1) || "佳"}
     </div>
+  );
+}
+
+function CreatorNameLink({ entry, className = "" }: { entry: CreditLeaderboardEntry; className?: string }) {
+  const creatorName = entry.creatorName?.trim();
+  if (!creatorName) return <span className={className}>{entry.displayName}</span>;
+  return (
+    <Link
+      to={`/creator/${encodeURIComponent(creatorName)}`}
+      className={`${className} transition hover:text-[#7c6cf0] hover:underline`}
+      title={`查看 ${entry.displayName} 上传的素材`}
+    >
+      {entry.displayName}
+    </Link>
   );
 }
 
@@ -60,6 +74,10 @@ export default function CreditLeaderboardPage() {
   }, [load]);
 
   const topThree = useMemo(() => entries.slice(0, 3), [entries]);
+  const podiumEntries = useMemo(
+    () => [topThree[1], topThree[0], topThree[2]].filter((entry): entry is CreditLeaderboardEntry => Boolean(entry)),
+    [topThree],
+  );
   const remaining = useMemo(() => entries.slice(3), [entries]);
   const currentInList = Boolean(current && entries.some((entry) => entry.isCurrent));
 
@@ -124,15 +142,16 @@ export default function CreditLeaderboardPage() {
         ) : (
           <>
             <section className="mt-[14px] grid gap-[14px] md:grid-cols-3">
-              {topThree.map((entry, index) => {
+              {podiumEntries.map((entry) => {
+                const index = topThree.indexOf(entry);
                 const meta = rankMeta[index];
                 return (
-                  <article key={`${entry.rank}-${entry.displayName}-${index}`} className={`relative overflow-hidden rounded-[20px] border border-white bg-gradient-to-br ${meta.gradient} px-5 py-7 text-center shadow-[0_10px_28px_rgba(43,50,69,.08)] ${entry.isCurrent ? "ring-2 ring-[#7c6cf0] ring-offset-2" : ""}`}>
+                  <article key={`${entry.rank}-${entry.displayName}-${index}`} className={`relative overflow-hidden rounded-[20px] border border-white bg-gradient-to-br ${meta.gradient} px-5 py-7 text-center shadow-[0_10px_28px_rgba(43,50,69,.08)] ${index === 0 ? "md:-translate-y-3 md:pb-9 md:pt-8" : ""} ${entry.isCurrent ? "ring-2 ring-[#7c6cf0] ring-offset-2" : ""}`}>
                     <span className="absolute left-4 top-4 rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-bold text-[#697086]">第 {entry.rank} 名</span>
                     {entry.isCurrent ? <span className="absolute right-4 top-4 rounded-full bg-[#7c6cf0] px-2.5 py-1 text-[11px] font-bold text-white">我</span> : null}
                     <div className="text-4xl">{meta.medal}</div>
                     <div className="mt-3 flex justify-center"><Avatar entry={entry} large /></div>
-                    <h2 className="mt-3 truncate text-lg font-extrabold">{entry.displayName}</h2>
+                    <h2 className="mt-3 truncate text-lg font-extrabold"><CreatorNameLink entry={entry} /></h2>
                     <p className={`mt-1 text-[11px] font-bold uppercase tracking-[.18em] ${meta.color}`}>{meta.label}</p>
                     <div className="mt-4 rounded-[14px] bg-white/65 px-3 py-2.5">
                       <strong className="text-2xl">{formatCredits(entry.credits)}</strong><span className="ml-1 text-xs font-semibold text-[#8a93a8]">积分</span>
@@ -153,7 +172,7 @@ export default function CreditLeaderboardPage() {
                     <div key={`${entry.rank}-${entry.displayName}-${index + 3}`} className={`grid grid-cols-[46px_44px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3.5 sm:px-7 ${entry.isCurrent ? "bg-[#f3f1ff]" : "transition hover:bg-[#fafbfe]"}`}>
                       <span className={`text-center text-sm font-extrabold ${entry.isCurrent ? "text-[#7c6cf0]" : "text-[#8a93a8]"}`}>{entry.rank}</span>
                       <Avatar entry={entry} />
-                      <div className="min-w-0"><p className="truncate text-sm font-bold">{entry.displayName}</p>{entry.isCurrent ? <p className="mt-0.5 text-[11px] font-semibold text-[#7c6cf0]">我的排名</p> : null}</div>
+                      <div className="min-w-0"><p className="truncate text-sm font-bold"><CreatorNameLink entry={entry} /></p>{entry.isCurrent ? <p className="mt-0.5 text-[11px] font-semibold text-[#7c6cf0]">我的排名</p> : null}</div>
                       <div className="text-right"><strong className="text-base text-[#ff7d67] sm:text-lg">{formatCredits(entry.credits)}</strong><span className="ml-1 text-[11px] text-[#8a93a8]">积分</span></div>
                     </div>
                   ))}

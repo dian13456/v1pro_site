@@ -7,6 +7,7 @@ import { getCustomDisplayName } from "./welcomeService";
 export interface CreditLeaderboardEntry {
   rank: number;
   displayName: string;
+  creatorName?: string;
   credits: number;
   avatarUrl?: string;
   isCurrent?: boolean;
@@ -32,6 +33,7 @@ export async function fetchCreditLeaderboard(): Promise<CreditLeaderboardPayload
     const current: CreditLeaderboardEntry = {
       rank: 1,
       displayName: getCustomDisplayName(auth?.serial || "") || "佳点用户",
+      creatorName: getCustomDisplayName(auth?.serial || "") || profile.displayName || "佳点用户",
       credits: typeof profile.credits === "number" ? profile.credits : 0,
       avatarUrl: profile.avatarUrl,
       isCurrent: true,
