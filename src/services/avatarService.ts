@@ -8,12 +8,6 @@ export const PROFILE_AVATAR_CHANGED_EVENT = "jiadian-profile-avatar-changed";
 const AVATAR_SIDE = 320;
 const MAX_AVATAR_BYTES = 512 * 1024;
 
-interface AvatarUploadURLPayload extends Record<string, unknown> {
-  uploadUrl: string;
-  objectKey: string;
-  contentType: string;
-}
-
 interface AvatarPayload extends Record<string, unknown> {
   success?: boolean;
   avatarUrl?: string;
@@ -113,21 +107,10 @@ export async function uploadProfileAvatar(file: File): Promise<string> {
   }
   if (!auth.token) throw new Error("认证状态无效，请重新认证设备");
 
-  const signed = await apiFetch<AvatarUploadURLPayload>("/api/profile/avatar/upload-url", {
+  const completed = await apiFetch<AvatarPayload>("/api/profile/avatar/upload", {
     method: "POST",
     headers: { Authorization: `Bearer ${auth.token}` },
-    body: JSON.stringify({ contentType: blob.type, fileSize: blob.size }),
-  });
-  const uploadResponse = await fetch(signed.uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": signed.contentType || blob.type },
-    body: blob,
-  });
-  if (!uploadResponse.ok) throw new Error(`头像上传 COS 失败（${uploadResponse.status}）`);
-  const completed = await apiFetch<AvatarPayload>("/api/profile/avatar/complete", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${auth.token}` },
-    body: JSON.stringify({ objectKey: signed.objectKey }),
+    body: JSON.stringify({ imageBase64: await blobToDataURL(blob), contentType: blob.type }),
   });
   const avatarUrl = completed.avatarUrl || "";
   notifyAvatarChanged(avatarUrl);

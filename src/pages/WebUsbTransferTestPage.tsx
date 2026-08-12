@@ -40,10 +40,14 @@ function deviceLabel(client: V1ProWebTransferClient | null): string {
 }
 
 function formatError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/claimInterface|claim interface|Unable to claim|LIBUSB_ERROR_BUSY|USB.*(?:busy|claimed|占用)/i.test(message)) {
+    return "USB 接口被本地软件占用，请关闭本地软件后重试！";
+  }
   if (err && typeof err === "object" && "name" in err && err.name === "V1ProUsbError" && "message" in err) {
     return String(err.message);
   }
-  return err instanceof Error ? err.message : String(err);
+  return message;
 }
 
 export default function WebUsbTransferTestPage() {

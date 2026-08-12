@@ -27,6 +27,9 @@ export const API_BASE = import.meta.env.VITE_API_BASE || "";
 export function formatClientError(err: unknown, fallback = "操作失败"): string {
   if (err instanceof Error) {
     const message = err.message.trim();
+    if (/claimInterface|claim interface|Unable to claim|LIBUSB_ERROR_BUSY|USB.*(?:busy|claimed|占用)/i.test(message)) {
+      return "USB 接口被本地软件占用，请关闭本地软件后重试！";
+    }
     if (
       !message ||
       message === "Failed to fetch" ||

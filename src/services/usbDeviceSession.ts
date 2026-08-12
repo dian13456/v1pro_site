@@ -118,8 +118,12 @@ export async function prepareUsbSession(device: USBDevice): Promise<UsbEndpoints
   const { interfaceNumber, outEndpoint, inEndpoint } = pickBulkEndpoints(device);
   try {
     await device.claimInterface(interfaceNumber);
-  } catch {
+  } catch (error) {
     // Interface may already be claimed during auth flow.
+    const message = (error as Error)?.message || String(error);
+    if (/claimInterface|claim interface|Unable to claim|LIBUSB_ERROR_BUSY|busy|占用/i.test(message)) {
+      throw new Error("USB 接口被本地软件占用，请关闭本地软件后重试！");
+    }
   }
 
   return { device, interfaceNumber, outEndpoint, inEndpoint };

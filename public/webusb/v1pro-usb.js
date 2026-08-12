@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.20";
+} from "./v1pro-constants.js?v=1.2.21";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -299,8 +299,8 @@ export async function bulkIn(device, length = 64) {
 
 function formatUsbOpenHint(err) {
   const msg = err && err.message ? String(err.message) : String(err);
-  if (/Access denied|busy|claimed|LIBUSB_ERROR_BUSY|Access|占用/i.test(msg)) {
-    return "无法占用 USB 接口。请先关闭「佳点V1PRO控制工具」及其他占用设备的程序后重试。";
+  if (/claimInterface|claim interface|Unable to claim|Access denied|busy|claimed|LIBUSB_ERROR_BUSY|Access|占用/i.test(msg)) {
+    return "USB 接口被本地软件占用，请关闭本地软件后重试！";
   }
   if (/No device|disconnected|NetworkError|NotFound/i.test(msg)) {
     return "设备已断开或不存在，请重新插拔 USB 后点击连接。";
