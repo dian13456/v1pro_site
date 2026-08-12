@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ResourceItem } from "../types/resource";
 import { createImageUrl } from "../services/imageService";
 import { probeResourceMedia } from "../services/resourceMediaProbe";
@@ -93,9 +94,9 @@ export function ResourceDetailModal({
   const durationText = formatMediaDuration(metrics.durationSec);
   const canDirectTransfer = resource.materialType === "image" || resource.materialType === "gif" || resource.materialType === "video";
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(30,35,55,.45)] p-3 backdrop-blur-[3px]"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(30,35,55,.45)] p-3 backdrop-blur-[3px]"
       role="dialog"
       aria-modal="true"
       aria-label={`${resource.title} 详情`}
@@ -186,4 +187,5 @@ export function ResourceDetailModal({
       </div>
     </div>
   );
+  return createPortal(modal, document.body);
 }
