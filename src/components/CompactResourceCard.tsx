@@ -32,6 +32,9 @@ export function CompactResourceCard({
   onOpen,
   onLike,
   onFavorite,
+  hidden = false,
+  hiding = false,
+  onHiddenChange,
   selectionMode = false,
   selected = false,
   onToggleSelection,
@@ -46,6 +49,9 @@ export function CompactResourceCard({
   onOpen: (resource: ResourceItem) => void;
   onLike: (resource: ResourceItem) => void;
   onFavorite: (resource: ResourceItem) => void;
+  hidden?: boolean;
+  hiding?: boolean;
+  onHiddenChange?: (resource: ResourceItem, hidden: boolean) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelection?: (resource: ResourceItem) => void;
@@ -130,6 +136,25 @@ export function CompactResourceCard({
             <span className="max-w-[52%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500">{resource.columnTag || "其他"}</span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            {onHiddenChange ? (
+              <button
+                type="button"
+                aria-label={hidden ? "恢复该用户的全部素材" : "屏蔽该用户的全部素材"}
+                title={hidden ? "恢复该用户" : "屏蔽该用户"}
+                disabled={hiding}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onHiddenChange(resource, !hidden);
+                }}
+                className={`inline-flex items-center rounded-full px-1.5 py-1 text-sm transition disabled:cursor-not-allowed ${
+                  hidden
+                    ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                    : "hover:bg-slate-100 hover:text-slate-600"
+                }`}
+              >
+                <span aria-hidden="true">{hiding ? "…" : hidden ? "↶" : "⊘"}</span>
+              </button>
+            ) : null}
             <button
               type="button"
               aria-label={favorited ? "取消收藏" : "收藏"}

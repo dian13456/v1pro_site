@@ -7,6 +7,8 @@ type ResourceRecord = Partial<ResourceItem> & {
   title?: string;
   description?: string;
   author?: string;
+  uploaderSerial?: string;
+  uploaderBlockable?: boolean;
   size?: string;
   image?: string;
   download?: string;
@@ -64,6 +66,8 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     title: sanitized.title,
     description: sanitized.description,
     author: (sanitized.author || "").trim() || undefined,
+    uploaderSerial: (sanitized.uploaderSerial || "").trim() || undefined,
+    uploaderBlockable: Boolean(sanitized.uploaderBlockable || sanitized.uploaderSerial),
     columnTag: columnTag || undefined,
     size: sanitized.size || "未知",
     image: imageRaw,

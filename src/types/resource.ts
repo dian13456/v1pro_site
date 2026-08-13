@@ -8,6 +8,9 @@ export interface ResourceItem {
   title: string;
   description: string;
   author?: string;
+  /** Available only in local development data; production APIs keep device SN private. */
+  uploaderSerial?: string;
+  uploaderBlockable?: boolean;
   columnTag?: string;
   size: string;
   image: string;

@@ -23,6 +23,7 @@ import type { DownloadStatsSnapshot } from "../types/downloadStats";
 import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
+import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenResourceService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -65,6 +66,11 @@ export default function ResourcesPage() {
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const [favoritingId, setFavoritingId] = useState<number | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<number[]>([]);
+  const [blockedUploaderCount, setBlockedUploaderCount] = useState(0);
+  const [hidingId, setHidingId] = useState<number | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
   const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
@@ -110,9 +116,14 @@ export default function ResourcesPage() {
     }
   }, [searchParams, setKeyword]);
 
+  const hiddenIdSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const visibilityFilteredResources = useMemo(
+    () => filtered.filter((resource) => showHidden === hiddenIdSet.has(resource.id)),
+    [filtered, hiddenIdSet, showHidden]
+  );
   const sortedResources = useMemo(() => {
     if (sortMode === "hot") {
-      return [...filtered].sort((a, b) => {
+      return [...visibilityFilteredResources].sort((a, b) => {
         const likeA = likeCounts[a.id] || 0;
         const likeB = likeCounts[b.id] || 0;
         if (likeA !== likeB) return likeB - likeA;
@@ -120,7 +131,7 @@ export default function ResourcesPage() {
       });
     }
     if (sortMode === "weeklyTop") {
-      return [...filtered]
+      return [...visibilityFilteredResources]
         .sort((a, b) => {
           const weeklyA = weeklyDownloadCounts[a.id] || 0;
           const weeklyB = weeklyDownloadCounts[b.id] || 0;
@@ -132,8 +143,8 @@ export default function ResourcesPage() {
         })
         .slice(0, WEEKLY_TOP_LIMIT);
     }
-    return filtered;
-  }, [filtered, sortMode, likeCounts, weeklyDownloadCounts, totalDownloadCounts]);
+    return visibilityFilteredResources;
+  }, [visibilityFilteredResources, sortMode, likeCounts, weeklyDownloadCounts, totalDownloadCounts]);
   const capacityFilteredResources = useMemo(() => {
     if (capacityFilter === "all") return sortedResources;
     return sortedResources.filter((resource) => {
@@ -151,6 +162,14 @@ export default function ResourcesPage() {
     setRandomMode(false);
     setRandomItems([]);
   }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setRandomMode(false);
+    setRandomItems([]);
+    setAlbumMode(false);
+    setAlbumSelectedIds([]);
+  }, [showHidden]);
 
   useEffect(() => {
     if (sortMode === "weeklyTop") {
@@ -263,6 +282,22 @@ export default function ResourcesPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchHiddenResourceState(resources)
+      .then((state) => {
+        if (!active) return;
+        setHiddenIds(state.hiddenResourceIds);
+        setBlockedUploaderCount(state.blockedUploaderCount);
+      })
+      .catch(() => {
+        if (active) setErrorMessage((current) => current || "屏蔽列表加载失败，刷新页面后可重试");
+      });
+    return () => {
+      active = false;
+    };
+  }, [resources]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -505,6 +540,34 @@ export default function ResourcesPage() {
     prefetchPlayUrl(resource.id, resource.download);
   };
 
+  const handleHiddenChange = async (resource: ResourceItem, hidden: boolean) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setHidingId(resource.id);
+      setErrorMessage("");
+      setStatusMessage("");
+      const state = await setUploaderHidden(resource, hidden, resources);
+      setHiddenIds(state.hiddenResourceIds);
+      setBlockedUploaderCount(state.blockedUploaderCount);
+      setRandomMode(false);
+      setRandomItems([]);
+      setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
+      setSelectedResource((current) => current?.id === resource.id ? null : current);
+      setStatusMessage(hidden
+        ? `已为当前设备屏蔽“${resource.author || "该用户"}”上传的全部素材`
+        : `已恢复“${resource.author || "该用户"}”上传的全部素材`);
+    } catch (err) {
+      const message = (err as Error)?.message || "屏蔽设置失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) navigate("/auth", { replace: true });
+    } finally {
+      setHidingId(null);
+    }
+  };
+
   const toggleAlbumMode = () => {
     if (albumTransferring) return;
     setAlbumMode((current) => {
@@ -654,6 +717,19 @@ export default function ResourcesPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setShowHidden((current) => !current)}
+                  aria-pressed={showHidden}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    showHidden
+                      ? "border-violet-300 bg-violet-50 text-violet-600 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-300"
+                      : "border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  }`}
+                >
+                  <span aria-hidden="true">⊘</span>
+                  {showHidden ? "返回素材库" : `已屏蔽用户 ${blockedUploaderCount}`}
+                </button>
+                <button
+                  type="button"
                   onClick={toggleAlbumMode}
                   aria-pressed={albumMode}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
@@ -679,6 +755,7 @@ export default function ResourcesPage() {
             </div>
 
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
+            {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
             {!loading ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -695,6 +772,11 @@ export default function ResourcesPage() {
                     onOpen={setSelectedResource}
                     onLike={(item) => void handleLike(item)}
                     onFavorite={(item) => void handleFavorite(item)}
+                    hidden={hiddenIdSet.has(resource.id)}
+                    hiding={hidingId === resource.id}
+                    onHiddenChange={resource.uploaderBlockable
+                      ? (item, hidden) => void handleHiddenChange(item, hidden)
+                      : undefined}
                     selectionMode={albumMode}
                     selected={albumSelectedIds.includes(resource.id)}
                     onToggleSelection={toggleAlbumResource}
@@ -702,7 +784,11 @@ export default function ResourcesPage() {
                 ))}
               </section>
             ) : null}
-            {!loading && visibleItems.length === 0 ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">没有匹配的素材，请调整筛选条件。</div> : null}
+            {!loading && visibleItems.length === 0 ? (
+              <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
+                {showHidden ? "当前设备没有已屏蔽素材。" : "没有匹配的素材，请调整筛选条件。"}
+              </div>
+            ) : null}
 
             {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
               <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
