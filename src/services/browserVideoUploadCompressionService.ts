@@ -1,5 +1,6 @@
 import { FFmpeg, FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
 import { probeBrowserVideoDuration } from "./browserFfmpegVideoService";
+import { getCachedFfmpegAssets } from "./ffmpegAssetCache";
 
 export const MAX_SHARE_VIDEO_SOURCE_BYTES = 400 * 1024 * 1024;
 export const MAX_SHARE_VIDEO_OUTPUT_BYTES = 20 * 1024 * 1024;
@@ -86,11 +87,8 @@ export async function compressVideoForCosUpload(
 
   try {
     options.onStatus?.("正在加载浏览器 FFmpeg…");
-    const base = `${import.meta.env.BASE_URL || "/"}ffmpeg`.replace(/\/$/, "");
-    await ffmpeg.load({
-      coreURL: `${base}/ffmpeg-core.js`,
-      wasmURL: `${base}/ffmpeg-core.wasm`,
-    });
+    const assets = await getCachedFfmpegAssets();
+    await ffmpeg.load({ coreURL: assets.coreURL, wasmURL: assets.wasmURL });
     ffmpeg.on("progress", onProgress);
     await ffmpeg.createDir(inputDir);
     await ffmpeg.mount(
