@@ -7,6 +7,7 @@ import {
   resourceMetricsFromCatalog,
   smallestCompatibleCapacity,
 } from "../utils/resourceCapacity";
+import { ThemeIcon } from "./ThemeIcon";
 
 const PREVIEW_BACKGROUNDS = [
   "from-cyan-200 to-sky-300",
@@ -145,7 +146,7 @@ export function CompactResourceCard({
                     : "hover:bg-slate-100 hover:text-slate-600"
                 }`}
               >
-                <span aria-hidden="true">{hiding ? "…" : hidden ? "↶" : "⊘"}</span>
+                {hiding ? <span aria-hidden="true">…</span> : <ThemeIcon name={hidden ? "restore" : "block"} size={15} />}
               </button>
             ) : null}
             <button
@@ -159,7 +160,7 @@ export function CompactResourceCard({
               }}
               className={`inline-flex items-center rounded-full px-1.5 py-1 text-sm transition disabled:cursor-not-allowed ${favorited ? "bg-amber-50 text-amber-500" : "hover:bg-amber-50 hover:text-amber-500"}`}
             >
-              <span aria-hidden="true">{favoriting ? "…" : favorited ? "★" : "☆"}</span>
+              {favoriting ? <span aria-hidden="true">…</span> : <ThemeIcon name="favorite" size={15} filled={favorited} />}
             </button>
             <button
               type="button"
@@ -172,10 +173,10 @@ export function CompactResourceCard({
               }}
               className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition disabled:cursor-not-allowed ${liked ? "bg-rose-50 text-rose-500" : "hover:bg-rose-50 hover:text-rose-500"}`}
             >
-              <span aria-hidden="true">♥</span>
+              <ThemeIcon name="like" size={14} filled={liked} />
               <span>{liking ? "…" : likeCount}</span>
             </button>
-            <span>⬇ {downloadCount}</span>
+            <span className="inline-flex items-center gap-1"><ThemeIcon name="download" size={14} /> {downloadCount}</span>
           </div>
         </div>
         {resource.author ? (

@@ -1,6 +1,8 @@
+import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { ThemeMode } from "../types/theme";
 import { THEME_OPTIONS } from "../types/theme";
+import { getInstalledThemePackage, THEME_PACKAGE_CHANGED_EVENT } from "../services/themePackageService";
 
 interface ThemeSelectorProps {
   theme: ThemeMode;
@@ -12,9 +14,22 @@ const THEME_ICONS: Record<ThemeMode, string> = {
   dark: "🌙",
   cat: "🐱",
   doro: "🎀",
+  custom: "🎨",
 };
 
 export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
+  const [customThemeName, setCustomThemeName] = useState(() => getInstalledThemePackage()?.name || "");
+  useEffect(() => {
+    const refresh = () => setCustomThemeName(getInstalledThemePackage()?.name || "");
+    window.addEventListener(THEME_PACKAGE_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(THEME_PACKAGE_CHANGED_EVENT, refresh);
+  }, []);
+  const options = useMemo(
+    () => THEME_OPTIONS.filter((option) => option.value !== "custom" || customThemeName).map((option) =>
+      option.value === "custom" ? { ...option, label: customThemeName } : option
+    ),
+    [customThemeName],
+  );
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
     onChange(event.target.value as ThemeMode);
   };
@@ -30,7 +45,7 @@ export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
           "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%2364748b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")",
       }}
     >
-      {THEME_OPTIONS.map((option) => (
+      {options.map((option) => (
         <option key={option.value} value={option.value}>
           {THEME_ICONS[option.value]} {option.label}
         </option>

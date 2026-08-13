@@ -23,9 +23,20 @@ import { MyUploadsPanel } from "../components/MyUploadsPanel";
 import type { CreditLedgerEntry } from "../types/credits";
 import { formatCredits } from "../utils/formatCredits";
 import { removeProfileAvatar, uploadProfileAvatar } from "../services/avatarService";
+import { ThemeSelector } from "../components/ThemeSelector";
+import { useThemeMode } from "../hooks/useThemeMode";
+import {
+  downloadDefaultThemePackage,
+  getInstalledThemePackage,
+  installThemePackage,
+  readThemePackageFile,
+  removeInstalledThemePackage,
+  type V1ProThemePackage,
+} from "../services/themePackageService";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
+  const { theme, setTheme } = useThemeMode();
   const auth = getAuthState();
   const serial = auth?.serial || "";
   const [displayName, setDisplayName] = useState(() => getDisplayName(serial));
@@ -42,7 +53,12 @@ export default function ProfilePage() {
   const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [avatarSaving, setAvatarSaving] = useState(false);
+  const [installedTheme, setInstalledTheme] = useState<V1ProThemePackage | null>(() => getInstalledThemePackage());
+  const [themeNotice, setThemeNotice] = useState("");
+  const [themeError, setThemeError] = useState("");
+  const [themeImporting, setThemeImporting] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const themeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -156,6 +172,34 @@ export default function ProfilePage() {
     }
   };
 
+  const handleThemeImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setThemeImporting(true);
+    setThemeError("");
+    setThemeNotice("");
+    try {
+      const imported = await readThemePackageFile(file);
+      installThemePackage(imported);
+      setInstalledTheme(imported);
+      setTheme("custom");
+      setThemeNotice(`主题“${imported.name}”已导入并启用`);
+    } catch (err) {
+      setThemeError((err as Error)?.message || "主题包导入失败");
+    } finally {
+      setThemeImporting(false);
+    }
+  };
+
+  const handleThemeRemove = () => {
+    removeInstalledThemePackage();
+    setInstalledTheme(null);
+    if (theme === "custom") setTheme("light");
+    setThemeError("");
+    setThemeNotice("已移除导入主题并恢复浅色主题");
+  };
+
   const defaultName = serial ? getDefaultDisplayName(serial) : "—";
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
@@ -237,6 +281,41 @@ export default function ProfilePage() {
               <p className="mt-3 text-xs leading-relaxed text-[#8a93a8]">被点赞 +{formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +{formatCredits(downloadRewardCredits)}</p>
               <CreditLedgerPanel entries={creditLedger} loading={loading} />
             </section>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)] dark:border-slate-800 dark:bg-slate-900">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e9f2] px-6 py-4 dark:border-slate-800">
+            <div>
+              <h2 className="text-[15px] font-extrabold dark:text-white">网站主题包</h2>
+              <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">主题仅保存在当前浏览器，不上传服务器，也不会修改网站功能。</p>
+            </div>
+            <ThemeSelector theme={theme} onChange={setTheme} />
+          </header>
+          <div className="grid gap-4 p-6 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              {installedTheme ? (
+                <div className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] px-4 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-sm dark:text-white">{installedTheme.name}</strong>
+                    <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-600 dark:bg-violet-500/10 dark:text-violet-300">v{installedTheme.version}</span>
+                    <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300">{installedTheme.appearance === "dark" ? "深色" : "浅色"}</span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-[#8a93a8] dark:text-slate-400">作者：{installedTheme.author}{installedTheme.description ? ` · ${installedTheme.description}` : ""}</p>
+                </div>
+              ) : (
+                <div className="rounded-[14px] border border-dashed border-[#dfe3ee] px-4 py-5 text-center text-xs text-[#8a93a8] dark:border-slate-700 dark:text-slate-400">尚未导入自定义主题</div>
+              )}
+              {themeNotice ? <SiteAlert variant="success" className="mt-3">{themeNotice}</SiteAlert> : null}
+              {themeError ? <SiteAlert variant="error" className="mt-3">{themeError}</SiteAlert> : null}
+            </div>
+            <div className="flex flex-wrap gap-2 md:max-w-[310px] md:justify-end">
+              <input ref={themeInputRef} type="file" accept=".v1theme,.json,application/json" className="hidden" onChange={(event) => void handleThemeImport(event)} />
+              <button type="button" disabled={themeImporting} onClick={() => themeInputRef.current?.click()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5d8cff] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50">{themeImporting ? "校验中…" : installedTheme ? "替换主题包" : "导入主题包"}</button>
+              {installedTheme && theme !== "custom" ? <button type="button" onClick={() => setTheme("custom")} className="rounded-[10px] bg-[#eef0ff] px-4 py-2.5 text-xs font-semibold text-[#6557db] dark:bg-violet-500/10 dark:text-violet-300">启用主题</button> : null}
+              {installedTheme ? <button type="button" onClick={handleThemeRemove} className="rounded-[10px] bg-[#fff1ef] px-4 py-2.5 text-xs font-semibold text-[#df6259] dark:bg-rose-500/10 dark:text-rose-300">移除</button> : null}
+              <button type="button" onClick={downloadDefaultThemePackage} className="rounded-[10px] border border-[#e6e9f2] bg-white px-4 py-2.5 text-xs font-semibold text-[#4a5270] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">下载示例包</button>
+            </div>
           </div>
         </section>
 

@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { isThemeMode, type ThemeMode } from "../types/theme";
+import { applyInstalledThemeStyle, getInstalledThemePackage } from "../services/themePackageService";
 
 const STORAGE_KEY = "jiadian_hub_theme";
 
 export function getInitialTheme(): ThemeMode {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (isThemeMode(saved)) return saved;
+  if (isThemeMode(saved) && (saved !== "custom" || getInstalledThemePackage())) return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function applyThemeToDocument(theme: ThemeMode): void {
   const root = document.documentElement;
-  root.dataset.theme = theme;
-  root.classList.toggle("dark", theme === "dark");
-  root.classList.toggle("theme-cat", theme === "cat");
-  root.classList.toggle("theme-doro", theme === "doro");
+  const customTheme = applyInstalledThemeStyle();
+  const effectiveTheme = theme === "custom" && !customTheme ? "light" : theme;
+  root.dataset.theme = effectiveTheme;
+  root.classList.toggle("dark", effectiveTheme === "dark" || (effectiveTheme === "custom" && customTheme?.appearance === "dark"));
+  root.classList.toggle("theme-cat", effectiveTheme === "cat");
+  root.classList.toggle("theme-doro", effectiveTheme === "doro");
 }
 
 export function useThemeMode() {
