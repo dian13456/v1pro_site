@@ -104,6 +104,8 @@ export default function ResourcesPage() {
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
   const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
+  const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(true);
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const { theme, setTheme } = useThemeMode();
   const {
@@ -219,12 +221,14 @@ export default function ResourcesPage() {
   }, [albumSelectedIds, resources]);
 
   const recommendedResources = useMemo(() => {
-    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+    const resourceMap = new Map(
+      [...recommendationResources, ...resources].map((resource) => [resource.id, resource])
+    );
     return recommendationItems
       .map((recommendation) => resourceMap.get(recommendation.resourceId))
-      .filter((resource): resource is ResourceItem => Boolean(resource) && !hiddenIdSet.has(resource.id))
+      .filter((resource): resource is ResourceItem => resource !== undefined && !hiddenIdSet.has(resource.id))
       .slice(0, DEFAULT_PAGE_SIZE);
-  }, [hiddenIdSet, recommendationItems, resources]);
+  }, [hiddenIdSet, recommendationItems, recommendationResources, resources]);
 
   const showingRecommendations =
     !showHidden &&
@@ -240,6 +244,10 @@ export default function ResourcesPage() {
     capacityFilter === "all" &&
     recommendedResources.length > 0;
   const displayedItems = showingRecommendations ? recommendedResources : visibleItems;
+  const canRenderCards = showingRecommendations || !loading;
+  const showInitialLoader = !canRenderCards;
+  const displayedTotalItems = loading && showingRecommendations ? recommendedResources.length : totalItems;
+  const displayedTotalPages = loading && showingRecommendations ? 1 : totalPages;
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -323,6 +331,7 @@ export default function ResourcesPage() {
   }, []);
 
   useEffect(() => {
+    if (resources.length === 0) return;
     let active = true;
     fetchHiddenResourceState(resources)
       .then((state) => {
@@ -339,20 +348,29 @@ export default function ResourcesPage() {
   }, [resources]);
 
   useEffect(() => {
-    if (loading || resources.length === 0 || !hasValidLocalAuth() || isStaticMode()) return;
+    if (!hasValidLocalAuth() || isStaticMode()) {
+      setRecommendationsLoading(false);
+      return;
+    }
     let active = true;
+    setRecommendationsLoading(true);
     fetchResourceRecommendations(24)
       .then((result) => {
         if (!active) return;
         setRecommendationItems(shuffleRecommendations(result.items));
+        setRecommendationResources(result.resources);
       })
       .catch(() => {
         if (active) setRecommendationItems([]);
+        if (active) setRecommendationResources([]);
+      })
+      .finally(() => {
+        if (active) setRecommendationsLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [loading, location.key, resources, recommendationRefreshKey]);
+  }, [location.key, recommendationRefreshKey]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -779,7 +797,7 @@ export default function ResourcesPage() {
           <div className="min-w-0">
             <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
-                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{totalItems}</strong> 张，{totalPages} 页 · 每页
+                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页 · 每页
                 <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                   {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
                 </select>
@@ -826,9 +844,13 @@ export default function ResourcesPage() {
 
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
-            {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
+            {showInitialLoader ? (
+              <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
+                {recommendationsLoading ? "正在加载猜你喜欢…" : "正在加载素材…"}
+              </div>
+            ) : null}
             {showingRecommendations ? <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2> : null}
-            {!loading ? (
+            {canRenderCards ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {displayedItems.map((resource) => (
                   <CompactResourceCard

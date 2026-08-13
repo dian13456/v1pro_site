@@ -1,6 +1,8 @@
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
+import { parseResourceList } from "./resourceService";
 import { isStaticMode } from "./runtimeMode";
+import type { ResourceItem } from "../types/resource";
 
 export type RecommendationMode = "personalized" | "popular";
 export type ResourceInteractionAction = "view" | "transfer";
@@ -19,22 +21,24 @@ interface RecommendationsResponse extends Record<string, unknown> {
     score?: number;
     reason?: string;
   }>;
+  resources?: unknown[];
   message?: string;
 }
 
 export async function fetchResourceRecommendations(limit = 8): Promise<{
   mode: RecommendationMode;
   items: ResourceRecommendation[];
+  resources: ResourceItem[];
 }> {
   const auth = getAuthState();
   if (!auth || !hasValidLocalAuth() || isStaticMode()) {
-    return { mode: "popular", items: [] };
+    return { mode: "popular", items: [], resources: [] };
   }
   const safeLimit = Math.max(1, Math.min(24, Math.floor(limit)));
   const payload = await apiFetch<RecommendationsResponse>(`/api/recommendations?limit=${safeLimit}`, {
     method: "GET",
     headers: { Authorization: `Bearer ${auth.token}` },
-  });
+  }, { priority: true });
   if (payload.success === false) {
     throw new Error(payload.message || "猜你喜欢加载失败");
   }
@@ -48,7 +52,11 @@ export async function fetchResourceRecommendations(limit = 8): Promise<{
       reason: String(item.reason || "为你推荐"),
     });
   }
-  return { mode: payload.mode === "personalized" ? "personalized" : "popular", items };
+  return {
+    mode: payload.mode === "personalized" ? "personalized" : "popular",
+    items,
+    resources: parseResourceList(payload.resources),
+  };
 }
 
 export async function recordResourceInteraction(resourceId: number, action: ResourceInteractionAction): Promise<void> {

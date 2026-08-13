@@ -545,6 +545,7 @@ func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 		c.Header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token, X-Api-Timestamp, X-Api-Nonce, X-Api-Signature")
 		c.Header("Access-Control-Allow-Credentials", "false")
+		c.Header("Access-Control-Max-Age", "600")
 		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 
 		if c.Request.Method == http.MethodOptions {
@@ -1665,6 +1666,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
 			return
 		}
+		c.Header("Cache-Control", "private, max-age=60, stale-while-revalidate=300")
 		c.JSON(http.StatusOK, service.SanitizePublicResourceCatalog(items))
 	})
 
@@ -1744,8 +1746,18 @@ func main() {
 			TotalDownloads:  totalDownloads,
 			WeeklyDownloads: weeklyDownloads,
 		}, limit, time.Now())
+		recommendedIDs := make([]string, 0, len(recommendations))
+		for _, recommendation := range recommendations {
+			recommendedIDs = append(recommendedIDs, recommendation.ResourceID)
+		}
+		recommendedResources := service.SelectPublicResourceCatalog(catalog, recommendedIDs)
 		c.Header("Cache-Control", "private, no-store")
-		c.JSON(http.StatusOK, gin.H{"success": true, "mode": mode, "items": recommendations})
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"mode":      mode,
+			"items":     recommendations,
+			"resources": recommendedResources,
+		})
 	})
 
 	router.POST("/api/resource-interaction", func(c *gin.Context) {
