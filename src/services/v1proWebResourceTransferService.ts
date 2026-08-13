@@ -35,8 +35,108 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
 
 let sharedClient: V1ProWebTransferClient | null = null;
 let transferInflight: Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> | null = null;
-let transferInflightResourceId: number | null = null;
+let transferInflightResourceId: number | "album" | null = null;
 const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
+const ALBUM_FRAME_WIDTH = 320;
+const ALBUM_FRAME_HEIGHT = 170;
+const ALBUM_TRANSITION_STEPS = 6;
+const ALBUM_TRANSITION_FRAME_MS = 50;
+
+export type AlbumTransition = "none" | "fade" | "slide-left";
+
+export function albumTransitionExtraFrames(imageCount: number, transition: AlbumTransition): number {
+  if (transition === "none" || imageCount < 2) return 0;
+  return imageCount * (ALBUM_TRANSITION_STEPS - 1);
+}
+
+function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
+  const output = new Uint8Array(from.length);
+  for (let offset = 0; offset < from.length; offset += 2) {
+    const fromPixel = from[offset] | (from[offset + 1] << 8);
+    const toPixel = to[offset] | (to[offset + 1] << 8);
+    const fromR = (fromPixel >> 11) & 0x1f;
+    const fromG = (fromPixel >> 5) & 0x3f;
+    const fromB = fromPixel & 0x1f;
+    const toR = (toPixel >> 11) & 0x1f;
+    const toG = (toPixel >> 5) & 0x3f;
+    const toB = toPixel & 0x1f;
+    const red = Math.round(fromR + (toR - fromR) * ratio);
+    const green = Math.round(fromG + (toG - fromG) * ratio);
+    const blue = Math.round(fromB + (toB - fromB) * ratio);
+    const pixel = (red << 11) | (green << 5) | blue;
+    output[offset] = pixel & 0xff;
+    output[offset + 1] = pixel >> 8;
+  }
+  return output;
+}
+
+function slideLeftRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
+  const output = new Uint8Array(from.length);
+  const shiftPixels = Math.max(1, Math.min(ALBUM_FRAME_WIDTH - 1, Math.round(ALBUM_FRAME_WIDTH * ratio)));
+  const currentPixels = ALBUM_FRAME_WIDTH - shiftPixels;
+  for (let row = 0; row < ALBUM_FRAME_HEIGHT; row += 1) {
+    const rowOffset = row * ALBUM_FRAME_WIDTH * 2;
+    const currentStart = rowOffset + shiftPixels * 2;
+    const currentEnd = rowOffset + ALBUM_FRAME_WIDTH * 2;
+    output.set(from.subarray(currentStart, currentEnd), rowOffset);
+    output.set(to.subarray(rowOffset, rowOffset + shiftPixels * 2), rowOffset + currentPixels * 2);
+  }
+  return output;
+}
+
+function composeAlbumFrames(
+  sourceFrames: Uint8Array[],
+  switchDelayMs: number,
+  transition: AlbumTransition,
+): { frames: Uint8Array[]; delaysMs: number[] } {
+  const frames: Uint8Array[] = [];
+  const delaysMs: number[] = [];
+  for (let index = 0; index < sourceFrames.length; index += 1) {
+    const current = sourceFrames[index];
+    frames.push(current);
+    delaysMs.push(switchDelayMs);
+    if (transition === "none" || sourceFrames.length < 2) continue;
+
+    const next = sourceFrames[(index + 1) % sourceFrames.length];
+    for (let step = 1; step < ALBUM_TRANSITION_STEPS; step += 1) {
+      const ratio = step / ALBUM_TRANSITION_STEPS;
+      frames.push(
+        transition === "fade"
+          ? blendRgb565Frames(current, next, ratio)
+          : slideLeftRgb565Frames(current, next, ratio),
+      );
+      delaysMs.push(ALBUM_TRANSITION_FRAME_MS);
+    }
+  }
+  return { frames, delaysMs };
+}
+
+type BrowserGfm1Module = {
+  decodeBlobToFrames: (
+    blob: Blob,
+    options?: {
+      maxFrames?: number;
+      maxVideoFps?: number;
+      minVideoFps?: number;
+      maxVideoSpeed?: number;
+      fileName?: string;
+      mediaType?: "image" | "gif" | "video";
+      fitMode?: "fill" | "contain";
+      onFrameEncoded?: (frameIndex: number, frameCount: number) => void;
+    },
+  ) => Promise<{ frames: Uint8Array[]; delaysMs: number[]; note?: string }>;
+  buildGfm1Blob: (frames: Uint8Array[], delaysMs: number[]) => Uint8Array;
+};
+
+let browserGfm1Promise: Promise<BrowserGfm1Module> | null = null;
+
+function loadBrowserGfm1Module(): Promise<BrowserGfm1Module> {
+  if (!browserGfm1Promise) {
+    // @ts-expect-error Browser SDK is maintained as a checked-in JavaScript module.
+    browserGfm1Promise = import("@v1pro-webusb/v1pro-gfm1.js") as Promise<BrowserGfm1Module>;
+  }
+  return browserGfm1Promise;
+}
 
 async function resolveAuthenticatedV1ProDevice(): Promise<USBDevice> {
   const authenticatedSerial = getAuthState()?.serial?.trim();
@@ -247,6 +347,158 @@ async function validateTransferBlob(resource: ResourceItem, blob: Blob): Promise
 
 export function prefetchWebUsbTransferDownload(): void {
   // Blob 下载走同源 API，无需预取 COS 签名链接。
+}
+
+export async function transferAlbumResourcesViaWebUsb(
+  resources: ResourceItem[],
+  callbacks: {
+    onStatus?: (message: string) => void;
+    onProgress?: (progress: number) => void;
+  } = {},
+  options: {
+    targetFrameCapacity: 77 | 154 | 308;
+    switchDelayMs: number;
+    transition: AlbumTransition;
+  },
+): Promise<{ bytes: number; frameCount: number; note?: string }> {
+  if (resources.length === 0) {
+    throw new Error("请先选择要写入相册的素材");
+  }
+  if (resources.some((resource) => resource.materialType !== "image" || !canWebUsbDirectTransfer(resource))) {
+    throw new Error("相册模式目前仅支持图片素材");
+  }
+  if (transferInflight) {
+    throw new Error("请先等待当前网页直传完成");
+  }
+
+  const switchDelayMs = Math.max(100, Math.min(60_000, Math.round(options.switchDelayMs)));
+  const targetFrameCapacity = options.targetFrameCapacity;
+  const transitionLabel = options.transition === "fade"
+    ? "淡入淡出"
+    : options.transition === "slide-left"
+      ? "向左滑动"
+      : "无动画";
+  const task = (async () => {
+    let lastReportedProgress = 0;
+    const reportProgress = (progress: number) => {
+      lastReportedProgress = Math.max(lastReportedProgress, Math.max(0, Math.min(100, progress)));
+      callbacks.onProgress?.(lastReportedProgress);
+    };
+
+    reportProgress(2);
+    await Promise.all([loadV1ProWebTransferSdk(), loadBrowserGfm1Module()]);
+    if (!sharedClient) {
+      sharedClient = await createV1ProWebTransferClient();
+    }
+    const client = sharedClient;
+
+    try {
+      callbacks.onStatus?.("正在连接当前认证设备…");
+      const targetDevice = await resolveAuthenticatedV1ProDevice();
+      await client.connect({ device: targetDevice });
+      const deviceFrameCapacity = client.deviceCapacity?.maxFrames;
+      if (!deviceFrameCapacity) {
+        throw new Error("无法读取设备容量，请重新连接设备后重试");
+      }
+      const frameLimit = Math.min(targetFrameCapacity, deviceFrameCapacity);
+      if (deviceFrameCapacity < targetFrameCapacity) {
+        callbacks.onStatus?.(`当前设备最多 ${deviceFrameCapacity} 帧，将按设备实际容量检查相册`);
+      }
+
+      const transitionExtraFrames = albumTransitionExtraFrames(resources.length, options.transition);
+      if (resources.length + transitionExtraFrames > frameLimit) {
+        throw new Error(`图片和切换动画共需 ${resources.length + transitionExtraFrames} 帧，超过当前设备的 ${frameLimit} 帧容量`);
+      }
+
+      const { decodeBlobToFrames, buildGfm1Blob } = await loadBrowserGfm1Module();
+      const sourceFrames: Uint8Array[] = [];
+
+      for (let index = 0; index < resources.length; index += 1) {
+        const resource = resources[index];
+        const remainingFrames = frameLimit - sourceFrames.length - transitionExtraFrames;
+        if (remainingFrames <= 0) {
+          throw new Error(`相册超过当前设备的 ${frameLimit} 帧容量，请减少素材`);
+        }
+
+        callbacks.onStatus?.(`正在获取相册素材 ${index + 1}/${resources.length}：${resource.title || resource.description}`);
+        const blob = await fetchTransferBlob(
+          resource,
+          (received, total) => {
+            if (total <= 0) return;
+            const itemRatio = Math.min(1, received / total) * 0.4;
+            reportProgress(5 + ((index + itemRatio) / resources.length) * 65);
+          },
+          () => callbacks.onStatus?.(`素材 ${index + 1}/${resources.length} COS 直连不可用，已切换服务器下载…`),
+        );
+        await validateTransferBlob(resource, blob);
+
+        callbacks.onStatus?.(`正在转换相册素材 ${index + 1}/${resources.length}…`);
+        const decoded = await decodeBlobToFrames(blob, {
+          fileName: guessTransferFileName(resource),
+          mediaType: "image",
+          maxFrames: remainingFrames,
+          fitMode: "contain",
+          onFrameEncoded: (frameIndex, frameCount) => {
+            const encodeRatio = frameCount > 0 ? Math.min(1, frameIndex / frameCount) : 0;
+            reportProgress(5 + ((index + 0.4 + encodeRatio * 0.6) / resources.length) * 65);
+          },
+        });
+        if (decoded.frames.length === 0) {
+          throw new Error(`素材“${resource.title || resource.description}”没有可写入的画面`);
+        }
+        sourceFrames.push(decoded.frames[0]);
+        reportProgress(5 + ((index + 1) / resources.length) * 65);
+      }
+
+      callbacks.onStatus?.("正在生成图片切换动画…");
+      const { frames, delaysMs } = composeAlbumFrames(sourceFrames, switchDelayMs, options.transition);
+      if (frames.length > frameLimit) {
+        throw new Error(`相册实际需要 ${frames.length} 帧，超过当前设备的 ${frameLimit} 帧容量`);
+      }
+      callbacks.onStatus?.(`正在打包相册：${resources.length} 张图片 · ${frames.length} 帧…`);
+      const gfm1 = buildGfm1Blob(frames, delaysMs);
+      const gfm1Buffer = gfm1.buffer.slice(
+        gfm1.byteOffset,
+        gfm1.byteOffset + gfm1.byteLength,
+      ) as ArrayBuffer;
+      reportProgress(72);
+
+      callbacks.onStatus?.("正在通过 USB 写入相册…");
+      const result = await client.transferFile(new Blob([gfm1Buffer], { type: "application/octet-stream" }), {
+        fileName: "v1pro-album.gfm1",
+        mediaType: "image",
+        maxFrames: frameLimit,
+        pingFirst: false,
+        prebuiltGfm1: {
+          frameCount: frames.length,
+          note: `相册 ${resources.length} 张图片 · ${transitionLabel} · 切换延时 ${(switchDelayMs / 1000).toFixed(1)} 秒`,
+        },
+        onProgress: (info) => {
+          callbacks.onStatus?.(`正在传输相册…${Math.round(info.ratio * 100)}%`);
+          reportProgress(72 + info.ratio * 27);
+        },
+      });
+
+      reportProgress(100);
+      const note = `相册传输完成：${resources.length} 张图片 · ${result.frameCount} 帧 · ${transitionLabel} · 切换延时 ${(switchDelayMs / 1000).toFixed(1)} 秒`;
+      callbacks.onStatus?.(note);
+      return { bytes: result.bytes, frameCount: result.frameCount, note };
+    } catch (err) {
+      throw new Error(formatUsbError(err));
+    } finally {
+      await client.disconnect();
+      sharedClient = null;
+    }
+  })();
+
+  transferInflight = task;
+  transferInflightResourceId = "album";
+  try {
+    return await task;
+  } finally {
+    transferInflight = null;
+    transferInflightResourceId = null;
+  }
 }
 
 export async function transferResourceViaWebUsb(

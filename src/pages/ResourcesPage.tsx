@@ -40,7 +40,9 @@ import {
 } from "../services/v1proTransferService";
 import {
   canWebUsbDirectTransfer,
+  transferAlbumResourcesViaWebUsb,
   transferResourceViaWebUsb,
+  type AlbumTransition,
 } from "../services/v1proWebResourceTransferService";
 
 const RANDOM_PAGE_SIZE = 4;
@@ -77,6 +79,10 @@ export default function ResourcesPage() {
   const [albumMode, setAlbumMode] = useState(false);
   const [albumCapacity, setAlbumCapacity] = useState<DeviceFrameCapacity>(308);
   const [albumSelectedIds, setAlbumSelectedIds] = useState<number[]>([]);
+  const [albumSwitchDelayMs, setAlbumSwitchDelayMs] = useState(2000);
+  const [albumTransition, setAlbumTransition] = useState<AlbumTransition>("fade");
+  const [albumTransferring, setAlbumTransferring] = useState(false);
+  const [albumTransferStatus, setAlbumTransferStatus] = useState("");
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -336,7 +342,7 @@ export default function ResourcesPage() {
       navigate("/auth", { replace: true });
       return;
     }
-    if (webUsbTransferringId !== null) {
+    if (webUsbTransferringId !== null || albumTransferring) {
       return;
     }
 
@@ -500,20 +506,31 @@ export default function ResourcesPage() {
   };
 
   const toggleAlbumMode = () => {
+    if (albumTransferring) return;
     setAlbumMode((current) => {
       if (current) {
         setAlbumSelectedIds([]);
+        setAlbumTransferStatus("");
         return false;
       }
       if (capacityFilter !== "all") {
         setAlbumCapacity(capacityFilter);
       }
+      setMaterialType("image");
       setSelectedResource(null);
+      setAlbumTransferStatus("");
       return true;
     });
   };
 
   const toggleAlbumResource = (resource: ResourceItem) => {
+    if (albumTransferring) return;
+    if (resource.materialType !== "image") {
+      setErrorMessage("相册模式目前仅支持图片素材");
+      return;
+    }
+    setErrorMessage("");
+    setAlbumTransferStatus("");
     setAlbumSelectedIds((current) => (
       current.includes(resource.id)
         ? current.filter((resourceId) => resourceId !== resource.id)
@@ -522,8 +539,51 @@ export default function ResourcesPage() {
   };
 
   const closeAlbumMode = () => {
+    if (albumTransferring) return;
     setAlbumMode(false);
     setAlbumSelectedIds([]);
+    setAlbumTransferStatus("");
+  };
+
+  const handleAlbumTransfer = () => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    if (albumTransferring || webUsbTransferringId !== null) return;
+    if (albumResources.length === 0) {
+      setErrorMessage("请先选择要写入相册的图片");
+      return;
+    }
+
+    setErrorMessage("");
+    setAlbumTransferStatus("正在准备图片相册…");
+    setAlbumTransferring(true);
+    setWebUsbProgress(0);
+    void transferAlbumResourcesViaWebUsb(
+      albumResources,
+      {
+        onStatus: (message) => setAlbumTransferStatus(message),
+        onProgress: setWebUsbProgress,
+      },
+      {
+        targetFrameCapacity: albumCapacity,
+        switchDelayMs: albumSwitchDelayMs,
+        transition: albumTransition,
+      },
+    )
+      .then((result) => {
+        setWebUsbProgress(100);
+        setAlbumTransferStatus(result.note || `相册传输完成：${result.frameCount} 帧`);
+      })
+      .catch((err) => {
+        setWebUsbProgress(null);
+        setAlbumTransferStatus("");
+        setErrorMessage((err as Error)?.message || "相册网页直传失败");
+      })
+      .finally(() => {
+        setAlbumTransferring(false);
+      });
   };
 
   return (
@@ -662,6 +722,14 @@ export default function ResourcesPage() {
                 onRemove={(resourceId) => setAlbumSelectedIds((current) => current.filter((id) => id !== resourceId))}
                 onClear={() => setAlbumSelectedIds([])}
                 onClose={closeAlbumMode}
+                switchDelayMs={albumSwitchDelayMs}
+                onSwitchDelayChange={setAlbumSwitchDelayMs}
+                transition={albumTransition}
+                onTransitionChange={setAlbumTransition}
+                onTransfer={handleAlbumTransfer}
+                transferring={albumTransferring}
+                transferProgress={albumTransferring || webUsbProgress === 100 ? webUsbProgress : null}
+                transferStatus={albumTransferStatus}
                 className="mt-6 xl:hidden"
               />
             ) : null}
@@ -676,6 +744,14 @@ export default function ResourcesPage() {
                 onRemove={(resourceId) => setAlbumSelectedIds((current) => current.filter((id) => id !== resourceId))}
                 onClear={() => setAlbumSelectedIds([])}
                 onClose={closeAlbumMode}
+                switchDelayMs={albumSwitchDelayMs}
+                onSwitchDelayChange={setAlbumSwitchDelayMs}
+                transition={albumTransition}
+                onTransitionChange={setAlbumTransition}
+                onTransfer={handleAlbumTransfer}
+                transferring={albumTransferring}
+                transferProgress={albumTransferring || webUsbProgress === 100 ? webUsbProgress : null}
+                transferStatus={albumTransferStatus}
               />
             </div>
           ) : null}
