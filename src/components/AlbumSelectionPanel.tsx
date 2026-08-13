@@ -1,6 +1,5 @@
 import type { ResourceItem } from "../types/resource";
 import {
-  albumHoldFramesPerImage,
   albumRequiredFrames,
   albumTransitionExtraFrames,
   type AlbumTransition,
@@ -65,7 +64,7 @@ export function AlbumSelectionPanel({
     resource,
     frames: albumFrames(resource),
   }));
-  const materialFrames = resources.length * albumHoldFramesPerImage(switchDelayMs);
+  const materialFrames = resources.length;
   const transitionFrames = albumTransitionExtraFrames(resources.length, transition);
   const knownFrames = albumRequiredFrames(resources.length, switchDelayMs, transition);
   const unknownCount = entries.filter((entry) => entry.frames == null).length;

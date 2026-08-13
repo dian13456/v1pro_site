@@ -40,11 +40,7 @@ const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
 const ALBUM_FRAME_WIDTH = 320;
 const ALBUM_FRAME_HEIGHT = 170;
 const ALBUM_TRANSITION_STEPS = 6;
-// Current V1PRO firmware schedules frames on a 16-bit microsecond clock. Keep
-// every individual deadline below the signed half-range (32.768ms), otherwise
-// delays such as 500ms overflow and are treated as already elapsed.
-const ALBUM_SAFE_FRAME_DELAY_MS = 30;
-const ALBUM_TRANSITION_FRAME_MS = ALBUM_SAFE_FRAME_DELAY_MS;
+const ALBUM_TRANSITION_FRAME_MS = 50;
 
 export type AlbumTransition = "none" | "fade" | "slide-left";
 
@@ -53,18 +49,13 @@ export function albumTransitionExtraFrames(imageCount: number, transition: Album
   return imageCount * (ALBUM_TRANSITION_STEPS - 1);
 }
 
-export function albumHoldFramesPerImage(switchDelayMs: number): number {
-  return Math.max(1, Math.ceil(Math.max(1, switchDelayMs) / ALBUM_SAFE_FRAME_DELAY_MS));
-}
-
 export function albumRequiredFrames(
   imageCount: number,
-  switchDelayMs: number,
+  _switchDelayMs: number,
   transition: AlbumTransition,
 ): number {
   if (imageCount <= 0) return 0;
-  return imageCount * albumHoldFramesPerImage(switchDelayMs)
-    + albumTransitionExtraFrames(imageCount, transition);
+  return imageCount + albumTransitionExtraFrames(imageCount, transition);
 }
 
 function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
@@ -109,17 +100,10 @@ function composeAlbumFrames(
 ): { frames: Uint8Array[]; delaysMs: number[] } {
   const frames: Uint8Array[] = [];
   const delaysMs: number[] = [];
-  const holdFrameCount = albumHoldFramesPerImage(switchDelayMs);
-  const baseHoldDelay = Math.floor(switchDelayMs / holdFrameCount);
-  let holdRemainder = switchDelayMs - baseHoldDelay * holdFrameCount;
   for (let index = 0; index < sourceFrames.length; index += 1) {
     const current = sourceFrames[index];
-    holdRemainder = switchDelayMs - baseHoldDelay * holdFrameCount;
-    for (let holdIndex = 0; holdIndex < holdFrameCount; holdIndex += 1) {
-      frames.push(current);
-      delaysMs.push(baseHoldDelay + (holdRemainder > 0 ? 1 : 0));
-      if (holdRemainder > 0) holdRemainder -= 1;
-    }
+    frames.push(current);
+    delaysMs.push(switchDelayMs);
     if (transition === "none" || sourceFrames.length < 2) continue;
 
     const next = sourceFrames[(index + 1) % sourceFrames.length];

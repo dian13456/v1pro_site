@@ -41,3 +41,10 @@ export async function listAuthorizedV1ProDevices(): Promise<USBDevice[]> {
   const { listAuthorizedDevices } = await loadV1ProWebTransferSdk();
   return listAuthorizedDevices();
 }
+
+export function supportsImageAlbumTransfer(device: USBDevice): boolean {
+  const major = device.deviceVersionMajor || 0;
+  const minor = device.deviceVersionMinor || 0;
+  const subminor = device.deviceVersionSubminor || 0;
+  return major > 2 || (major === 2 && (minor > 0 || subminor >= 1));
+}
