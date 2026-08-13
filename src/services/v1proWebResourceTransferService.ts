@@ -595,7 +595,13 @@ export async function transferResourceViaWebUsb(
         if (prediction.fps !== videoFps) {
           throw new Error(`视频帧率预处理不一致：选择 ${videoFps} fps，实际为 ${prediction.fps} fps。`);
         }
-        callbacks.onStatus?.(`本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在下载视频…`);
+        callbacks.onStatus?.(
+          `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在启动设备预擦除…`,
+        );
+        reportProgress(16);
+        await client.beginPreparedVideoTransfer(prediction.totalBytes);
+        preEraseStarted = true;
+        callbacks.onStatus?.("设备正在预擦除，同时下载视频…");
         reportProgress(18);
         const blob = await fetchTransferBlob(
           resource,
@@ -630,9 +636,7 @@ export async function transferResourceViaWebUsb(
             onProgress: (ratio) => reportProgress(40 + ratio * 25),
           });
 
-          callbacks.onStatus?.("本地转换完成，正在准备设备存储…");
-          preEraseStarted = true;
-          await client.beginPreparedVideoTransfer(converted.totalBytes);
+          callbacks.onStatus?.("本地转换完成，正在继续设备传输…");
           callbacks.onStatus?.("正在通过 USB 传输…");
           result = await client.transferFile(converted.blob, {
             fileName,
