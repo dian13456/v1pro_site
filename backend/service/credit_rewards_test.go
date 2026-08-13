@@ -37,23 +37,34 @@ func TestApplyLikeCreditRewardsLifetimeAndDailyCap(t *testing.T) {
 		t.Fatalf("expected no re-award after cancel/re-like semantics, got %#v", second)
 	}
 
-	// Fill actor daily cap with unique resources.
-	for i := 0; i < CreditDailyActorLikeCapUnits; i++ {
+	// The first call already consumed one of today's ten effective likes.
+	for i := 1; i < CreditDailyActorLikeLimit; i++ {
 		resourceID := fmt.Sprintf("r-%d", i)
-		if _, err := ApplyLikeCreditRewards(&credits, &grants, &daily, "UP", "LK", resourceID, now); err != nil {
+		award, err := ApplyLikeCreditRewards(&credits, &grants, &daily, "UP", "LK", resourceID, now)
+		if err != nil {
 			t.Fatalf("cap fill failed: %v", err)
 		}
+		if !award.UploaderRewarded || !award.ActorRewarded {
+			t.Fatalf("like %d should still reward both sides: %#v", i+1, award)
+		}
 	}
-	// One more should skip actor reward due to cap, but still reward uploader.
+	// The 11th like still exists, but is not credit-effective for either side.
 	capped, err := ApplyLikeCreditRewards(&credits, &grants, &daily, "UP", "LK", "cap-extra", now)
 	if err != nil {
 		t.Fatalf("capped award failed: %v", err)
 	}
-	if !capped.UploaderRewarded {
-		t.Fatal("expected uploader reward under actor cap")
+	if capped.UploaderRewarded || capped.ActorRewarded || !capped.DailyLimitReached {
+		t.Fatalf("expected both rewards blocked by daily like limit, got %#v", capped)
 	}
-	if capped.ActorRewarded {
-		t.Fatal("expected actor reward blocked by daily cap")
+
+	// Beijing-time day rollover restores ten effective likes for this SN.
+	tomorrow := now.Add(24 * time.Hour)
+	nextDay, err := ApplyLikeCreditRewards(&credits, &grants, &daily, "UP", "LK", "next-day", tomorrow)
+	if err != nil {
+		t.Fatalf("next day award failed: %v", err)
+	}
+	if !nextDay.UploaderRewarded || !nextDay.ActorRewarded || nextDay.DailyLimitReached {
+		t.Fatalf("expected rewards after day rollover, got %#v", nextDay)
 	}
 }
 

@@ -1261,7 +1261,8 @@ func main() {
 			"creditCost":                service.AICreditCostPerGeneration,
 			"likeRewardCredits":         service.LikeCreditRewardAmount,
 			"actorLikeRewardCredits":    service.UnitsToCredits(service.ActorLikeRewardUnits),
-			"actorLikeDailyCapCredits": service.UnitsToCredits(service.CreditDailyActorLikeCapUnits),
+			"actorLikeDailyCapCredits":  service.UnitsToCredits(service.CreditDailyActorLikeCapUnits),
+			"actorLikeDailyLimit":       service.CreditDailyActorLikeLimit,
 			"downloadRewardCredits":     service.UnitsToCredits(service.DownloadRewardUnits),
 			"downloadDailyCapCredits":   service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
 			"softwarePromptDismissedId": softwarePromptDismissedID,
@@ -1504,6 +1505,7 @@ func main() {
 			"likeRewardCredits":        service.LikeCreditRewardAmount,
 			"actorLikeRewardCredits":   service.UnitsToCredits(service.ActorLikeRewardUnits),
 			"actorLikeDailyCapCredits": service.UnitsToCredits(service.CreditDailyActorLikeCapUnits),
+			"actorLikeDailyLimit":      service.CreditDailyActorLikeLimit,
 			"downloadRewardCredits":    service.UnitsToCredits(service.DownloadRewardUnits),
 			"downloadDailyCapCredits":  service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
 			"items":                    shopCatalog.PublicItems(),
@@ -2916,6 +2918,7 @@ func main() {
 		creditRewardAmount := 0.0
 		actorCreditRewarded := false
 		actorCreditRewardAmount := 0.0
+		dailyLikeRewardLimitReached := false
 		if !alreadyLiked {
 			catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
 			if catalogErr != nil {
@@ -2936,7 +2939,10 @@ func main() {
 				)
 				if awardErr != nil {
 					log.Printf("warn: apply like credit rewards failed: %v", awardErr)
-				} else if award.UploaderRewarded || award.ActorRewarded {
+				} else {
+					dailyLikeRewardLimitReached = award.DailyLimitReached
+				}
+				if awardErr == nil && (award.UploaderRewarded || award.ActorRewarded) {
 					if creditSaveErr := userDataRepo.SaveAICredits(aiCredits); creditSaveErr != nil {
 						log.Printf("warn: save like reward credits failed: %v", creditSaveErr)
 					} else {
@@ -2979,14 +2985,16 @@ func main() {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":                 true,
-			"alreadyLiked":            alreadyLiked,
-			"liked":                   true,
-			"likeCount":               likeCount,
-			"creditRewarded":          creditRewarded,
-			"creditRewardAmount":      creditRewardAmount,
-			"actorCreditRewarded":     actorCreditRewarded,
-			"actorCreditRewardAmount": actorCreditRewardAmount,
+			"success":                     true,
+			"alreadyLiked":                alreadyLiked,
+			"liked":                       true,
+			"likeCount":                   likeCount,
+			"creditRewarded":              creditRewarded,
+			"creditRewardAmount":          creditRewardAmount,
+			"actorCreditRewarded":         actorCreditRewarded,
+			"actorCreditRewardAmount":     actorCreditRewardAmount,
+			"dailyLikeRewardLimitReached": dailyLikeRewardLimitReached,
+			"dailyLikeRewardLimit":        service.CreditDailyActorLikeLimit,
 		})
 	})
 

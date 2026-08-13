@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	CreditDailyActorLikeCapUnits = 20 // 10 credits
-	CreditDailyDownloadCapUnits  = 40 // 20 credits
+	CreditDailyActorLikeLimit    = 10
+	CreditDailyActorLikeCapUnits = CreditDailyActorLikeLimit * ActorLikeRewardUnits // 10 rewarded likes / 5 credits
+	CreditDailyDownloadCapUnits  = 40                                               // 20 credits
 
 	CreditRewardKindActorLike = "actor_like"
 	CreditRewardKindDownload  = "download"
@@ -40,10 +41,11 @@ func ShouldAwardDownloadCredit(uploaderSerial, downloaderSerial string) bool {
 }
 
 type LikeCreditAwardResult struct {
-	UploaderRewarded bool
-	UploaderUnits    int
-	ActorRewarded    bool
-	ActorUnits       int
+	UploaderRewarded  bool
+	UploaderUnits     int
+	ActorRewarded     bool
+	ActorUnits        int
+	DailyLimitReached bool
 }
 
 func (r LikeCreditAwardResult) UploaderCredits() float64 {
@@ -54,7 +56,9 @@ func (r LikeCreditAwardResult) ActorCredits() float64 {
 	return UnitsToCredits(r.ActorUnits)
 }
 
-// ApplyLikeCreditRewards awards uploader +1 and liker +0.5 with lifetime/daily guards.
+// ApplyLikeCreditRewards awards uploader +1 and liker +0.5 for the first
+// CreditDailyActorLikeLimit valid likes made by one device each China day.
+// Likes beyond that limit still count socially, but neither side earns credits.
 // Caller must persist credits/grants/daily stores and ledger entries when rewarded.
 func ApplyLikeCreditRewards(
 	credits *AICreditsStore,
@@ -73,12 +77,23 @@ func ApplyLikeCreditRewards(
 	if !ShouldAwardLikeCredit(uploaderSerial, likerSerial) || resourceID == "" {
 		return result, nil
 	}
+	if grants.Has(resourceID, likerSerial) {
+		return result, nil
+	}
+
+	dayKey := ChinaDayKey(now)
+	if !daily.TryReserve(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits, CreditDailyActorLikeCapUnits) {
+		result.DailyLimitReached = true
+		return result, nil
+	}
 	if !grants.TryClaim(resourceID, likerSerial) {
+		daily.Rollback(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits)
 		return result, nil
 	}
 
 	if next, err := credits.EarnUnits(uploaderSerial, UploaderLikeRewardUnits); err != nil {
 		grants.Release(resourceID, likerSerial)
+		daily.Rollback(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits)
 		return result, err
 	} else {
 		_ = next
@@ -86,15 +101,12 @@ func ApplyLikeCreditRewards(
 		result.UploaderUnits = UploaderLikeRewardUnits
 	}
 
-	dayKey := ChinaDayKey(now)
-	if daily.TryReserve(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits, CreditDailyActorLikeCapUnits) {
-		if _, err := credits.EarnUnits(likerSerial, ActorLikeRewardUnits); err != nil {
-			daily.Rollback(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits)
-			return result, err
-		}
-		result.ActorRewarded = true
-		result.ActorUnits = ActorLikeRewardUnits
+	if _, err := credits.EarnUnits(likerSerial, ActorLikeRewardUnits); err != nil {
+		daily.Rollback(dayKey, CreditRewardKindActorLike, likerSerial, "", ActorLikeRewardUnits)
+		return result, err
 	}
+	result.ActorRewarded = true
+	result.ActorUnits = ActorLikeRewardUnits
 	return result, nil
 }
 
