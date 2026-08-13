@@ -17,7 +17,6 @@ import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { hasValidLocalAuth } from "../services/authService";
-import { getAuthState } from "../services/authService";
 import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
@@ -45,10 +44,6 @@ import {
   transferResourceViaWebUsb,
   type AlbumTransition,
 } from "../services/v1proWebResourceTransferService";
-import {
-  listAuthorizedV1ProDevices,
-  supportsImageAlbumTransfer,
-} from "../services/v1proWebTransferClient";
 
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
@@ -88,7 +83,6 @@ export default function ResourcesPage() {
   const [albumTransition, setAlbumTransition] = useState<AlbumTransition>("fade");
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
-  const [albumSupported, setAlbumSupported] = useState(false);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -115,35 +109,6 @@ export default function ResourcesPage() {
       setCurrentPage(1);
     }
   }, [searchParams, setKeyword]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const serial = getAuthState()?.serial?.trim();
-    if (!serial || !("usb" in navigator)) {
-      setAlbumSupported(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    // getDevices() only reads devices already authorized by the browser. It
-    // does not open or claim the USB interface, so the GUI remains unaffected.
-    void listAuthorizedV1ProDevices()
-      .then((devices) => {
-        if (cancelled) return;
-        const authenticatedDevice = devices.find(
-          (device) => device.serialNumber?.trim() === serial,
-        );
-        setAlbumSupported(Boolean(authenticatedDevice && supportsImageAlbumTransfer(authenticatedDevice)));
-      })
-      .catch(() => {
-        if (!cancelled) setAlbumSupported(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const sortedResources = useMemo(() => {
     if (sortMode === "hot") {
@@ -687,7 +652,6 @@ export default function ResourcesPage() {
                 </select>
               </div>
               <div className="flex items-center gap-2">
-                {albumSupported ? (
                 <button
                   type="button"
                   onClick={toggleAlbumMode}
@@ -701,7 +665,6 @@ export default function ResourcesPage() {
                   <span aria-hidden="true">▦</span>
                   {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
                 </button>
-                ) : null}
                 <select
                   value={sortMode}
                   onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
