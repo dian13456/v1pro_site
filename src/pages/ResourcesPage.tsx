@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
@@ -54,7 +54,17 @@ const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 16;
 
+function shuffleRecommendations(items: ResourceRecommendation[]): ResourceRecommendation[] {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 export default function ResourcesPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
@@ -212,8 +222,24 @@ export default function ResourcesPage() {
     const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
     return recommendationItems
       .map((recommendation) => resourceMap.get(recommendation.resourceId))
-      .filter((resource): resource is ResourceItem => Boolean(resource));
-  }, [recommendationItems, resources]);
+      .filter((resource): resource is ResourceItem => Boolean(resource) && !hiddenIdSet.has(resource.id))
+      .slice(0, DEFAULT_PAGE_SIZE);
+  }, [hiddenIdSet, recommendationItems, resources]);
+
+  const showingRecommendations =
+    !showHidden &&
+    !albumMode &&
+    !randomMode &&
+    currentPage === 1 &&
+    pageSize === DEFAULT_PAGE_SIZE &&
+    !keyword.trim() &&
+    category === "all" &&
+    materialType === "all" &&
+    columnTag === "all" &&
+    sortMode === "latest" &&
+    capacityFilter === "all" &&
+    recommendedResources.length > 0;
+  const displayedItems = showingRecommendations ? recommendedResources : visibleItems;
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -238,23 +264,23 @@ export default function ResourcesPage() {
   const preloadList = useMemo(
     () =>
       isStaticMode()
-        ? visibleItems
-            .slice(0, Math.min(visibleItems.length + 6, 26))
+        ? displayedItems
+            .slice(0, Math.min(displayedItems.length + 6, 26))
             .map((item) => item.image)
             .filter((url) => /^https?:\/\//i.test(url))
         : [],
-    [visibleItems]
+    [displayedItems]
   );
   useImagePreload(preloadList);
 
   useEffect(() => {
     if (!hasValidLocalAuth() || isStaticMode()) return;
-    for (const item of visibleItems) {
+    for (const item of displayedItems) {
       if (canTransferViaV1Pro(item)) {
         prefetchTransferDownloadUrl(item);
       }
     }
-  }, [visibleItems]);
+  }, [displayedItems]);
 
   useEffect(() => {
     let active = true;
@@ -315,10 +341,10 @@ export default function ResourcesPage() {
   useEffect(() => {
     if (loading || resources.length === 0 || !hasValidLocalAuth() || isStaticMode()) return;
     let active = true;
-    fetchResourceRecommendations(6)
+    fetchResourceRecommendations(24)
       .then((result) => {
         if (!active) return;
-        setRecommendationItems(result.items);
+        setRecommendationItems(shuffleRecommendations(result.items));
       })
       .catch(() => {
         if (active) setRecommendationItems([]);
@@ -326,7 +352,7 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [loading, resources, recommendationRefreshKey]);
+  }, [loading, location.key, resources, recommendationRefreshKey]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -801,32 +827,10 @@ export default function ResourcesPage() {
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
-            {!loading && !albumMode && !randomMode && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
-              <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
-                <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {recommendedResources.map((resource) => (
-                    <div key={`recommendation-${resource.id}`}>
-                      <CompactResourceCard
-                        resource={resource}
-                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
-                        likeCount={likeCounts[resource.id] || 0}
-                        liked={likedIds.has(resource.id)}
-                        liking={likingId === resource.id}
-                        favorited={favoriteIds.includes(resource.id)}
-                        favoriting={favoritingId === resource.id}
-                        onOpen={handleOpenResource}
-                        onLike={(item) => void handleLike(item)}
-                        onFavorite={(item) => void handleFavorite(item)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+            {showingRecommendations ? <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2> : null}
             {!loading ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {visibleItems.map((resource) => (
+                {displayedItems.map((resource) => (
                   <CompactResourceCard
                     key={resource.id}
                     resource={resource}
@@ -851,7 +855,7 @@ export default function ResourcesPage() {
                 ))}
               </section>
             ) : null}
-            {!loading && visibleItems.length === 0 ? (
+            {!loading && displayedItems.length === 0 ? (
               <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
                 {showHidden ? "当前设备没有已屏蔽素材。" : "没有匹配的素材，请调整筛选条件。"}
               </div>
