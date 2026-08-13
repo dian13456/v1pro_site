@@ -25,7 +25,7 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
   };
 
   return (
-    <header className="sticky top-0 z-30 h-[60px] border-b border-[#e6e9f2] bg-white">
+    <header className="sticky top-0 z-[80] h-[60px] border-b border-[#e6e9f2] bg-white">
       <div className="flex h-full items-center gap-3 px-4 sm:px-8">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold text-[#2b3245]">
           <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-[17px] text-white">🐱</span>

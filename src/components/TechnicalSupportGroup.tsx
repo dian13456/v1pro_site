@@ -6,7 +6,7 @@ interface TechnicalSupportGroupProps {
 
 export function TechnicalSupportGroup({ compact = false }: TechnicalSupportGroupProps) {
   return (
-    <details className="group relative shrink-0">
+    <details className="group relative z-[90] shrink-0">
       <summary
         className={`flex cursor-pointer list-none items-center gap-2 rounded-full border font-semibold transition [&::-webkit-details-marker]:hidden ${
           compact

@@ -8,7 +8,7 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ title, subtitle, rightSlot }: SiteHeaderProps) {
   return (
-    <header className="site-header-panel mb-8 rounded-3xl border border-white/25 bg-white/70 p-5 dark:border-white/10 dark:bg-slate-900/70">
+    <header className="site-header-panel relative z-[80] mb-8 rounded-3xl border border-white/25 bg-white/70 p-5 dark:border-white/10 dark:bg-slate-900/70">
       <div className="min-w-0">
         <p className="site-accent-text text-xs uppercase tracking-[0.24em]">JiaDian HUB Resource Center</p>
         <h1 className="mt-1 text-2xl font-semibold leading-tight text-slate-900 dark:text-slate-50">{title}</h1>
