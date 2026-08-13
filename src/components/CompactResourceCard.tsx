@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
+import { useCreatorAvatar } from "../hooks/useCreatorAvatar";
 import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import {
   formatMediaDuration,
@@ -62,6 +63,7 @@ export function CompactResourceCard({
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);
   const displayCapacity = resource.materialType === "image" ? null : capacity;
   const duration = formatMediaDuration(metrics.durationSec);
+  const creatorAvatarUrl = useCreatorAvatar(resource.author);
 
   return (
     <article
@@ -123,18 +125,9 @@ export function CompactResourceCard({
       <div className="p-3.5">
         <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{resource.title || resource.description}</h3>
         <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-          {resource.author ? (
-            <Link
-              to={`/creator/${encodeURIComponent(resource.author)}`}
-              onClick={(event) => event.stopPropagation()}
-              className="max-w-[52%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 transition hover:bg-indigo-100 hover:text-indigo-600"
-              title={`查看 ${resource.author} 的全部素材`}
-            >
-              👤 {resource.author}
-            </Link>
-          ) : (
-            <span className="max-w-[52%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500">{resource.columnTag || "其他"}</span>
-          )}
+          <span className="max-w-[40%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">
+            {resource.columnTag || "其他"}
+          </span>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {onHiddenChange ? (
               <button
@@ -185,6 +178,23 @@ export function CompactResourceCard({
             <span>⬇ {downloadCount}</span>
           </div>
         </div>
+        {resource.author ? (
+          <Link
+            to={`/creator/${encodeURIComponent(resource.author)}`}
+            onClick={(event) => event.stopPropagation()}
+            className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2.5 text-xs text-slate-500 transition hover:text-indigo-600 dark:border-slate-800 dark:text-slate-400 dark:hover:text-indigo-300"
+            title={`查看 ${resource.author} 的全部素材`}
+          >
+            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-xs font-semibold text-white shadow-sm">
+              {creatorAvatarUrl ? (
+                <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
+              ) : (
+                resource.author.trim().slice(0, 1).toUpperCase() || "👤"
+              )}
+            </span>
+            <span className="min-w-0 truncate font-medium">{resource.author}</span>
+          </Link>
+        ) : null}
       </div>
     </article>
   );
