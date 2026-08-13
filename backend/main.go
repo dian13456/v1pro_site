@@ -1770,7 +1770,9 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "行为参数无效"})
 			return
 		}
-		if _, exists := resourceMapStore.get(resourceID); !exists {
+		_, resourceExists := resourceMapStore.get(resourceID)
+		_, imageExists := imageMapStore.get(resourceID)
+		if !resourceExists && !imageExists {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在"})
 			return
 		}
