@@ -12,6 +12,7 @@ import {
   WEBUSB_TRANSFER_VERSION,
 } from "./v1proWebTransferClient";
 import { guessTransferFileName } from "./v1proTransferService";
+import { convertBrowserVideoWithFfmpeg } from "./browserFfmpegVideoService";
 
 export { WEBUSB_TRANSFER_VERSION };
 
@@ -256,6 +257,9 @@ export async function transferResourceViaWebUsb(
   } = {},
   options: {
     videoFps?: number;
+    fitMode?: "fill" | "contain";
+    rotationDeg?: 0 | 90 | 180 | 270;
+    colorProfile?: "normal" | "vivid" | "professional";
   } = {},
 ): Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> {
   if (!canWebUsbDirectTransfer(resource)) {
@@ -309,48 +313,91 @@ export async function transferResourceViaWebUsb(
         const prediction = await client.predictVideoUrl(directUrl, {
           maxVideoFps: videoFps,
           minVideoFps: videoFps,
+          maxVideoSpeed: 10,
         });
         if (prediction.fps !== videoFps) {
           throw new Error(`视频帧率预处理不一致：选择 ${videoFps} fps，实际为 ${prediction.fps} fps。`);
         }
-        callbacks.onStatus?.(
-          `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在预擦除并下载视频…`,
-        );
+        callbacks.onStatus?.(`本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在下载视频…`);
         reportProgress(18);
-        preEraseStarted = true;
-        const [, blob] = await Promise.all([
-          client.beginPreparedVideoTransfer(prediction.totalBytes),
-          fetchTransferBlob(
-            resource,
-            (received, total) => {
-              callbacks.onStatus?.(`${formatDownloadProgress(received, total)} · 设备正在预擦除`);
-              if (total > 0) reportProgress(18 + (received / total) * 27);
-            },
-            () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载（设备继续预擦除）…"),
-            directUrl,
-          ),
-        ]);
+        const blob = await fetchTransferBlob(
+          resource,
+          (received, total) => {
+            callbacks.onStatus?.(formatDownloadProgress(received, total));
+            if (total > 0) reportProgress(18 + (received / total) * 22);
+          },
+          () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
+          directUrl,
+        );
         await validateTransferBlob(resource, blob);
         const fileName = guessTransferFileName(resource);
-        callbacks.onStatus?.("视频下载完成，正在解码并传输…");
-        reportProgress(45);
-        const result = await client.transferFile(blob, {
-          fileName,
-          mediaType: "video",
-          maxVideoFps: videoFps,
-          minVideoFps: videoFps,
-          pingFirst: false,
-          preparedTotalBytes: prediction.totalBytes,
-          onProgress: (info) => {
-            if (info.phase === "encode" && info.frameCount) {
-              callbacks.onStatus?.(`正在解码视频… ${info.sent}/${info.frameCount} 帧`);
-              reportProgress(45 + Math.min(1, info.sent / info.frameCount) * 15);
-              return;
-            }
-            callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
-            reportProgress(60 + info.ratio * 39);
-          },
-        });
+        reportProgress(40);
+
+        let result: Awaited<ReturnType<V1ProWebTransferClient["transferFile"]>>;
+        try {
+          const converted = await convertBrowserVideoWithFfmpeg(blob, {
+            fileName,
+            plan: {
+              duration: prediction.duration,
+              sourceSpan: prediction.sourceSpan,
+              frameCount: prediction.frameCount,
+              fps: prediction.fps,
+              speed: prediction.speed,
+              totalBytes: prediction.totalBytes,
+              note: prediction.note || `FFmpeg 本地转换 · ${prediction.frameCount} 帧 · ${prediction.fps}fps`,
+            },
+            fitMode: options.fitMode ?? "fill",
+            rotationDeg: options.rotationDeg ?? 0,
+            colorProfile: options.colorProfile ?? "normal",
+            onStatus: callbacks.onStatus,
+            onProgress: (ratio) => reportProgress(40 + ratio * 25),
+          });
+
+          callbacks.onStatus?.("本地转换完成，正在准备设备存储…");
+          preEraseStarted = true;
+          await client.beginPreparedVideoTransfer(converted.totalBytes);
+          callbacks.onStatus?.("正在通过 USB 传输…");
+          result = await client.transferFile(converted.blob, {
+            fileName,
+            mediaType: "video",
+            maxVideoFps: videoFps,
+            minVideoFps: videoFps,
+            pingFirst: false,
+            preparedTotalBytes: converted.totalBytes,
+            prebuiltGfm1: {
+              frameCount: converted.frameCount,
+              fps: converted.fps,
+              note: converted.note,
+            },
+            onProgress: (info) => {
+              callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
+              reportProgress(65 + info.ratio * 34);
+            },
+          });
+        } catch (ffmpegError) {
+          if (preEraseStarted) throw ffmpegError;
+          callbacks.onStatus?.("浏览器 FFmpeg 不可用，已切换兼容转换…");
+          result = await client.transferFile(blob, {
+            fileName,
+            mediaType: "video",
+            maxVideoFps: videoFps,
+            minVideoFps: videoFps,
+            maxVideoSpeed: 10,
+            fitMode: options.fitMode ?? "fill",
+            rotationDeg: options.rotationDeg ?? 0,
+            colorProfile: options.colorProfile ?? "normal",
+            pingFirst: false,
+            onProgress: (info) => {
+              if (info.phase === "encode" && info.frameCount) {
+                callbacks.onStatus?.(`兼容模式正在解码… ${info.sent}/${info.frameCount} 帧`);
+                reportProgress(40 + Math.min(1, info.sent / info.frameCount) * 25);
+                return;
+              }
+              callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
+              reportProgress(65 + info.ratio * 34);
+            },
+          });
+        }
         if (result.fps !== videoFps) {
           throw new Error(`视频实际编码帧率不一致：选择 ${videoFps} fps，实际为 ${result.fps ?? "未知"} fps。`);
         }

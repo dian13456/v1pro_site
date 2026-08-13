@@ -24,6 +24,11 @@ import {
   createV1ProWebTransferClient,
   listAuthorizedV1ProDevices,
 } from "../services/v1proWebTransferClient";
+import {
+  convertBrowserVideoWithFfmpeg,
+  planBrowserFfmpegVideo,
+  probeBrowserVideoDuration,
+} from "../services/browserFfmpegVideoService";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
@@ -286,25 +291,76 @@ export default function SharePage() {
           `当前设备为 ${detectedFrames} 帧，未在目标设备容量中勾选该型号`,
         );
       }
-      const result = await client.transferFile(selectedFile, {
-        fileName: selectedFile.name,
-        mediaType: mediaKind,
-        maxFrames: detectedFrames,
-        maxVideoFps: videoFps,
-        minVideoFps: videoFps,
-        fitMode,
-        rotationDeg,
-        colorProfile: videoColorProfile,
-        pingFirst: false,
-        onProgress: (info) => {
-          if (info.note && info.sent === 0) {
-            setProgress(info.note);
-            return;
-          }
-          const percent = Math.round(info.ratio * 100);
-          setProgress(info.phase === "encode" ? `正在编码 ${percent}%` : `正在下传 ${percent}%`);
-        },
-      });
+      const transferProgress = (info: { phase: "encode" | "transfer"; ratio: number; sent: number; note?: string }) => {
+        if (info.note && info.sent === 0) {
+          setProgress(info.note);
+          return;
+        }
+        const percent = Math.round(info.ratio * 100);
+        setProgress(info.phase === "encode" ? `正在编码 ${percent}%` : `正在下传 ${percent}%`);
+      };
+
+      let result;
+      if (mediaKind === "video") {
+        const duration = await probeBrowserVideoDuration(selectedFile);
+        const plan = planBrowserFfmpegVideo(duration, detectedFrames, videoFps);
+        let preparedTransferStarted = false;
+        try {
+          const converted = await convertBrowserVideoWithFfmpeg(selectedFile, {
+            plan,
+            fileName: selectedFile.name,
+            fitMode,
+            rotationDeg,
+            colorProfile: videoColorProfile,
+            onStatus: setProgress,
+            onProgress: (ratio) => setProgress(`FFmpeg 本地转换 ${Math.round(ratio * 100)}%`),
+          });
+          setProgress("本地转换完成，正在准备设备存储…");
+          preparedTransferStarted = true;
+          await client.beginPreparedVideoTransfer(converted.totalBytes);
+          result = await client.transferFile(converted.blob, {
+            fileName: selectedFile.name,
+            mediaType: "video",
+            maxFrames: detectedFrames,
+            maxVideoFps: videoFps,
+            minVideoFps: videoFps,
+            pingFirst: false,
+            preparedTotalBytes: converted.totalBytes,
+            prebuiltGfm1: {
+              frameCount: converted.frameCount,
+              fps: converted.fps,
+              note: converted.note,
+            },
+            onProgress: transferProgress,
+          });
+        } catch (ffmpegError) {
+          if (preparedTransferStarted) throw ffmpegError;
+          setProgress("浏览器 FFmpeg 不可用，已切换兼容转换…");
+          result = await client.transferFile(selectedFile, {
+            fileName: selectedFile.name,
+            mediaType: "video",
+            maxFrames: detectedFrames,
+            maxVideoFps: videoFps,
+            minVideoFps: videoFps,
+            maxVideoSpeed: 10,
+            fitMode,
+            rotationDeg,
+            colorProfile: videoColorProfile,
+            pingFirst: false,
+            onProgress: transferProgress,
+          });
+        }
+      } else {
+        result = await client.transferFile(selectedFile, {
+          fileName: selectedFile.name,
+          mediaType: mediaKind,
+          maxFrames: detectedFrames,
+          fitMode,
+          rotationDeg,
+          pingFirst: false,
+          onProgress: transferProgress,
+        });
+      }
       setNotice(`下传完成：SN ${serial} · ${result.frameCount} 帧`);
     } catch (err) {
       setErrorMessage(formatClientError(err, "设备下传失败"));

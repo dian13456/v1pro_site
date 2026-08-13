@@ -14,12 +14,13 @@ function injectProductionSecurity(apiBase) {
 
       const csp = [
         "default-src 'self'",
-        "script-src 'self'",
+        "script-src 'self' 'wasm-unsafe-eval'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob: https://*.myqcloud.com",
         "media-src 'self' blob: https://*.myqcloud.com",
         `connect-src ${connectSrc.join(" ")}`,
         "font-src 'self'",
+        "worker-src 'self' blob:",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",

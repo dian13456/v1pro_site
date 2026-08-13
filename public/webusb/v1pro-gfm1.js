@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.21";
+} from "./v1pro-constants.js?v=1.2.22";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -734,7 +734,7 @@ function loadHtmlImage(url) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.21");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.22");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

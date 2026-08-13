@@ -43,6 +43,11 @@ export interface V1ProTransferFileOptions {
   pingFirst?: boolean;
   requirePing?: boolean;
   preparedTotalBytes?: number;
+  prebuiltGfm1?: {
+    frameCount: number;
+    fps?: number;
+    note?: string;
+  };
   onProgress?: (info: V1ProTransferProgress) => void;
 }
 

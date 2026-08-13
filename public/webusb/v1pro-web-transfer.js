@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.21";
+} from "./v1pro-constants.js?v=1.2.22";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.21";
+} from "./v1pro-gfm1.js?v=1.2.22";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -23,9 +23,64 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.21";
+} from "./v1pro-usb.js?v=1.2.22";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
+
+const GFM1_HEADER_BYTES = 56;
+const GFM1_FRAME_BYTES = 320 * 170 * 2;
+
+async function planPrebuiltGfm1(blob, metadata = {}) {
+  if (!(blob instanceof Blob) || blob.size < GFM1_HEADER_BYTES) {
+    throw new V1ProUsbError("invalid_gfm1", "浏览器本地转换结果无效。");
+  }
+  const header = new Uint8Array(await blob.slice(0, GFM1_HEADER_BYTES).arrayBuffer());
+  if (String.fromCharCode(...header.subarray(0, 4)) !== "GFM1") {
+    throw new V1ProUsbError("invalid_gfm1", "浏览器本地转换结果缺少 GFM1 文件头。");
+  }
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  const version = view.getUint16(4, true);
+  const width = view.getUint16(6, true);
+  const height = view.getUint16(8, true);
+  const frameCount = view.getUint16(10, true);
+  const pixelBytes = view.getUint32(12, true);
+  if (version !== 1 || width !== 320 || height !== 170 || frameCount < 1) {
+    throw new V1ProUsbError("invalid_gfm1", "浏览器本地转换结果的版本或画面尺寸不正确。");
+  }
+  if (metadata.frameCount != null && frameCount !== metadata.frameCount) {
+    throw new V1ProUsbError(
+      "invalid_gfm1",
+      `浏览器本地转换帧数不一致（${frameCount}/${metadata.frameCount}）。`,
+    );
+  }
+  const expectedPixelBytes = frameCount * GFM1_FRAME_BYTES;
+  const expectedTotalBytes = GFM1_HEADER_BYTES + frameCount * 2 + expectedPixelBytes;
+  if (pixelBytes !== expectedPixelBytes || blob.size !== expectedTotalBytes) {
+    throw new V1ProUsbError(
+      "invalid_gfm1",
+      `浏览器本地转换结果大小不正确（${blob.size}/${expectedTotalBytes} 字节）。`,
+    );
+  }
+
+  return {
+    frameCount,
+    fps: metadata.fps,
+    totalBytes: blob.size,
+    note: metadata.note || "浏览器 FFmpeg 本地转换",
+    async *payloadChunks() {
+      const reader = blob.stream().getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value?.byteLength) yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  };
+}
 
 /**
  * @param {{
@@ -240,7 +295,7 @@ export class V1ProWebTransfer {
       const maxFrames = opts.maxFrames ?? capacity?.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
       const maxPayloadBytes = capacity?.maxPayloadBytes;
       const capacityNote = formatDeviceCapacityLabel(this.deviceCapacity);
-      if (onProgress) {
+      if (onProgress && !opts.prebuiltGfm1) {
         onProgress({
           phase: "encode",
           sent: 0,
@@ -250,29 +305,31 @@ export class V1ProWebTransfer {
         });
       }
 
-      const plan = await planGfm1Encode(file, {
-        maxFrames,
-        maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
-        minVideoFps: opts.minVideoFps,
-        maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
-        maxPayloadBytes,
-        fileName,
-        mediaType: opts.mediaType,
-        fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
-        rotationDeg: opts.rotationDeg ?? 0,
-        colorProfile: opts.colorProfile ?? "normal",
-        onFrameEncoded: (frameIndex, frameCount) => {
-          if (onProgress) {
-            onProgress({
-              phase: "encode",
-              sent: frameIndex,
-              total: frameCount,
-              ratio: frameCount > 0 ? frameIndex / frameCount : 0,
-              frameCount,
-            });
-          }
-        },
-      });
+      const plan = opts.prebuiltGfm1
+        ? await planPrebuiltGfm1(file, opts.prebuiltGfm1)
+        : await planGfm1Encode(file, {
+            maxFrames,
+            maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
+            minVideoFps: opts.minVideoFps,
+            maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
+            maxPayloadBytes,
+            fileName,
+            mediaType: opts.mediaType,
+            fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
+            rotationDeg: opts.rotationDeg ?? 0,
+            colorProfile: opts.colorProfile ?? "normal",
+            onFrameEncoded: (frameIndex, frameCount) => {
+              if (onProgress) {
+                onProgress({
+                  phase: "encode",
+                  sent: frameIndex,
+                  total: frameCount,
+                  ratio: frameCount > 0 ? frameIndex / frameCount : 0,
+                  frameCount,
+                });
+              }
+            },
+          });
 
       const requestedVideoFps =
         isVideo && opts.maxVideoFps === opts.minVideoFps ? opts.maxVideoFps : null;
