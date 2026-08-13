@@ -1,30 +1,12 @@
 import type { ResourceItem } from "../types/resource";
 import { getAuthState, hasValidLocalAuth } from "./authService";
-import { apiFetch } from "./httpClient";
-import { isStaticMode } from "./runtimeMode";
 
 export interface HiddenResourceState {
   hiddenResourceIds: number[];
   blockedUploaderCount: number;
 }
 
-interface HiddenResourcesResponse {
-  success?: boolean;
-  hiddenResourceIds?: Array<number | string>;
-  blockedUploaderCount?: number;
-  message?: string;
-}
-
 const LOCAL_BLOCKED_KEY_PREFIX = "jiadian_hub_blocked_uploaders_";
-
-function normalizeIds(rawIds?: Array<number | string>): number[] {
-  const unique = new Set<number>();
-  for (const raw of rawIds || []) {
-    const id = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
-    if (Number.isSafeInteger(id) && id > 0) unique.add(id);
-  }
-  return Array.from(unique);
-}
 
 function localKey(serial: string): string {
   return `${LOCAL_BLOCKED_KEY_PREFIX}${serial}`;
@@ -65,23 +47,9 @@ function requireAuth() {
   return auth;
 }
 
-function normalizeResponse(payload: HiddenResourcesResponse): HiddenResourceState {
-  return {
-    hiddenResourceIds: normalizeIds(payload.hiddenResourceIds),
-    blockedUploaderCount: Math.max(0, Number(payload.blockedUploaderCount) || 0),
-  };
-}
-
 export async function fetchHiddenResourceState(resources: ResourceItem[]): Promise<HiddenResourceState> {
   const auth = requireAuth();
-  if (isStaticMode()) return localState(auth.serial, resources);
-
-  const payload = await apiFetch<HiddenResourcesResponse>("/api/resource-hidden", {
-    method: "GET",
-    headers: { Authorization: `Bearer ${auth.token}` },
-  });
-  if (!payload.success) throw new Error(payload.message || "屏蔽列表加载失败");
-  return normalizeResponse(payload);
+  return localState(auth.serial, resources);
 }
 
 export async function setUploaderHidden(
@@ -90,21 +58,11 @@ export async function setUploaderHidden(
   resources: ResourceItem[]
 ): Promise<HiddenResourceState> {
   const auth = requireAuth();
-  if (isStaticMode()) {
-    const blocked = new Set(readLocal(auth.serial));
-    const key = uploaderKey(resource);
-    if (!key || key === "AUTHOR:") throw new Error("未找到该素材的上传设备");
-    if (hidden) blocked.add(key);
-    else blocked.delete(key);
-    writeLocal(auth.serial, blocked);
-    return localState(auth.serial, resources);
-  }
-
-  const payload = await apiFetch<HiddenResourcesResponse>("/api/resource-hidden", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${auth.token}` },
-    body: JSON.stringify({ resourceId: String(resource.id), hidden }),
-  });
-  if (!payload.success) throw new Error(payload.message || "屏蔽设置保存失败");
-  return normalizeResponse(payload);
+  const blocked = new Set(readLocal(auth.serial));
+  const key = uploaderKey(resource);
+  if (!key || key === "AUTHOR:") throw new Error("未找到该素材的上传设备");
+  if (hidden) blocked.add(key);
+  else blocked.delete(key);
+  writeLocal(auth.serial, blocked);
+  return localState(auth.serial, resources);
 }

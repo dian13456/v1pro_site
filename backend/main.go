@@ -1276,6 +1276,43 @@ func main() {
 		})
 	})
 
+	router.GET("/api/leaderboard/credits", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
+		creditsSnapshot := service.AICreditsStore{
+			UnitScale: aiCredits.UnitScale,
+			Balances:  make(map[string]int, len(aiCredits.Balances)),
+		}
+		for userSerial, balance := range aiCredits.Balances {
+			creditsSnapshot.Balances[userSerial] = balance
+		}
+		aiCreditsMu.Unlock()
+
+		profilesMu.RLock()
+		profilesSnapshot := service.UserProfilesStore{Profiles: make(map[string]string, len(userProfiles.Profiles))}
+		for userSerial, displayName := range userProfiles.Profiles {
+			profilesSnapshot.Profiles[userSerial] = displayName
+		}
+		profilesMu.RUnlock()
+
+		result := service.BuildCreditLeaderboard(creditsSnapshot, profilesSnapshot, serial, 50)
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"entries":    result.Entries,
+			"current":    result.Current,
+			"totalUsers": result.TotalUsers,
+			"updatedAt":  time.Now().UTC().Format(time.RFC3339),
+		})
+	})
+
 	router.POST("/api/profile/software-prompt/dismiss", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
