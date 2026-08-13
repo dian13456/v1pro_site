@@ -307,9 +307,11 @@ export class V1ProWebTransfer {
           if (!onProgress) return;
           const encodeWeight = 0.12;
           const transferRatio = total > 0 ? sent / total : 0;
-          const phase = sent <= 8 + 56 + plan.frameCount * 2 ? "encode" : "transfer";
           onProgress({
-            phase,
+            // Encoding has already completed before sendGfm1PayloadStream starts.
+            // Treat every callback here as transfer progress; classifying the
+            // first packets as encode makes the combined UI jump backwards.
+            phase: "transfer",
             sent,
             total,
             ratio: Math.min(1, encodeWeight + transferRatio * (1 - encodeWeight)),

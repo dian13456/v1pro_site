@@ -20,6 +20,7 @@ export interface ShopCatalogPayload {
   likeRewardCredits?: number;
   actorLikeRewardCredits?: number;
   actorLikeDailyCapCredits?: number;
+  actorLikeDailyLimit?: number;
   downloadRewardCredits?: number;
   downloadDailyCapCredits?: number;
   items?: ShopItem[];

@@ -176,8 +176,10 @@ export async function shareVideoToCatalog(
     throw new Error("认证状态无效，请重新验证设备");
   }
 
-  const baseName = file.name.replace(/\.[^.]+$/i, "");
-  const title = (options.title || "").trim() || baseName;
+  const title = (options.title || "").trim();
+  if (!title) {
+    throw new Error("请填写素材标题");
+  }
   const description = (options.description || "").trim() || title;
   const columnTag = (options.columnTag || "").trim();
   const auth = getAuthState();

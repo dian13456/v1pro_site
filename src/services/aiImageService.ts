@@ -315,7 +315,8 @@ export async function transferAiImageToDevice(
 
 export async function shareAiImageToCatalog(
   image: GeneratedAiImage,
-  prompt: string
+  prompt: string,
+  options: { title?: string; description?: string } = {},
 ): Promise<AiImageShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -327,11 +328,15 @@ export async function shareAiImageToCatalog(
   const auth = getAuthState();
   const isUpload = image.source === "upload";
   const path = isUpload ? "/api/user-image/share" : "/api/ai-image/share";
+  const uploadTitle = (options.title || "").trim();
+  if (isUpload && !uploadTitle) {
+    throw new Error("请填写素材标题");
+  }
   const body = isUpload
     ? {
         imageBase64: image.dataUrl,
-        title: image.fileName || "用户上传图片",
-        description: prompt.trim() || image.fileName || "用户上传图片",
+        title: uploadTitle,
+        description: (options.description || prompt).trim() || uploadTitle,
       }
     : {
         imageBase64: image.dataUrl,

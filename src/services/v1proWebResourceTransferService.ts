@@ -269,9 +269,14 @@ export async function transferResourceViaWebUsb(
   }
 
   const task = (async () => {
-    const reportProgress = (progress: number) => callbacks.onProgress?.(
-      Math.max(0, Math.min(100, progress)),
-    );
+    let lastReportedProgress = 0;
+    const reportProgress = (progress: number) => {
+      const normalized = Math.max(0, Math.min(100, progress));
+      // Download, decode and USB callbacks may complete on different tasks.
+      // Never let an older stage overwrite a newer stage with a lower value.
+      lastReportedProgress = Math.max(lastReportedProgress, normalized);
+      callbacks.onProgress?.(lastReportedProgress);
+    };
     reportProgress(2);
     await loadV1ProWebTransferSdk();
     if (!sharedClient) {
@@ -337,9 +342,9 @@ export async function transferResourceViaWebUsb(
           pingFirst: false,
           preparedTotalBytes: prediction.totalBytes,
           onProgress: (info) => {
-            if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
+            if (info.phase === "encode" && info.frameCount) {
               callbacks.onStatus?.(`正在解码视频… ${info.sent}/${info.frameCount} 帧`);
-              reportProgress(45 + (info.sent / info.frameCount) * 15);
+              reportProgress(45 + Math.min(1, info.sent / info.frameCount) * 15);
               return;
             }
             callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
@@ -409,11 +414,11 @@ export async function transferResourceViaWebUsb(
             callbacks.onStatus?.(info.note);
             return;
           }
-          if (info.phase === "encode" && info.frameCount && info.sent < info.frameCount) {
+          if (info.phase === "encode" && info.frameCount) {
             callbacks.onStatus?.(
               `正在编码… ${info.sent}/${info.frameCount} 帧`,
             );
-            reportProgress(38 + (info.sent / info.frameCount) * 17);
+            reportProgress(38 + Math.min(1, info.sent / info.frameCount) * 17);
             return;
           }
           callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);

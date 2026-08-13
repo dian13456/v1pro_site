@@ -156,9 +156,8 @@ export default function SharePage() {
 
     setSelectedFile(file);
     setMediaKind(kind);
-    const baseName = file.name.replace(/\.[^.]+$/i, "");
-    setTitle(baseName);
-    setDescription(baseName);
+    setTitle("");
+    setDescription("");
     setColumnTag("");
   };
 
@@ -170,6 +169,10 @@ export default function SharePage() {
 
   const handleShare = async () => {
     if (!selectedFile || !mediaKind || uploading) return;
+    if (!title.trim()) {
+      setErrorMessage("请填写素材标题，标题不会再自动使用文件名称");
+      return;
+    }
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -215,7 +218,8 @@ export default function SharePage() {
           setProgress("提交分享...");
           const result = await shareAiImageToCatalog(
             uploaded,
-            description.trim() || title.trim() || uploaded.fileName || "用户上传图片"
+            description.trim() || title.trim(),
+            { title: title.trim(), description: description.trim() || title.trim() },
           );
           resourceId = result.resourceId;
           remaining = result.shareRemaining;

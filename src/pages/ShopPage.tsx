@@ -27,7 +27,8 @@ export default function ShopPage() {
   const [credits, setCredits] = useState<number>(DEFAULT_AI_CREDITS);
   const [likeRewardCredits, setLikeRewardCredits] = useState(1);
   const [actorLikeRewardCredits, setActorLikeRewardCredits] = useState(0.5);
-  const [actorLikeDailyCapCredits, setActorLikeDailyCapCredits] = useState(10);
+  const [actorLikeDailyCapCredits, setActorLikeDailyCapCredits] = useState(5);
+  const [actorLikeDailyLimit, setActorLikeDailyLimit] = useState(10);
   const [downloadRewardCredits, setDownloadRewardCredits] = useState(0.5);
   const [downloadDailyCapCredits, setDownloadDailyCapCredits] = useState(20);
   const [items, setItems] = useState<ShopItem[]>([]);
@@ -47,7 +48,10 @@ export default function ShopPage() {
         typeof payload.actorLikeRewardCredits === "number" ? payload.actorLikeRewardCredits : 0.5,
       );
       setActorLikeDailyCapCredits(
-        typeof payload.actorLikeDailyCapCredits === "number" ? payload.actorLikeDailyCapCredits : 10,
+        typeof payload.actorLikeDailyCapCredits === "number" ? payload.actorLikeDailyCapCredits : 5,
+      );
+      setActorLikeDailyLimit(
+        typeof payload.actorLikeDailyLimit === "number" ? payload.actorLikeDailyLimit : 10,
       );
       setDownloadRewardCredits(
         typeof payload.downloadRewardCredits === "number" ? payload.downloadRewardCredits : 0.5,
@@ -106,7 +110,7 @@ export default function ShopPage() {
         <SitePanel>
           <SiteSectionTitle
             title="我的积分"
-            description={`被点赞 +${formatCredits(likeRewardCredits)}/次；点赞他人 +${formatCredits(actorLikeRewardCredits)}/次（日上限 ${formatCredits(actorLikeDailyCapCredits)}）；被下载 +${formatCredits(downloadRewardCredits)}/次（日上限 ${formatCredits(downloadDailyCapCredits)}）。不能给自己点赞或下载得分。`}
+            description={`被点赞 +${formatCredits(likeRewardCredits)}/次；点赞他人 +${formatCredits(actorLikeRewardCredits)}/次，每个 SN 每天前 ${actorLikeDailyLimit} 次有效（最高 ${formatCredits(actorLikeDailyCapCredits)} 积分）；被下载 +${formatCredits(downloadRewardCredits)}/次（日上限 ${formatCredits(downloadDailyCapCredits)}）。不能给自己点赞或下载得分。`}
             action={
               <div className="text-3xl font-semibold text-violet-700 dark:text-violet-200">
                 {loading ? "—" : formatCredits(credits)}
