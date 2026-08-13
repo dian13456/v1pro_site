@@ -27,7 +27,6 @@ import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenR
 import {
   fetchResourceRecommendations,
   recordResourceInteraction,
-  type RecommendationMode,
   type ResourceRecommendation,
 } from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
@@ -95,7 +94,6 @@ export default function ResourcesPage() {
   const [albumTransition, setAlbumTransition] = useState<AlbumTransition>("fade");
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
-  const [recommendationMode, setRecommendationMode] = useState<RecommendationMode>("popular");
   const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const { theme, setTheme } = useThemeMode();
@@ -324,7 +322,6 @@ export default function ResourcesPage() {
     fetchResourceRecommendations(6)
       .then((result) => {
         if (!active) return;
-        setRecommendationMode(result.mode);
         setRecommendationItems(result.items);
       })
       .catch(() => {
@@ -807,15 +804,6 @@ export default function ResourcesPage() {
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
             {!loading && !albumMode && !randomMode && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
               <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
-                <div className="mb-4 flex items-end justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {recommendationMode === "personalized" ? "根据本设备的点赞、收藏和使用偏好推荐" : "新设备先从本周热门与近期上新开始"}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-orange-500 shadow-sm dark:bg-slate-800">持续学习偏好</span>
-                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {recommendedResources.map(({ resource, reason }) => (
                     <div key={`recommendation-${resource.id}`} className="relative pt-7">
