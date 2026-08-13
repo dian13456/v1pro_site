@@ -5,12 +5,12 @@ import App from "./App.tsx";
 import { applyThemeToDocument, getInitialTheme } from "./hooks/useThemeMode";
 import "./index.css";
 import "./styles/theme.css";
-import { scheduleBrowserFfmpegPrewarm } from "./services/ffmpegRuntime";
+import { scheduleFfmpegAssetPreload } from "./services/ffmpegAssetCache";
 
 applyThemeToDocument(getInitialTheme());
 // Clear stale scroll locks left by an interrupted modal render or hot reload.
 document.body.style.removeProperty("overflow");
-scheduleBrowserFfmpegPrewarm();
+scheduleFfmpegAssetPreload();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

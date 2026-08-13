@@ -9,7 +9,6 @@ const FFMPEG_INIT_TIMEOUT_MS = 180_000;
 let runtime: FFmpeg | null = null;
 let runtimePromise: Promise<FFmpeg> | null = null;
 let operationTail: Promise<void> = Promise.resolve();
-let prewarmScheduled = false;
 
 export interface BrowserFfmpegLease {
   ffmpeg: FFmpeg;
@@ -44,7 +43,7 @@ async function loadBrowserFfmpeg(
   onStatus?.("正在准备 FFmpeg 核心（首次使用约下载 32MB）…");
   const cachedAssets = await getCachedFfmpegAssets();
   onStatus?.(cachedAssets.cached
-    ? "正在从浏览器缓存初始化 FFmpeg…"
+    ? "正在启动浏览器 FFmpeg（核心文件已启用长期缓存）…"
     : "正在初始化浏览器 FFmpeg…");
 
   try {
@@ -65,7 +64,7 @@ function getOrCreateBrowserFfmpeg(
     return Promise.resolve(runtime);
   }
   if (runtimePromise) {
-    onStatus?.("正在等待后台 FFmpeg 初始化完成…");
+    onStatus?.("另一个任务正在初始化 FFmpeg，请稍候…");
     return runtimePromise;
   }
 
@@ -108,25 +107,4 @@ export async function acquireBrowserFfmpeg(
     release();
     throw error;
   }
-}
-
-export function scheduleBrowserFfmpegPrewarm(): void {
-  if (prewarmScheduled || typeof window === "undefined") return;
-  prewarmScheduled = true;
-
-  const connection = (navigator as Navigator & {
-    connection?: { saveData?: boolean; effectiveType?: string };
-  }).connection;
-  if (connection?.saveData || connection?.effectiveType === "slow-2g") return;
-
-  const start = () => { void getOrCreateBrowserFfmpeg().catch(() => {}); };
-  const scheduleIdle = () => {
-    if (typeof window.requestIdleCallback === "function") {
-      window.requestIdleCallback(start, { timeout: 1500 });
-    } else {
-      window.setTimeout(start, 500);
-    }
-  };
-  if (document.readyState === "complete") scheduleIdle();
-  else window.addEventListener("load", scheduleIdle, { once: true });
 }
