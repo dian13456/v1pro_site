@@ -24,6 +24,12 @@ import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenResourceService";
+import {
+  fetchResourceRecommendations,
+  recordResourceInteraction,
+  type RecommendationMode,
+  type ResourceRecommendation,
+} from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -89,6 +95,9 @@ export default function ResourcesPage() {
   const [albumTransition, setAlbumTransition] = useState<AlbumTransition>("fade");
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
+  const [recommendationMode, setRecommendationMode] = useState<RecommendationMode>("popular");
+  const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
+  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -202,6 +211,16 @@ export default function ResourcesPage() {
       .filter((resource): resource is ResourceItem => Boolean(resource));
   }, [albumSelectedIds, resources]);
 
+  const recommendedResources = useMemo(() => {
+    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+    return recommendationItems
+      .map((recommendation) => {
+        const resource = resourceMap.get(recommendation.resourceId);
+        return resource ? { resource, reason: recommendation.reason } : null;
+      })
+      .filter((item): item is { resource: ResourceItem; reason: string } => Boolean(item));
+  }, [recommendationItems, resources]);
+
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -299,6 +318,23 @@ export default function ResourcesPage() {
     };
   }, [resources]);
 
+  useEffect(() => {
+    if (loading || resources.length === 0 || !hasValidLocalAuth() || isStaticMode()) return;
+    let active = true;
+    fetchResourceRecommendations(6)
+      .then((result) => {
+        if (!active) return;
+        setRecommendationMode(result.mode);
+        setRecommendationItems(result.items);
+      })
+      .catch(() => {
+        if (active) setRecommendationItems([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loading, resources, recommendationRefreshKey]);
+
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
       (resource) =>
@@ -335,6 +371,11 @@ export default function ResourcesPage() {
     }
   };
 
+  const handleOpenResource = (resource: ResourceItem) => {
+    setSelectedResource(resource);
+    void recordResourceInteraction(resource.id, "view").catch(() => undefined);
+  };
+
   const handleDownload = async (resource: ResourceItem) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
@@ -353,6 +394,7 @@ export default function ResourcesPage() {
         throw new Error("下载链接生成失败");
       }
       window.open(downloadResult.url, "_blank", "noopener,noreferrer");
+      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
       setErrorMessage(message);
@@ -398,6 +440,8 @@ export default function ResourcesPage() {
           message += `（${result.note}）`;
         }
         setTransferNotice(message);
+        void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
+        setRecommendationRefreshKey((value) => value + 1);
         setWebUsbProgress(100);
         window.setTimeout(() => {
           setTransferNotice("");
@@ -428,6 +472,8 @@ export default function ResourcesPage() {
         onLaunched: (result) => {
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+          void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
+          setRecommendationRefreshKey((value) => value + 1);
           window.setTimeout(() => setTransferNotice(""), 5000);
         },
         onError: (message) => {
@@ -450,6 +496,7 @@ export default function ResourcesPage() {
       setErrorMessage("");
       const result = await toggleResourceFavorite(resource.id);
       setFavoriteIds(result.state.favoriteIds);
+      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "收藏操作失败";
       setErrorMessage(message);
@@ -487,6 +534,7 @@ export default function ResourcesPage() {
           return next;
         });
       }
+      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "点赞失败";
       setErrorMessage(message);
@@ -757,6 +805,40 @@ export default function ResourcesPage() {
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
+            {!loading && !albumMode && !randomMode && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
+              <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
+                <div className="mb-4 flex items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {recommendationMode === "personalized" ? "根据本设备的点赞、收藏和使用偏好推荐" : "新设备先从本周热门与近期上新开始"}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-orange-500 shadow-sm dark:bg-slate-800">持续学习偏好</span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {recommendedResources.map(({ resource, reason }) => (
+                    <div key={`recommendation-${resource.id}`} className="relative pt-7">
+                      <span className="absolute left-2 top-0 max-w-[calc(100%-1rem)] truncate rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm" title={reason}>
+                        {reason}
+                      </span>
+                      <CompactResourceCard
+                        resource={resource}
+                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                        likeCount={likeCounts[resource.id] || 0}
+                        liked={likedIds.has(resource.id)}
+                        liking={likingId === resource.id}
+                        favorited={favoriteIds.includes(resource.id)}
+                        favoriting={favoritingId === resource.id}
+                        onOpen={handleOpenResource}
+                        onLike={(item) => void handleLike(item)}
+                        onFavorite={(item) => void handleFavorite(item)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {!loading ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {visibleItems.map((resource) => (
@@ -769,7 +851,7 @@ export default function ResourcesPage() {
                     liking={likingId === resource.id}
                     favorited={favoriteIds.includes(resource.id)}
                     favoriting={favoritingId === resource.id}
-                    onOpen={setSelectedResource}
+                    onOpen={handleOpenResource}
                     onLike={(item) => void handleLike(item)}
                     onFavorite={(item) => void handleFavorite(item)}
                     hidden={hiddenIdSet.has(resource.id)}

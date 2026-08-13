@@ -410,6 +410,40 @@ func (m *mysqlStore) saveDownloads(ctx context.Context, store DownloadsStore) er
 	return tx.Commit()
 }
 
+func (m *mysqlStore) recordResourceInteraction(ctx context.Context, serial, resourceID, action string, now time.Time) error {
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO resource_interactions (serial, resource_id, action, action_count, last_at)
+		 VALUES (?, ?, ?, 1, ?)
+		 ON DUPLICATE KEY UPDATE action_count = LEAST(action_count + 1, 1000000), last_at = VALUES(last_at)`,
+		serial, resourceID, action, now.Unix(),
+	)
+	return err
+}
+
+func (m *mysqlStore) listResourceInteractions(ctx context.Context, serial string, limit int) ([]ResourceInteraction, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT resource_id, action, action_count, last_at
+		 FROM resource_interactions WHERE serial = ? ORDER BY last_at DESC LIMIT ?`,
+		serial, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]ResourceInteraction, 0)
+	for rows.Next() {
+		var interaction ResourceInteraction
+		if err := rows.Scan(&interaction.ResourceID, &interaction.Action, &interaction.ActionCount, &interaction.LastAt); err != nil {
+			return nil, err
+		}
+		result = append(result, interaction)
+	}
+	return result, rows.Err()
+}
+
 func (m *mysqlStore) loadMessages(ctx context.Context) (MessagesStore, error) {
 	store := NewEmptyMessagesStore()
 	rows, err := m.db.QueryContext(ctx,

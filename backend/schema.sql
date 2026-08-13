@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS device_download_windows (
   day_count INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS resource_interactions (
+  serial VARCHAR(191) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  action VARCHAR(20) NOT NULL,
+  action_count INT NOT NULL DEFAULT 1,
+  last_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (serial, resource_id, action),
+  KEY idx_resource_interactions_serial_last (serial, last_at DESC),
+  KEY idx_resource_interactions_resource_action (resource_id, action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS messages (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   serial VARCHAR(191) NOT NULL DEFAULT '',

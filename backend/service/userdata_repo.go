@@ -9,18 +9,18 @@ import (
 )
 
 type UserDataPaths struct {
-	LikesPath            string
-	FavoritesPath        string
-	DownloadsPath        string
-	MessagesPath         string
-	ProfilesPath         string
-	PromptPrefsPath      string
-	CreditsPath          string
-	SharesPath           string
-	SharesUnlimitedPath  string
-	LedgerPath           string
-	LikeGrantsPath       string
-	DailyRewardsPath     string
+	LikesPath           string
+	FavoritesPath       string
+	DownloadsPath       string
+	MessagesPath        string
+	ProfilesPath        string
+	PromptPrefsPath     string
+	CreditsPath         string
+	SharesPath          string
+	SharesUnlimitedPath string
+	LedgerPath          string
+	LikeGrantsPath      string
+	DailyRewardsPath    string
 }
 
 type UserDataRepo struct {
@@ -130,6 +130,31 @@ func (r *UserDataRepo) SaveDownloads(store DownloadsStore) error {
 		return r.mysql.saveDownloads(ctx, store)
 	}
 	return saveDownloadsJSON(r.paths.DownloadsPath, store)
+}
+
+func (r *UserDataRepo) RecordResourceInteraction(serial, resourceID, action string, now time.Time) error {
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	action = strings.ToLower(strings.TrimSpace(action))
+	if serial == "" || resourceID == "" || !IsResourceInteractionAction(action) {
+		return fmt.Errorf("invalid resource interaction")
+	}
+	if !r.UsesMySQL() {
+		return nil
+	}
+	ctx, cancel := r.ctx()
+	defer cancel()
+	return r.mysql.recordResourceInteraction(ctx, serial, resourceID, action, now)
+}
+
+func (r *UserDataRepo) ListResourceInteractions(serial string, limit int) ([]ResourceInteraction, error) {
+	serial = NormalizeLikeSerial(serial)
+	if serial == "" || !r.UsesMySQL() {
+		return []ResourceInteraction{}, nil
+	}
+	ctx, cancel := r.ctx()
+	defer cancel()
+	return r.mysql.listResourceInteractions(ctx, serial, limit)
 }
 
 func (r *UserDataRepo) LoadMessages() (MessagesStore, error) {

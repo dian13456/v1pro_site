@@ -51,6 +51,11 @@ type downloadRequest struct {
 	ResourceID string `json:"resourceId"`
 }
 
+type resourceInteractionRequest struct {
+	ResourceID string `json:"resourceId"`
+	Action     string `json:"action"`
+}
+
 const (
 	maxMessageLength   = 500
 	maxMessagesPerPage = 100
@@ -1661,6 +1666,120 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, service.SanitizePublicResourceCatalog(items))
+	})
+
+	recordResourceInteraction := func(serial, resourceID, action string, now time.Time) {
+		if err := userDataRepo.RecordResourceInteraction(serial, resourceID, action, now); err != nil {
+			log.Printf("warn: record resource interaction failed: %v", err)
+		}
+	}
+
+	router.GET("/api/recommendations", func(c *gin.Context) {
+		clientIP := ginClientIP(c)
+		serial, ok := serialFromToken(parseBearerToken(c), jwtSecret, tokenTTL)
+		if !ok {
+			abuseGuard.RecordInvalidToken(clientIP)
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if abuseGuard.RejectRead(c, clientIP) {
+			return
+		}
+		limit := 8
+		if parsed, err := strconv.Atoi(strings.TrimSpace(c.Query("limit"))); err == nil && parsed > 0 {
+			limit = parsed
+		}
+		catalog, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		serial = service.NormalizeLikeSerial(serial)
+		interactions, err := userDataRepo.ListResourceInteractions(serial, 200)
+		if err != nil {
+			log.Printf("warn: load recommendation interactions failed: %v", err)
+			interactions = []service.ResourceInteraction{}
+		}
+
+		likesMu.RLock()
+		deviceLikes := make(map[string]bool, len(likes.DeviceLikes[serial]))
+		for id, liked := range likes.DeviceLikes[serial] {
+			deviceLikes[id] = liked
+		}
+		likeCounts := make(map[string]int, len(likes.Counts))
+		for id, count := range likes.Counts {
+			likeCounts[id] = count
+		}
+		likesMu.RUnlock()
+
+		favoritesMu.RLock()
+		deviceFavorites := make(map[string]int64, len(favorites.DeviceFavorites[serial]))
+		for id, createdAt := range favorites.DeviceFavorites[serial] {
+			deviceFavorites[id] = createdAt
+		}
+		favoriteCounts := make(map[string]int, len(favorites.Counts))
+		for id, count := range favorites.Counts {
+			favoriteCounts[id] = count
+		}
+		favoritesMu.RUnlock()
+
+		downloadsMu.Lock()
+		downloads.EnsureCurrentWeek(time.Now())
+		totalDownloads := make(map[string]int, len(downloads.TotalCounts))
+		for id, count := range downloads.TotalCounts {
+			totalDownloads[id] = count
+		}
+		weeklyDownloads := make(map[string]int, len(downloads.WeeklyCounts))
+		for id, count := range downloads.WeeklyCounts {
+			weeklyDownloads[id] = count
+		}
+		downloadsMu.Unlock()
+
+		mode, recommendations := service.BuildResourceRecommendations(catalog, service.RecommendationSignals{
+			Liked:           deviceLikes,
+			Favorites:       deviceFavorites,
+			Interactions:    interactions,
+			LikeCounts:      likeCounts,
+			FavoriteCounts:  favoriteCounts,
+			TotalDownloads:  totalDownloads,
+			WeeklyDownloads: weeklyDownloads,
+		}, limit, time.Now())
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "mode": mode, "items": recommendations})
+	})
+
+	router.POST("/api/resource-interaction", func(c *gin.Context) {
+		clientIP := ginClientIP(c)
+		serial, ok := serialFromToken(parseBearerToken(c), jwtSecret, tokenTTL)
+		if !ok {
+			abuseGuard.RecordInvalidToken(clientIP)
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if abuseGuard.RejectRead(c, clientIP) {
+			return
+		}
+		var req resourceInteractionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		resourceID := strings.TrimSpace(req.ResourceID)
+		action := strings.ToLower(strings.TrimSpace(req.Action))
+		if resourceID == "" || (action != service.ResourceInteractionView && action != service.ResourceInteractionTransfer) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "行为参数无效"})
+			return
+		}
+		if _, exists := resourceMapStore.get(resourceID); !exists {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在"})
+			return
+		}
+		if err := userDataRepo.RecordResourceInteraction(serial, resourceID, action, time.Now()); err != nil {
+			log.Printf("record resource interaction failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "行为记录失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true})
 	})
 
 	router.GET("/api/column-tags", func(c *gin.Context) {
@@ -3285,6 +3404,7 @@ func main() {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
 				return
 			}
+			recordResourceInteraction(serial, id, service.ResourceInteractionDownload, now)
 			awardDownloadCreditReward(serial, id, now)
 		}
 
@@ -3391,6 +3511,7 @@ func main() {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "download stats save failed"})
 				return
 			}
+			recordResourceInteraction(serial, id, service.ResourceInteractionDownload, now)
 		}
 
 		// Allow blob streaming for CORS fallback even when this request is not
