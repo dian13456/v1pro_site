@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.22";
+} from "./v1pro-constants.js?v=1.2.23";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -43,7 +43,7 @@ function ensureSharedCanvases() {
     lcdCtx = lcdCanvas.getContext("2d", { willReadFrequently: true, alpha: false });
     if (!lcdCtx) throw new Error("Canvas 不可用。");
     lcdCtx.imageSmoothingEnabled = true;
-    lcdCtx.imageSmoothingQuality = "low";
+    lcdCtx.imageSmoothingQuality = "high";
   }
   return lcdCtx;
 }
@@ -211,24 +211,36 @@ export function sourceToRgb565(
     ? fillLcdImageData(renderSource, renderW, renderH)
     : fitToLcdImageData(renderSource, renderW, renderH)).data;
   const profiles = {
-    normal: { saturation: 1, contrast: 1 },
-    vivid: { saturation: 1.22, contrast: 1.07 },
-    professional: { saturation: 0.95, contrast: 1.12 },
+    normal: {
+      saturation: 1, contrast: 1, brightness: 0, gamma: 1,
+      red: 1, green: 1, blue: 1,
+    },
+    vivid: {
+      saturation: 1.10, contrast: 1.03, brightness: 0.002, gamma: 1.01,
+      red: 1.005, green: 1, blue: 0.995,
+    },
+    professional: {
+      saturation: 1, contrast: 1.025, brightness: 0.002, gamma: 1.01,
+      red: 1.01, green: 1, blue: 0.99,
+    },
   };
   const profile = profiles[colorProfile] || profiles.normal;
-  const adjust = profile.saturation !== 1 || profile.contrast !== 1;
   const out = new Uint8Array(FRAME_PIXEL_BYTES);
   let o = 0;
   for (let i = 0; i < data.length; i += 4) {
     let r = data[i];
     let g = data[i + 1];
     let b = data[i + 2];
-    if (adjust) {
-      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
-      r = Math.max(0, Math.min(255, ((luma + (r - luma) * profile.saturation) - 128) * profile.contrast + 128));
-      g = Math.max(0, Math.min(255, ((luma + (g - luma) * profile.saturation) - 128) * profile.contrast + 128));
-      b = Math.max(0, Math.min(255, ((luma + (b - luma) * profile.saturation) - 128) * profile.contrast + 128));
-    }
+    const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    const adjustChannel = (value, gain) => {
+      const saturated = luma + (value - luma) * profile.saturation;
+      const contrasted = (saturated - 128) * profile.contrast + 128 + profile.brightness * 255;
+      const normalized = Math.max(0, Math.min(1, contrasted / 255));
+      return Math.max(0, Math.min(255, 255 * Math.pow(normalized, 1 / profile.gamma) * gain));
+    };
+    r = adjustChannel(r, profile.red);
+    g = adjustChannel(g, profile.green);
+    b = adjustChannel(b, profile.blue);
     out[o++] = (r & 0xf8) | (g >> 5);
     out[o++] = ((g & 0x1c) << 3) | (b >> 3);
   }
@@ -734,7 +746,7 @@ function loadHtmlImage(url) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.22");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.23");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

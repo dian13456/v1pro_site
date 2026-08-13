@@ -122,25 +122,46 @@ function rotationFilters(rotationDeg: number): string[] {
 function resizeFilters(fitMode: BrowserVideoFitMode): string[] {
   if (fitMode === "contain") {
     return [
-      `scale=${LCD_WIDTH}:${LCD_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos`,
+      `scale=${LCD_WIDTH}:${LCD_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos+accurate_rnd+full_chroma_int`,
       `pad=${LCD_WIDTH}:${LCD_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black`,
     ];
   }
   return [
     `crop='if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih*${LCD_WIDTH}/${LCD_HEIGHT},iw)':'if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih,iw*${LCD_HEIGHT}/${LCD_WIDTH})'`,
-    `scale=${LCD_WIDTH}:${LCD_HEIGHT}:flags=lanczos`,
+    `scale=${LCD_WIDTH}:${LCD_HEIGHT}:flags=lanczos+accurate_rnd+full_chroma_int`,
   ];
 }
 
-function colorFilter(profile: BrowserVideoColorProfile): string {
+function colorFilters(profile: BrowserVideoColorProfile): string[] {
   const values = {
-    // Match the desktop beginner mode: reduce small-LCD oversaturation while
-    // lifting contrast. Explicit vivid/professional presets remain identical.
-    normal: { saturation: 0.86, contrast: 1.12 },
-    vivid: { saturation: 1.22, contrast: 1.07 },
-    professional: { saturation: 0.95, contrast: 1.12 },
+    // RGB565 loses tonal precision quickly. Keep contrast moderate, lift the
+    // midtones before quantisation, then sharpen only after the 320x170 resize.
+    normal: {
+      saturation: 1.0, contrast: 1.0, brightness: 0, gamma: 1.0,
+      red: 1.0, green: 1.0, blue: 1.0, sharpness: 0.12,
+    },
+    vivid: {
+      saturation: 1.10, contrast: 1.03, brightness: 0.002, gamma: 1.01,
+      red: 1.005, green: 1.0, blue: 0.995, sharpness: 0.18,
+    },
+    professional: {
+      saturation: 1.0, contrast: 1.025, brightness: 0.002, gamma: 1.01,
+      red: 1.01, green: 1.0, blue: 0.99, sharpness: 0.16,
+    },
   }[profile];
-  return `eq=saturation=${values.saturation.toFixed(4)}:contrast=${values.contrast.toFixed(4)}`;
+  const filters = [
+    `eq=saturation=${values.saturation.toFixed(4)}`
+      + `:contrast=${values.contrast.toFixed(4)}`
+      + `:brightness=${values.brightness.toFixed(4)}`
+      + `:gamma=${values.gamma.toFixed(4)}:gamma_weight=0.85`,
+  ];
+  if (values.red !== 1 || values.green !== 1 || values.blue !== 1) {
+    filters.push(
+      `colorchannelmixer=rr=${values.red.toFixed(4)}:gg=${values.green.toFixed(4)}:bb=${values.blue.toFixed(4)}`,
+    );
+  }
+  filters.push(`unsharp=3:3:${values.sharpness.toFixed(3)}:3:3:0`);
+  return filters;
 }
 
 function buildFilterChain(options: ConvertBrowserVideoOptions): string {
@@ -151,7 +172,7 @@ function buildFilterChain(options: ConvertBrowserVideoOptions): string {
     `fps=${plan.fps}`,
     ...rotationFilters(options.rotationDeg ?? 0),
     ...resizeFilters(options.fitMode ?? "fill"),
-    colorFilter(options.colorProfile ?? "normal"),
+    ...colorFilters(options.colorProfile ?? "normal"),
     "setsar=1",
   ];
   return filters.join(",");
@@ -247,6 +268,8 @@ export async function convertBrowserVideoWithFfmpeg(
       String(options.plan.frameCount),
       "-pix_fmt",
       "rgb565be",
+      "-sws_flags",
+      "lanczos+accurate_rnd+full_chroma_int",
       "-f",
       "rawvideo",
       outputPath,

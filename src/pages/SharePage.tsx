@@ -35,8 +35,8 @@ type VideoColorProfile = "normal" | "vivid" | "professional";
 
 const VIDEO_PREVIEW_FILTER: Record<VideoColorProfile, string> = {
   normal: "none",
-  vivid: "saturate(1.22) contrast(1.07)",
-  professional: "saturate(0.95) contrast(1.12)",
+  vivid: "saturate(1.10) contrast(1.03) brightness(1.005)",
+  professional: "saturate(1.0) contrast(1.025) brightness(1.005) sepia(.015)",
 };
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
