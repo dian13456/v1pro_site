@@ -1,5 +1,7 @@
 import type { ResourceItem } from "../types/resource";
 import {
+  albumHoldFramesPerImage,
+  albumRequiredFrames,
   albumTransitionExtraFrames,
   type AlbumTransition,
 } from "../services/v1proWebResourceTransferService";
@@ -63,12 +65,9 @@ export function AlbumSelectionPanel({
     resource,
     frames: albumFrames(resource),
   }));
-  const materialFrames = entries.reduce(
-    (total, entry) => total + (entry.frames ?? 0),
-    0,
-  );
+  const materialFrames = resources.length * albumHoldFramesPerImage(switchDelayMs);
   const transitionFrames = albumTransitionExtraFrames(resources.length, transition);
-  const knownFrames = materialFrames + transitionFrames;
+  const knownFrames = albumRequiredFrames(resources.length, switchDelayMs, transition);
   const unknownCount = entries.filter((entry) => entry.frames == null).length;
   const percent = capacity > 0 ? (knownFrames / capacity) * 100 : 0;
   const overflowFrames = Math.max(0, knownFrames - capacity);
@@ -164,7 +163,7 @@ export function AlbumSelectionPanel({
           {overflowFrames > 0 ? (
             <p className="mt-2 text-[11px] leading-relaxed text-rose-500">已超出 {overflowFrames} 帧，请移除素材或选择更大容量。</p>
           ) : (
-            <p className="mt-2 text-[11px] text-slate-400">剩余 {capacity - knownFrames} 帧 · 动态素材按 {ALBUM_PREVIEW_FPS}fps 预估</p>
+            <p className="mt-2 text-[11px] text-slate-400">剩余 {capacity - knownFrames} 帧 · 图片停留占用 {materialFrames} 帧</p>
           )}
           {unknownCount > 0 ? (
             <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">有 {unknownCount} 个素材缺少帧数，暂未计入容量。</p>

@@ -40,13 +40,31 @@ const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
 const ALBUM_FRAME_WIDTH = 320;
 const ALBUM_FRAME_HEIGHT = 170;
 const ALBUM_TRANSITION_STEPS = 6;
-const ALBUM_TRANSITION_FRAME_MS = 50;
+// Current V1PRO firmware schedules frames on a 16-bit microsecond clock. Keep
+// every individual deadline below the signed half-range (32.768ms), otherwise
+// delays such as 500ms overflow and are treated as already elapsed.
+const ALBUM_SAFE_FRAME_DELAY_MS = 30;
+const ALBUM_TRANSITION_FRAME_MS = ALBUM_SAFE_FRAME_DELAY_MS;
 
 export type AlbumTransition = "none" | "fade" | "slide-left";
 
 export function albumTransitionExtraFrames(imageCount: number, transition: AlbumTransition): number {
   if (transition === "none" || imageCount < 2) return 0;
   return imageCount * (ALBUM_TRANSITION_STEPS - 1);
+}
+
+export function albumHoldFramesPerImage(switchDelayMs: number): number {
+  return Math.max(1, Math.ceil(Math.max(1, switchDelayMs) / ALBUM_SAFE_FRAME_DELAY_MS));
+}
+
+export function albumRequiredFrames(
+  imageCount: number,
+  switchDelayMs: number,
+  transition: AlbumTransition,
+): number {
+  if (imageCount <= 0) return 0;
+  return imageCount * albumHoldFramesPerImage(switchDelayMs)
+    + albumTransitionExtraFrames(imageCount, transition);
 }
 
 function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
@@ -91,10 +109,17 @@ function composeAlbumFrames(
 ): { frames: Uint8Array[]; delaysMs: number[] } {
   const frames: Uint8Array[] = [];
   const delaysMs: number[] = [];
+  const holdFrameCount = albumHoldFramesPerImage(switchDelayMs);
+  const baseHoldDelay = Math.floor(switchDelayMs / holdFrameCount);
+  let holdRemainder = switchDelayMs - baseHoldDelay * holdFrameCount;
   for (let index = 0; index < sourceFrames.length; index += 1) {
     const current = sourceFrames[index];
-    frames.push(current);
-    delaysMs.push(switchDelayMs);
+    holdRemainder = switchDelayMs - baseHoldDelay * holdFrameCount;
+    for (let holdIndex = 0; holdIndex < holdFrameCount; holdIndex += 1) {
+      frames.push(current);
+      delaysMs.push(baseHoldDelay + (holdRemainder > 0 ? 1 : 0));
+      if (holdRemainder > 0) holdRemainder -= 1;
+    }
     if (transition === "none" || sourceFrames.length < 2) continue;
 
     const next = sourceFrames[(index + 1) % sourceFrames.length];
@@ -405,9 +430,9 @@ export async function transferAlbumResourcesViaWebUsb(
         callbacks.onStatus?.(`当前设备最多 ${deviceFrameCapacity} 帧，将按设备实际容量检查相册`);
       }
 
-      const transitionExtraFrames = albumTransitionExtraFrames(resources.length, options.transition);
-      if (resources.length + transitionExtraFrames > frameLimit) {
-        throw new Error(`图片和切换动画共需 ${resources.length + transitionExtraFrames} 帧，超过当前设备的 ${frameLimit} 帧容量`);
+      const requiredFrames = albumRequiredFrames(resources.length, switchDelayMs, options.transition);
+      if (requiredFrames > frameLimit) {
+        throw new Error(`当前延时和动画共需 ${requiredFrames} 帧，超过当前设备的 ${frameLimit} 帧容量，请缩短延时、关闭动画或减少图片`);
       }
 
       const { decodeBlobToFrames, buildGfm1Blob } = await loadBrowserGfm1Module();
@@ -415,7 +440,7 @@ export async function transferAlbumResourcesViaWebUsb(
 
       for (let index = 0; index < resources.length; index += 1) {
         const resource = resources[index];
-        const remainingFrames = frameLimit - sourceFrames.length - transitionExtraFrames;
+        const remainingFrames = resources.length - sourceFrames.length;
         if (remainingFrames <= 0) {
           throw new Error(`相册超过当前设备的 ${frameLimit} 帧容量，请减少素材`);
         }
