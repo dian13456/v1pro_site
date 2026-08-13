@@ -1,6 +1,6 @@
-import { FFmpeg, FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
+import { FFFSType, type FFmpeg, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
 import { probeBrowserVideoDuration } from "./browserFfmpegVideoService";
-import { loadBrowserFfmpeg } from "./ffmpegRuntime";
+import { acquireBrowserFfmpeg } from "./ffmpegRuntime";
 
 export const MAX_SHARE_VIDEO_SOURCE_BYTES = 400 * 1024 * 1024;
 export const MAX_SHARE_VIDEO_OUTPUT_BYTES = 20 * 1024 * 1024;
@@ -70,7 +70,6 @@ export async function compressVideoForCosUpload(
   }
 
   const duration = await probeBrowserVideoDuration(source);
-  const ffmpeg = new FFmpeg();
   const inputDir = "/share-input";
   const inputName = `source.${inputExtension(source.name, source.type)}`;
   const inputPath = `${inputDir}/${inputName}`;
@@ -85,8 +84,9 @@ export async function compressVideoForCosUpload(
     options.onProgress?.(overall);
   };
 
+  const lease = await acquireBrowserFfmpeg(options.onStatus);
+  const ffmpeg = lease.ffmpeg;
   try {
-    await loadBrowserFfmpeg(ffmpeg, options.onStatus);
     ffmpeg.on("progress", onProgress);
     await ffmpeg.createDir(inputDir);
     await ffmpeg.mount(
@@ -190,6 +190,6 @@ export async function compressVideoForCosUpload(
     try { await ffmpeg.deleteFile(outputPath); } catch { /* output may not exist */ }
     try { await ffmpeg.unmount(inputDir); } catch { /* mount may not exist */ }
     try { await ffmpeg.deleteDir(inputDir); } catch { /* directory may not exist */ }
-    ffmpeg.terminate();
+    lease.release();
   }
 }

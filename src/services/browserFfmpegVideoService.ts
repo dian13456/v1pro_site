@@ -1,5 +1,5 @@
-import { FFmpeg, FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
-import { loadBrowserFfmpeg } from "./ffmpegRuntime";
+import { FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
+import { acquireBrowserFfmpeg } from "./ffmpegRuntime";
 
 const LCD_WIDTH = 320;
 const LCD_HEIGHT = 170;
@@ -226,7 +226,6 @@ export async function convertBrowserVideoWithFfmpeg(
     throw new Error("网页 FFmpeg 转换暂支持 50MB 以内的视频");
   }
 
-  const ffmpeg = new FFmpeg();
   const extension = inputExtension(options.fileName || "", source.type || "");
   const inputDir = "/v1pro-input";
   const inputName = `source.${extension}`;
@@ -239,8 +238,9 @@ export async function convertBrowserVideoWithFfmpeg(
     options.onProgress?.(normalized);
   };
 
+  const lease = await acquireBrowserFfmpeg(options.onStatus);
+  const ffmpeg = lease.ffmpeg;
   try {
-    await loadBrowserFfmpeg(ffmpeg, options.onStatus);
     ffmpeg.on("progress", onProgress);
     await ffmpeg.createDir(inputDir);
     await ffmpeg.mount(
@@ -303,6 +303,6 @@ export async function convertBrowserVideoWithFfmpeg(
     try { await ffmpeg.deleteFile(outputPath); } catch { /* output may not exist */ }
     try { await ffmpeg.unmount(inputDir); } catch { /* mount may not exist */ }
     try { await ffmpeg.deleteDir(inputDir); } catch { /* directory may not exist */ }
-    ffmpeg.terminate();
+    lease.release();
   }
 }

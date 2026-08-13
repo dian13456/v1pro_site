@@ -62,7 +62,11 @@ async function responseBlobUrl(response: Response, mimeType: string): Promise<st
 }
 
 async function loadCachedAssets(): Promise<CachedFfmpegAssets> {
-  const coreSource = cosAssetUrl("ffmpeg-core.js");
+  // Keep the module worker script same-origin. Some Chromium builds can leave
+  // a cross-origin dynamic import pending without surfacing the worker error.
+  // The large WASM payload still comes from COS, which is where acceleration
+  // has a meaningful effect.
+  const coreSource = localAssetUrl("ffmpeg-core.js");
   const wasmSource = cosAssetUrl("ffmpeg-core.wasm");
   try {
     if ("caches" in window) {
