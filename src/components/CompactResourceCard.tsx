@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
-import { createImageUrl } from "../services/imageService";
+import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import {
   formatMediaDuration,
   resourceMetricsFromCatalog,
@@ -51,23 +50,12 @@ export function CompactResourceCard({
   selected?: boolean;
   onToggleSelection?: (resource: ResourceItem) => void;
 }) {
-  const [previewUrl, setPreviewUrl] = useState("");
+  const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
+    useResourcePreviewImage(resource.id, resource.image || resource.download);
   const metrics = resourceMetricsFromCatalog(resource);
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);
   const displayCapacity = resource.materialType === "image" ? null : capacity;
   const duration = formatMediaDuration(metrics.durationSec);
-
-  useEffect(() => {
-    let active = true;
-    void createImageUrl(resource.id, resource.image || resource.download)
-      .then((result) => {
-        if (active) setPreviewUrl(result.url || "");
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [resource.download, resource.id, resource.image]);
 
   return (
     <article
@@ -92,12 +80,22 @@ export function CompactResourceCard({
         <div className="grid h-full place-items-center text-5xl opacity-80" aria-hidden={Boolean(previewUrl)}>
           {resource.materialType === "video" ? "🎬" : resource.materialType === "gif" ? "🔁" : "🖼️"}
         </div>
-        <img
-          src={previewUrl || undefined}
-          alt={resource.title}
-          className={`absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] ${previewUrl ? "opacity-100" : "pointer-events-none opacity-0"}`}
-          loading="lazy"
-        />
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={resource.title}
+            className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+            loading="lazy"
+            decoding="async"
+            onLoad={handlePreviewLoad}
+            onError={handlePreviewError}
+          />
+        ) : null}
+        {previewFailed ? (
+          <span className="absolute bottom-3 left-3 rounded-full bg-slate-900/55 px-2 py-1 text-[10px] text-white backdrop-blur">
+            预览暂时不可用
+          </span>
+        ) : null}
         <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${resource.materialType === "image" ? "bg-violet-500" : resource.materialType === "gif" ? "bg-orange-400" : "bg-emerald-500"}`}>
           {materialLabel(resource)}
         </span>

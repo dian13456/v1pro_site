@@ -11,16 +11,34 @@ interface ImageSignResponse {
   downloadStats?: Record<string, unknown>;
 }
 
-const imageUrlCache = new Map<number, string>();
+interface CachedImageUrl {
+  url: string;
+  expiresAt: number;
+}
+
+const PREVIEW_URL_CACHE_TTL_MS = 8 * 60 * 1000;
+const imageUrlCache = new Map<number, CachedImageUrl>();
+
+export function invalidateImageUrl(resourceId: number, failedUrl?: string): void {
+  const cached = imageUrlCache.get(resourceId);
+  if (!cached || !failedUrl || cached.url === failedUrl) {
+    imageUrlCache.delete(resourceId);
+  }
+}
 
 export async function createImageUrl(
   resourceId: number,
   fallbackImageUrl?: string,
-  options: { forDownload?: boolean } = {}
+  options: { forDownload?: boolean; forceRefresh?: boolean } = {}
 ): Promise<SignedDownloadResult> {
   const forDownload = options.forDownload === true;
-  if (!forDownload && imageUrlCache.has(resourceId)) {
-    return { url: imageUrlCache.get(resourceId) as string };
+  const forceRefresh = options.forceRefresh === true;
+  const cached = imageUrlCache.get(resourceId);
+  if (!forDownload && !forceRefresh && cached && cached.expiresAt > Date.now()) {
+    return { url: cached.url };
+  }
+  if (cached && cached.expiresAt <= Date.now()) {
+    imageUrlCache.delete(resourceId);
   }
 
   if (isStaticMode()) {
@@ -35,7 +53,10 @@ export async function createImageUrl(
       const stats = recordLocalDeviceDownload(auth.serial, resourceId);
       return { url: fallbackImageUrl, stats };
     }
-    imageUrlCache.set(resourceId, fallbackImageUrl);
+    imageUrlCache.set(resourceId, {
+      url: fallbackImageUrl,
+      expiresAt: Date.now() + PREVIEW_URL_CACHE_TTL_MS,
+    });
     return { url: fallbackImageUrl };
   }
 
@@ -44,9 +65,12 @@ export async function createImageUrl(
     throw new Error("认证状态无效，请重新验证设备");
   }
 
-  const query = forDownload ? `?id=${resourceId}&download=1` : `?id=${resourceId}`;
+  const query = forDownload
+    ? `?id=${resourceId}&download=1`
+    : `?id=${resourceId}${forceRefresh ? "&refresh=1" : ""}`;
   const signed = await apiFetch<ImageSignResponse>(`/api/image/${query}`, {
     method: "GET",
+    cache: forceRefresh ? "no-store" : "default",
     headers: {
       Authorization: `Bearer ${auth.token}`,
     },
@@ -57,7 +81,10 @@ export async function createImageUrl(
   }
 
   if (!forDownload) {
-    imageUrlCache.set(resourceId, signed.url);
+    imageUrlCache.set(resourceId, {
+      url: signed.url,
+      expiresAt: Date.now() + PREVIEW_URL_CACHE_TTL_MS,
+    });
   }
 
   return {

@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
-import { createImageUrl } from "../services/imageService";
+import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 import { canWebUsbDirectTransfer } from "../services/v1proWebResourceTransferService";
 
@@ -110,38 +110,12 @@ function ResourceCardComponent({
     resource.materialType === "video" || resource.materialType === "image"
       ? "object-cover"
       : "object-contain";
-  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
+    useResourcePreviewImage(resource.id, resource.image || resource.download);
   const [playError, setPlayError] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const transferPrefetchedRef = useRef(false);
   const webUsbPrefetchedRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadPreview = async () => {
-      try {
-        if (resource.materialType === "video") {
-          const videoUrl = await createImageUrl(resource.id, resource.image);
-          if (!cancelled) {
-            setPreviewUrl(videoUrl.url || "");
-          }
-          return;
-        }
-        const imageUrl = await createImageUrl(resource.id, resource.image || resource.download);
-        if (!cancelled) {
-          setPreviewUrl(imageUrl.url || "");
-        }
-      } catch {
-        if (!cancelled) {
-          setPreviewUrl("");
-        }
-      }
-    };
-    void loadPreview();
-    return () => {
-      cancelled = true;
-    };
-  }, [resource.id, resource.image, resource.download, resource.materialType]);
 
   const showTransfer = canTransferViaV1Pro(resource) && Boolean(onTransfer);
   const showWebUsbTransfer = canWebUsbDirectTransfer(resource) && Boolean(onWebUsbTransfer);
@@ -261,6 +235,8 @@ function ResourceCardComponent({
                   loading="lazy"
                   decoding="async"
                   className={`h-full w-full ${previewFitClass}`}
+                  onLoad={handlePreviewLoad}
+                  onError={handlePreviewError}
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
@@ -283,10 +259,16 @@ function ResourceCardComponent({
               loading="lazy"
               decoding="async"
               className={`h-full w-full ${previewFitClass}`}
+              onLoad={handlePreviewLoad}
+              onError={handlePreviewError}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-              {resource.materialType === "video" ? "视频预览加载中..." : "图片加载中..."}
+              {previewFailed
+                ? "预览暂时不可用"
+                : resource.materialType === "video"
+                  ? "视频预览加载中..."
+                  : "图片加载中..."}
             </div>
           )}
       </DevicePreviewFrame>
