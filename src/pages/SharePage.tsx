@@ -26,6 +26,7 @@ import {
 } from "../services/v1proWebTransferClient";
 import {
   convertBrowserVideoWithFfmpeg,
+  MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES,
   planBrowserFfmpegVideo,
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
@@ -302,6 +303,9 @@ export default function SharePage() {
 
       let result;
       if (mediaKind === "video") {
+        if (selectedFile.size > MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES) {
+          throw new Error("超过 50MB 的视频请先完成分享压缩，再从素材中心进行网页直传");
+        }
         const duration = await probeBrowserVideoDuration(selectedFile);
         const plan = planBrowserFfmpegVideo(duration, detectedFrames, videoFps);
         let preparedTransferStarted = false;
@@ -387,7 +391,7 @@ export default function SharePage() {
           <header className="border-b border-[#e6e9f2] px-[26px] pb-3.5 pt-5">
             <h1 className="text-[17px] font-bold">分享素材</h1>
             <p className="mt-1.5 text-xs leading-[1.6] text-[#8a93a8]">
-              支持静态图片（8MB）、GIF（{gifMb}MB）、视频（{videoMb}MB，建议 H.264 8-bit MP4）。
+              支持静态图片（8MB）、GIF（{gifMb}MB）、视频源文件（{videoMb}MB）；超过约 20MB 的视频会在浏览器本地压缩后直传 COS。
               他人点赞可增加 <b className="text-[#2b3245]">1 积分</b>，有效下载再增加 <b className="text-[#2b3245]">0.5 积分</b>。
               {shareUnlimited ? " 当前分享次数：无限制。" : shareRemaining != null ? ` 当前剩余分享次数：${shareRemaining}。` : ""}
             </p>

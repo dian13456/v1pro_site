@@ -3,8 +3,15 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { ImageReviewPendingError } from "./aiImageService";
+import {
+  compressVideoForCosUpload,
+  MAX_SHARE_VIDEO_OUTPUT_BYTES,
+  MAX_SHARE_VIDEO_SOURCE_BYTES,
+} from "./browserVideoUploadCompressionService";
 
-export const MAX_VIDEO_UPLOAD_BYTES = 20 * 1024 * 1024;
+/** Source file limit shown on the share page. The COS object remains <=20MB. */
+export const MAX_VIDEO_UPLOAD_BYTES = MAX_SHARE_VIDEO_SOURCE_BYTES;
+export const MAX_VIDEO_COS_UPLOAD_BYTES = MAX_SHARE_VIDEO_OUTPUT_BYTES;
 
 const ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov", ".m4v"];
 
@@ -136,6 +143,73 @@ async function uploadSessionFile(
   }
 }
 
+function uploadBlobDirectToCos(
+  uploadUrl: string,
+  blob: Blob,
+  contentType: string,
+  onProgress?: (ratio: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl, true);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.timeout = 20 * 60 * 1000;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(Math.max(0, Math.min(1, event.loaded / event.total)));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1);
+        resolve();
+        return;
+      }
+      reject(new Error(`COS 直传失败（HTTP ${xhr.status}）`));
+    };
+    xhr.onerror = () => reject(new Error("COS 直传网络请求失败"));
+    xhr.ontimeout = () => reject(new Error("COS 直传超时"));
+    xhr.onabort = () => reject(new Error("COS 直传已取消"));
+    xhr.send(blob);
+  });
+}
+
+function videoContentType(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".webm")) return "video/webm";
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".m4v")) return "video/x-m4v";
+  return "video/mp4";
+}
+
+async function uploadWithCosFallback(
+  session: VideoUploadSessionResponse,
+  kind: "video" | "cover",
+  blob: Blob,
+  fileName: string,
+  onStage?: (stage: string) => void,
+): Promise<void> {
+  const uploadUrl = kind === "video" ? session.videoUploadUrl : session.coverUploadUrl;
+  if (uploadUrl) {
+    try {
+      await uploadBlobDirectToCos(
+        uploadUrl,
+        blob,
+        kind === "video" ? videoContentType(fileName) : "image/jpeg",
+        (ratio) => onStage?.(
+          kind === "video"
+            ? `正在直传 COS… ${Math.round(ratio * 100)}%`
+            : `正在上传封面… ${Math.round(ratio * 100)}%`,
+        ),
+      );
+      return;
+    } catch {
+      onStage?.("COS 直传不可用，正在切换兼容上传…");
+    }
+  }
+  await uploadSessionFile(session.sessionId || "", kind, blob, fileName);
+}
+
 export async function createVideoUploadSession(file: File): Promise<VideoUploadSessionResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -146,8 +220,8 @@ export async function createVideoUploadSession(file: File): Promise<VideoUploadS
   if (!isAllowedVideoFile(file)) {
     throw new Error("仅支持 .mp4、.webm、.mov、.m4v 文件");
   }
-  if (file.size <= 0 || file.size > MAX_VIDEO_UPLOAD_BYTES) {
-    throw new Error(`视频文件不能超过 ${Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))}MB`);
+  if (file.size <= 0 || file.size > MAX_VIDEO_COS_UPLOAD_BYTES) {
+    throw new Error(`压缩后视频不能超过 ${Math.floor(MAX_VIDEO_COS_UPLOAD_BYTES / (1024 * 1024))}MB`);
   }
 
   const codecProbe = await probeVideoBrowserCompatibility(file);
@@ -205,18 +279,32 @@ export async function shareVideoToCatalog(
     return payload;
   }
 
-  options.onProgress?.("申请上传地址...");
-  const session = await createVideoUploadSession(file);
+  options.onProgress?.("正在检查视频信息…");
+  const sourceCodec = await probeVideoBrowserCompatibility(file);
+  const prepared = await compressVideoForCosUpload(file, {
+    force: !sourceCodec.compatible,
+    onStatus: options.onProgress,
+    onProgress: (ratio) => options.onProgress?.(`正在本地压缩… ${Math.round(ratio * 100)}%`),
+  });
+  const uploadFile = prepared.file;
+  if (prepared.compressed) {
+    options.onProgress?.(
+      `本地压缩完成：${(prepared.sourceBytes / 1024 / 1024).toFixed(1)}MB → ${(prepared.outputBytes / 1024 / 1024).toFixed(1)}MB`,
+    );
+  }
+
+  options.onProgress?.("正在生成视频封面…");
+  const coverBlob = await extractVideoCoverJpeg(uploadFile);
+
+  options.onProgress?.("申请 COS 上传地址…");
+  const session = await createVideoUploadSession(uploadFile);
   if (!session.success || !session.sessionId) {
     throw new Error(session.message || "无法创建上传会话");
   }
 
-  options.onProgress?.("上传视频...");
-  await uploadSessionFile(session.sessionId, "video", file, file.name);
-
-  options.onProgress?.("生成并上传封面...");
-  const coverBlob = await extractVideoCoverJpeg(file);
-  await uploadSessionFile(session.sessionId, "cover", coverBlob, "cover.jpg");
+  options.onProgress?.("正在直传视频到 COS…");
+  await uploadWithCosFallback(session, "video", uploadFile, uploadFile.name, options.onProgress);
+  await uploadWithCosFallback(session, "cover", coverBlob, "cover.jpg", options.onProgress);
 
   options.onProgress?.("提交分享...");
   const payload = await apiFetch<VideoShareResponse>("/api/user-video/share", {

@@ -4,7 +4,7 @@ const LCD_WIDTH = 320;
 const LCD_HEIGHT = 170;
 const FRAME_BYTES = LCD_WIDTH * LCD_HEIGHT * 2;
 const GFM1_HEADER_BYTES = 56;
-const MAX_BROWSER_VIDEO_BYTES = 50 * 1024 * 1024;
+export const MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES = 50 * 1024 * 1024;
 const MAX_VIDEO_SPEED = 10;
 
 export type BrowserVideoFitMode = "fill" | "contain";
@@ -221,7 +221,7 @@ export async function convertBrowserVideoWithFfmpeg(
   options: ConvertBrowserVideoOptions,
 ): Promise<BrowserFfmpegVideoResult> {
   if (source.size <= 0) throw new Error("视频文件为空");
-  if (source.size > MAX_BROWSER_VIDEO_BYTES) {
+  if (source.size > MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES) {
     throw new Error("网页 FFmpeg 转换暂支持 50MB 以内的视频");
   }
 
