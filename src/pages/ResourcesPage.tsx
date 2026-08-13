@@ -212,11 +212,8 @@ export default function ResourcesPage() {
   const recommendedResources = useMemo(() => {
     const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
     return recommendationItems
-      .map((recommendation) => {
-        const resource = resourceMap.get(recommendation.resourceId);
-        return resource ? { resource, reason: recommendation.reason } : null;
-      })
-      .filter((item): item is { resource: ResourceItem; reason: string } => Boolean(item));
+      .map((recommendation) => resourceMap.get(recommendation.resourceId))
+      .filter((resource): resource is ResourceItem => Boolean(resource));
   }, [recommendationItems, resources]);
 
   const pageList = useMemo(() => {
@@ -804,12 +801,10 @@ export default function ResourcesPage() {
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
             {!loading && !albumMode && !randomMode && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
               <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
+                <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {recommendedResources.map(({ resource, reason }) => (
-                    <div key={`recommendation-${resource.id}`} className="relative pt-7">
-                      <span className="absolute left-2 top-0 max-w-[calc(100%-1rem)] truncate rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm" title={reason}>
-                        {reason}
-                      </span>
+                  {recommendedResources.map((resource) => (
+                    <div key={`recommendation-${resource.id}`}>
                       <CompactResourceCard
                         resource={resource}
                         downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
