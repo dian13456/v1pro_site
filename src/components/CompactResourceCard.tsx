@@ -33,6 +33,9 @@ export function CompactResourceCard({
   onOpen,
   onLike,
   onFavorite,
+  selectionMode = false,
+  selected = false,
+  onToggleSelection,
 }: {
   resource: ResourceItem;
   downloadCount: number;
@@ -44,6 +47,9 @@ export function CompactResourceCard({
   onOpen: (resource: ResourceItem) => void;
   onLike: (resource: ResourceItem) => void;
   onFavorite: (resource: ResourceItem) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelection?: (resource: ResourceItem) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const metrics = resourceMetricsFromCatalog(resource);
@@ -67,14 +73,20 @@ export function CompactResourceCard({
     <article
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(resource)}
+      aria-pressed={selectionMode ? selected : undefined}
+      onClick={() => selectionMode ? onToggleSelection?.(resource) : onOpen(resource)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onOpen(resource);
+          if (selectionMode) onToggleSelection?.(resource);
+          else onOpen(resource);
         }
       }}
-      className="group cursor-pointer touch-manipulation overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900"
+      className={`group cursor-pointer touch-manipulation overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:bg-slate-900 ${
+        selected
+          ? "border-[#ff8a5c] ring-2 ring-[#ff8a5c]/25 dark:border-[#ff8a5c]"
+          : "border-slate-200 dark:border-slate-800"
+      }`}
     >
       <div className={`relative aspect-[1.618] overflow-hidden bg-gradient-to-br ${PREVIEW_BACKGROUNDS[resource.id % PREVIEW_BACKGROUNDS.length]}`}>
         <div className="grid h-full place-items-center text-5xl opacity-80" aria-hidden={Boolean(previewUrl)}>
@@ -89,6 +101,15 @@ export function CompactResourceCard({
         <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${resource.materialType === "image" ? "bg-violet-500" : resource.materialType === "gif" ? "bg-orange-400" : "bg-emerald-500"}`}>
           {materialLabel(resource)}
         </span>
+        {selectionMode ? (
+          <span className={`absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full border-2 text-sm font-bold shadow-sm transition ${
+            selected
+              ? "border-white bg-[#ff7f57] text-white"
+              : "border-white bg-white/85 text-transparent backdrop-blur"
+          }`} aria-hidden="true">
+            ✓
+          </span>
+        ) : null}
         {duration || displayCapacity ? (
           <span className="absolute bottom-3 right-3 rounded-full bg-slate-900/55 px-2.5 py-1 text-[11px] text-white backdrop-blur">
             {duration ? `◷ ${duration}` : ""}{duration && displayCapacity ? " · " : ""}{displayCapacity ? `${displayCapacity}帧` : ""}

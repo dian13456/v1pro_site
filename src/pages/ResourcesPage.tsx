@@ -10,6 +10,7 @@ import { SiteFooter } from "../components/SiteFooter";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
+import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
 import { ResourceDetailModal } from "../components/ResourceDetailModal";
 import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
@@ -73,6 +74,9 @@ export default function ResourcesPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [capacityFilter, setCapacityFilter] = useState<"all" | DeviceFrameCapacity>("all");
   const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
+  const [albumMode, setAlbumMode] = useState(false);
+  const [albumCapacity, setAlbumCapacity] = useState<DeviceFrameCapacity>(308);
+  const [albumSelectedIds, setAlbumSelectedIds] = useState<number[]>([]);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -165,6 +169,13 @@ export default function ResourcesPage() {
     const start = (currentPage - 1) * pageSize;
     return capacityFilteredResources.slice(start, start + pageSize);
   }, [randomMode, randomItems, sortMode, capacityFilteredResources, currentPage, pageSize]);
+
+  const albumResources = useMemo(() => {
+    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+    return albumSelectedIds
+      .map((resourceId) => resourceMap.get(resourceId))
+      .filter((resource): resource is ResourceItem => Boolean(resource));
+  }, [albumSelectedIds, resources]);
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -488,6 +499,33 @@ export default function ResourcesPage() {
     prefetchPlayUrl(resource.id, resource.download);
   };
 
+  const toggleAlbumMode = () => {
+    setAlbumMode((current) => {
+      if (current) {
+        setAlbumSelectedIds([]);
+        return false;
+      }
+      if (capacityFilter !== "all") {
+        setAlbumCapacity(capacityFilter);
+      }
+      setSelectedResource(null);
+      return true;
+    });
+  };
+
+  const toggleAlbumResource = (resource: ResourceItem) => {
+    setAlbumSelectedIds((current) => (
+      current.includes(resource.id)
+        ? current.filter((resourceId) => resourceId !== resource.id)
+        : [...current, resource.id]
+    ));
+  };
+
+  const closeAlbumMode = () => {
+    setAlbumMode(false);
+    setAlbumSelectedIds([]);
+  };
+
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
@@ -523,7 +561,7 @@ export default function ResourcesPage() {
           </div>
         </details>
 
-        <div className="grid items-start gap-6 lg:grid-cols-[218px_minmax(0,1fr)]">
+        <div className={`grid items-start gap-6 lg:grid-cols-[218px_minmax(0,1fr)] ${albumMode ? "xl:grid-cols-[218px_minmax(0,1fr)_280px]" : ""}`}>
           <div className="hidden lg:sticky lg:top-[84px] lg:block">
             <ResourceLibrarySidebar
               resources={resources}
@@ -553,16 +591,31 @@ export default function ResourcesPage() {
                   {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
                 </select>
               </div>
-              <select
-                value={sortMode}
-                onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <option value="latest">最新优先</option>
-                <option value="earliest">最早优先</option>
-                <option value="hot">热门排行</option>
-                <option value="weeklyTop">周下载 TOP20</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleAlbumMode}
+                  aria-pressed={albumMode}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    albumMode
+                      ? "border-[#ff8a5c] bg-[#fff2ec] text-[#ff7448] shadow-sm dark:bg-orange-500/15"
+                      : "border-slate-200 bg-white text-slate-500 hover:border-orange-200 hover:text-[#ff7448] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  }`}
+                >
+                  <span aria-hidden="true">▦</span>
+                  {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
+                </button>
+                <select
+                  value={sortMode}
+                  onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <option value="latest">最新优先</option>
+                  <option value="earliest">最早优先</option>
+                  <option value="hot">热门排行</option>
+                  <option value="weeklyTop">周下载 TOP20</option>
+                </select>
+              </div>
             </div>
 
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
@@ -582,6 +635,9 @@ export default function ResourcesPage() {
                     onOpen={setSelectedResource}
                     onLike={(item) => void handleLike(item)}
                     onFavorite={(item) => void handleFavorite(item)}
+                    selectionMode={albumMode}
+                    selected={albumSelectedIds.includes(resource.id)}
+                    onToggleSelection={toggleAlbumResource}
                   />
                 ))}
               </section>
@@ -597,7 +653,32 @@ export default function ResourcesPage() {
                 <button type="button" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
               </nav>
             ) : null}
+
+            {albumMode ? (
+              <AlbumSelectionPanel
+                resources={albumResources}
+                capacity={albumCapacity}
+                onCapacityChange={setAlbumCapacity}
+                onRemove={(resourceId) => setAlbumSelectedIds((current) => current.filter((id) => id !== resourceId))}
+                onClear={() => setAlbumSelectedIds([])}
+                onClose={closeAlbumMode}
+                className="mt-6 xl:hidden"
+              />
+            ) : null}
           </div>
+
+          {albumMode ? (
+            <div className="hidden xl:sticky xl:top-[84px] xl:block">
+              <AlbumSelectionPanel
+                resources={albumResources}
+                capacity={albumCapacity}
+                onCapacityChange={setAlbumCapacity}
+                onRemove={(resourceId) => setAlbumSelectedIds((current) => current.filter((id) => id !== resourceId))}
+                onClear={() => setAlbumSelectedIds([])}
+                onClose={closeAlbumMode}
+              />
+            </div>
+          ) : null}
         </div>
       </main>
       <SiteFooter />
