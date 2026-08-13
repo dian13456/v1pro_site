@@ -168,6 +168,14 @@ func (m *activityMySQLStore) hasJoinInPeriod(ctx context.Context, activityID, sn
 	return count > 0, err
 }
 
+func (m *activityMySQLStore) hasIPJoinInPeriod(ctx context.Context, activityID, userIP, period string) (bool, error) {
+	var count int
+	err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM activity_join
+		WHERE activity_id = ? AND user_ip = ? AND draw_period = ?`, activityID, userIP, period).Scan(&count)
+	return count > 0, err
+}
+
 func (m *activityMySQLStore) hasUserJoinedInPeriod(ctx context.Context, activityID, userSerial, period string) (bool, string, error) {
 	var sn string
 	err := m.db.QueryRowContext(ctx, `

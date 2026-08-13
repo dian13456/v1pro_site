@@ -31,12 +31,12 @@ export async function fetchCurrentLotteryActivity(): Promise<LotteryActivity> {
       id: "lottery-default",
       title: "设备用户专属抽奖活动",
       description: "购买设备即可使用 SN 码参与",
-      rule: "每天 0:00 起开放报名，原报名信息清零；每天晚上 7:00 自动开奖。每个 SN 每天仅能报名一次。",
+      rule: "每天 0:00 起开放报名，原报名信息清零；每天晚上 7:00 自动开奖。每个 SN、同一公网 IP 每天仅能报名一次；一个 SN 只能获得一次中奖资格。",
       startTime: now - 86400000,
       endTime: now + 86400000 * 365,
       status: "active",
-      prizeTitle: "V1PRO 限定周边礼包",
-      prizeDescription: "含定制壳子、贴纸与品牌周边。",
+      prizeTitle: "打印喵喵V1.0板子",
+      prizeDescription: "本期奖品为打印喵喵V1.0板子，具体以实际发货为准。",
       drawHour: 19,
       drawMinute: 0,
       winnersPerDraw: 1,
@@ -79,7 +79,7 @@ export async function fetchPublicWinners(activityId?: string): Promise<PublicWin
     return {
       activityId: "lottery-default",
       activityTitle: "设备用户专属抽奖活动",
-      prizeTitle: "V1PRO 限定周边礼包",
+      prizeTitle: "打印喵喵V1.0板子",
       winners: [],
     };
   }

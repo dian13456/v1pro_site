@@ -23,6 +23,14 @@ type ActivityRepo struct {
 	loaded  bool
 }
 
+type ActivityJoinConflict string
+
+const (
+	ActivityJoinConflictNone ActivityJoinConflict = ""
+	ActivityJoinConflictSN   ActivityJoinConflict = "sn"
+	ActivityJoinConflictIP   ActivityJoinConflict = "ip"
+)
+
 func NewActivityRepo(configDir string) (*ActivityRepo, error) {
 	if strings.TrimSpace(configDir) == "" {
 		configDir = "config"
@@ -316,6 +324,58 @@ func (r *ActivityRepo) AddJoin(join ActivityJoin) error {
 		store.Joins = append(store.Joins, join)
 		return nil
 	})
+}
+
+// AddJoinIfEligible performs the duplicate checks and insert under one lock so
+// concurrent requests cannot bypass the per-period SN or IP limits.
+func (r *ActivityRepo) AddJoinIfEligible(join ActivityJoin) (ActivityJoinConflict, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		hasSN, err := r.mysql.hasJoinInPeriod(ctx, join.ActivityID, join.SN, join.DrawPeriod)
+		if err != nil {
+			return ActivityJoinConflictNone, err
+		}
+		if hasSN {
+			return ActivityJoinConflictSN, nil
+		}
+		if join.UserIP != "" {
+			hasIP, err := r.mysql.hasIPJoinInPeriod(ctx, join.ActivityID, join.UserIP, join.DrawPeriod)
+			if err != nil {
+				return ActivityJoinConflictNone, err
+			}
+			if hasIP {
+				return ActivityJoinConflictIP, nil
+			}
+		}
+		if err := r.mysql.addJoin(ctx, join); err != nil {
+			return ActivityJoinConflictNone, err
+		}
+		return ActivityJoinConflictNone, nil
+	}
+
+	if err := r.loadJSONLocked(); err != nil {
+		return ActivityJoinConflictNone, err
+	}
+	for _, existing := range r.cache.Joins {
+		if existing.ActivityID != join.ActivityID || existing.DrawPeriod != join.DrawPeriod {
+			continue
+		}
+		if existing.SN == join.SN {
+			return ActivityJoinConflictSN, nil
+		}
+		if join.UserIP != "" && existing.UserIP == join.UserIP {
+			return ActivityJoinConflictIP, nil
+		}
+	}
+	r.cache.Joins = append(r.cache.Joins, join)
+	if err := r.saveJSONLocked(); err != nil {
+		return ActivityJoinConflictNone, err
+	}
+	return ActivityJoinConflictNone, nil
 }
 
 func (r *ActivityRepo) ListJoins(activityID string, limit int) ([]ActivityJoin, error) {

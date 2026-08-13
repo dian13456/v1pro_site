@@ -171,7 +171,7 @@ export default function ActivityLotteryPage() {
           <SitePanel>
             <SiteSectionTitle
               title="SN 码报名"
-              description="每天 0:00 起可报名当日抽奖，晚上 7:00 截止报名并开奖。每个 SN 每天仅可参与一次。"
+              description="每天 0:00 起可报名当日抽奖，晚上 7:00 截止报名并开奖。每个 SN、同一公网 IP 每天仅可参与一次。"
             />
             <div className="mt-4 space-y-3">
               <SiteInput

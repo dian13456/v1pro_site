@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS activity_join (
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   KEY idx_join_activity_period (activity_id, draw_period),
   KEY idx_join_sn_period (activity_id, sn, draw_period),
+  KEY idx_join_ip_period (activity_id, user_ip, draw_period),
   KEY idx_join_time (join_time DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
