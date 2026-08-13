@@ -30,6 +30,7 @@ import {
   planBrowserFfmpegVideo,
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
+import { scheduleFfmpegAssetPreload } from "../services/ffmpegAssetCache";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
@@ -129,6 +130,10 @@ export default function SharePage() {
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
   const [videoColorProfile, setVideoColorProfile] = useState<VideoColorProfile>("normal");
+
+  useEffect(() => {
+    scheduleFfmpegAssetPreload();
+  }, []);
 
   useEffect(() => {
     if (!selectedFile) {
