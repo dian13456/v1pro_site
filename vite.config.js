@@ -2,19 +2,34 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-function injectProductionSecurity(apiBase) {
+const DEFAULT_FFMPEG_ASSET_BASE =
+  "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com/ffmpeg/0.12.10-v1pro-1";
+
+function httpOrigin(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.origin : "";
+  } catch {
+    return "";
+  }
+}
+
+function injectProductionSecurity(apiBase, ffmpegAssetBase) {
   return {
     name: "inject-production-security",
     transformIndexHtml(html, ctx) {
       if (ctx.server) return html;
 
       const connectSrc = ["'self'", "https://*.myqcloud.com"];
+      const scriptSrc = ["'self'", "'wasm-unsafe-eval'"];
       const trimmedApi = apiBase.trim().replace(/\/$/, "");
       if (trimmedApi) connectSrc.unshift(trimmedApi);
+      const ffmpegOrigin = httpOrigin(ffmpegAssetBase);
+      if (ffmpegOrigin) scriptSrc.push(ffmpegOrigin);
 
       const csp = [
         "default-src 'self'",
-        "script-src 'self' 'wasm-unsafe-eval'",
+        `script-src ${scriptSrc.join(" ")}`,
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob: https://*.myqcloud.com",
         "media-src 'self' blob: https://*.myqcloud.com",
@@ -49,7 +64,13 @@ export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
 
   return {
-    plugins: [react(), injectProductionSecurity(env.VITE_API_BASE || "")],
+    plugins: [
+      react(),
+      injectProductionSecurity(
+        env.VITE_API_BASE || "",
+        env.VITE_FFMPEG_ASSET_BASE_URL || DEFAULT_FFMPEG_ASSET_BASE,
+      ),
+    ],
     base: env.VITE_BASE_PATH || "/",
     resolve: {
       alias: {

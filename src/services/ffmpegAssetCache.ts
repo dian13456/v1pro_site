@@ -1,5 +1,7 @@
 const FFMPEG_ASSET_VERSION = "0.12.10-v1pro-1";
-const FFMPEG_CACHE_NAME = `v1pro-ffmpeg-assets-${FFMPEG_ASSET_VERSION}`;
+const DEFAULT_FFMPEG_COS_BASE =
+  "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com/ffmpeg/0.12.10-v1pro-1";
+const FFMPEG_CACHE_NAME = `v1pro-ffmpeg-assets-${FFMPEG_ASSET_VERSION}-cos-1`;
 const FFMPEG_CACHE_PREFIX = "v1pro-ffmpeg-assets-";
 const FFMPEG_DOWNLOAD_TIMEOUT_MS = 120_000;
 
@@ -12,11 +14,18 @@ export interface CachedFfmpegAssets {
 let assetPromise: Promise<CachedFfmpegAssets> | null = null;
 let preloadScheduled = false;
 
-function assetUrl(fileName: string): string {
+function localAssetUrl(fileName: string): string {
   const base = `${import.meta.env.BASE_URL || "/"}ffmpeg`.replace(/\/$/, "");
   const url = new URL(`${base}/${fileName}`, window.location.origin);
   url.searchParams.set("v", FFMPEG_ASSET_VERSION);
   return url.href;
+}
+
+function cosAssetUrl(fileName: string): string {
+  const configured = String(
+    import.meta.env.VITE_FFMPEG_ASSET_BASE_URL || DEFAULT_FFMPEG_COS_BASE,
+  ).trim().replace(/\/$/, "");
+  return new URL(`${configured}/${fileName}`, window.location.origin).href;
 }
 
 function fetchWithTimeout(request: Request, cache: RequestCache): Promise<Response> {
@@ -53,8 +62,8 @@ async function responseBlobUrl(response: Response, mimeType: string): Promise<st
 }
 
 async function loadCachedAssets(): Promise<CachedFfmpegAssets> {
-  const coreSource = assetUrl("ffmpeg-core.js");
-  const wasmSource = assetUrl("ffmpeg-core.wasm");
+  const coreSource = cosAssetUrl("ffmpeg-core.js");
+  const wasmSource = cosAssetUrl("ffmpeg-core.wasm");
   try {
     if ("caches" in window) {
       const cacheNames = await caches.keys();
@@ -83,15 +92,15 @@ async function loadCachedAssets(): Promise<CachedFfmpegAssets> {
     return { coreURL: coreSource, wasmURL, cached: true };
   } catch {
     // Private browsing, storage quota limits, or old browsers must not block
-    // conversion. FFmpeg can still use the original same-origin URLs.
-    return { coreURL: coreSource, wasmURL: wasmSource, cached: false };
+    // conversion. FFmpeg can still use the bundled same-origin assets.
+    return getDirectFfmpegAssets();
   }
 }
 
 export function getDirectFfmpegAssets(): CachedFfmpegAssets {
   return {
-    coreURL: assetUrl("ffmpeg-core.js"),
-    wasmURL: assetUrl("ffmpeg-core.wasm"),
+    coreURL: localAssetUrl("ffmpeg-core.js"),
+    wasmURL: localAssetUrl("ffmpeg-core.wasm"),
     cached: false,
   };
 }
