@@ -1,6 +1,7 @@
 const FFMPEG_ASSET_VERSION = "0.12.10-v1pro-1";
 const FFMPEG_CACHE_NAME = `v1pro-ffmpeg-assets-${FFMPEG_ASSET_VERSION}`;
 const FFMPEG_CACHE_PREFIX = "v1pro-ffmpeg-assets-";
+const FFMPEG_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export interface CachedFfmpegAssets {
   coreURL: string;
@@ -18,10 +19,17 @@ function assetUrl(fileName: string): string {
   return url.href;
 }
 
+function fetchWithTimeout(request: Request, cache: RequestCache): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), FFMPEG_DOWNLOAD_TIMEOUT_MS);
+  return fetch(request, { cache, signal: controller.signal })
+    .finally(() => window.clearTimeout(timer));
+}
+
 async function fetchAndPersist(url: string): Promise<Response> {
   const request = new Request(url, { credentials: "same-origin" });
   if (!("caches" in window)) {
-    const response = await fetch(request, { cache: "force-cache" });
+    const response = await fetchWithTimeout(request, "force-cache");
     if (!response.ok) throw new Error(`FFmpeg 资源下载失败（HTTP ${response.status}）`);
     return response;
   }
@@ -30,7 +38,7 @@ async function fetchAndPersist(url: string): Promise<Response> {
   const cached = await cache.match(request);
   if (cached) return cached;
 
-  const response = await fetch(request, { cache: "reload" });
+  const response = await fetchWithTimeout(request, "reload");
   if (!response.ok) throw new Error(`FFmpeg 资源下载失败（HTTP ${response.status}）`);
   await cache.put(request, response.clone());
   return response;
@@ -60,19 +68,32 @@ async function loadCachedAssets(): Promise<CachedFfmpegAssets> {
       fetchAndPersist(coreSource),
       fetchAndPersist(wasmSource),
     ]);
-    const [coreURL, wasmURL] = await Promise.all([
-      responseBlobUrl(coreResponse, "text/javascript"),
-      responseBlobUrl(wasmResponse, "application/wasm"),
-    ]);
+    // Keep the module script on its same-origin URL. Loading that script from
+    // a blob URL is blocked by strict production CSP in some browsers and the
+    // FFmpeg worker can then wait forever without reporting the worker error.
+    // The 32 MB WASM is the expensive asset, so expose only it as a persistent
+    // Cache Storage-backed blob URL.
+    void coreResponse;
+    const wasmURL = await responseBlobUrl(wasmResponse, "application/wasm");
     // Ask the browser to protect site storage from routine eviction. This is
     // best-effort; browsers may decline and the Cache Storage entry still works.
-    try { await navigator.storage?.persist?.(); } catch { /* optional API */ }
-    return { coreURL, wasmURL, cached: true };
+    try {
+      void navigator.storage?.persist?.().catch(() => { /* optional API */ });
+    } catch { /* optional API */ }
+    return { coreURL: coreSource, wasmURL, cached: true };
   } catch {
     // Private browsing, storage quota limits, or old browsers must not block
     // conversion. FFmpeg can still use the original same-origin URLs.
     return { coreURL: coreSource, wasmURL: wasmSource, cached: false };
   }
+}
+
+export function getDirectFfmpegAssets(): CachedFfmpegAssets {
+  return {
+    coreURL: assetUrl("ffmpeg-core.js"),
+    wasmURL: assetUrl("ffmpeg-core.wasm"),
+    cached: false,
+  };
 }
 
 export function getCachedFfmpegAssets(): Promise<CachedFfmpegAssets> {

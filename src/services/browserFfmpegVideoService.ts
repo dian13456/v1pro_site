@@ -1,5 +1,5 @@
 import { FFmpeg, FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
-import { getCachedFfmpegAssets } from "./ffmpegAssetCache";
+import { loadBrowserFfmpeg } from "./ffmpegRuntime";
 
 const LCD_WIDTH = 320;
 const LCD_HEIGHT = 170;
@@ -240,9 +240,7 @@ export async function convertBrowserVideoWithFfmpeg(
   };
 
   try {
-    options.onStatus?.("正在加载浏览器 FFmpeg…");
-    const assets = await getCachedFfmpegAssets();
-    await ffmpeg.load({ coreURL: assets.coreURL, wasmURL: assets.wasmURL });
+    await loadBrowserFfmpeg(ffmpeg, options.onStatus);
     ffmpeg.on("progress", onProgress);
     await ffmpeg.createDir(inputDir);
     await ffmpeg.mount(
