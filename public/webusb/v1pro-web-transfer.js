@@ -11,7 +11,7 @@ import {
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.23";
+} from "./v1pro-gfm1.js?v=1.2.24";
 import {
   beginGfm1PayloadStream,
   closeDevice,

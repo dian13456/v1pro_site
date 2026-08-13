@@ -23,8 +23,21 @@ interface ResourceDetailModalProps {
   transferMessage?: string;
   onClose: () => void;
   onTransfer: (resource: ResourceItem) => void;
-  onWebUsbTransfer: (resource: ResourceItem, fps: VideoFpsOption) => void;
+  onWebUsbTransfer: (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => void;
 }
+
+export interface ResourceWebUsbTransferOptions {
+  videoFps: VideoFpsOption;
+  fitMode: "fill" | "contain";
+  rotationDeg: 0 | 90 | 180 | 270;
+  colorProfile: "normal" | "vivid" | "professional";
+}
+
+const COLOR_PROFILE_LABELS: Array<[ResourceWebUsbTransferOptions["colorProfile"], string]> = [
+  ["normal", "普通"],
+  ["vivid", "鲜艳"],
+  ["professional", "专业"],
+];
 
 function materialLabel(resource: ResourceItem): string {
   if (resource.materialType === "video") return "视频素材";
@@ -44,6 +57,9 @@ export function ResourceDetailModal({
   onWebUsbTransfer,
 }: ResourceDetailModalProps) {
   const [fps, setFps] = useState<VideoFpsOption>(20);
+  const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>("fill");
+  const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(0);
+  const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>("normal");
   const [previewUrl, setPreviewUrl] = useState("");
   const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
   const [probing, setProbing] = useState(false);
@@ -161,6 +177,41 @@ export function ResourceDetailModal({
             </>
           ) : null}
 
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="text-xs font-bold tracking-[1px] text-[#8a93a8]">
+              画面方向
+              <select
+                value={rotationDeg}
+                onChange={(event) => setRotationDeg(Number(event.target.value) as ResourceWebUsbTransferOptions["rotationDeg"])}
+                className="mt-2 w-full rounded-[10px] border border-[#e6e9f2] bg-white px-2.5 py-2 text-[12.5px] font-semibold text-[#4a5270] outline-none"
+              >
+                <option value={0}>0° 原方向</option>
+                <option value={90}>90° 顺时针</option>
+                <option value={180}>180°</option>
+                <option value={270}>270° 顺时针</option>
+              </select>
+            </label>
+            <div>
+              <p className="text-xs font-bold tracking-[1px] text-[#8a93a8]">画面显示</p>
+              <div className="mt-2 flex h-[38px] items-center gap-3 rounded-[10px] border border-[#e6e9f2] px-2.5 text-[12px] text-[#4a5270]">
+                <label className="flex cursor-pointer items-center gap-1"><input type="radio" name={`detailFit-${resource.id}`} checked={fitMode === "fill"} onChange={() => setFitMode("fill")} /> 铺满</label>
+                <label className="flex cursor-pointer items-center gap-1"><input type="radio" name={`detailFit-${resource.id}`} checked={fitMode === "contain"} onChange={() => setFitMode("contain")} /> 适应</label>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold tracking-[1px] text-[#8a93a8]">素材色彩</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-[#4a5270]">
+              {COLOR_PROFILE_LABELS.map(([value, label]) => (
+                <label key={value} className="flex cursor-pointer items-center gap-1.5">
+                  <input type="radio" name={`detailColor-${resource.id}`} checked={colorProfile === value} onChange={() => setColorProfile(value)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-[#e6e9f2] bg-[#fafbfe] px-3.5 py-3 text-[12.5px] leading-[1.9]">
             <p className="text-slate-600 dark:text-slate-300">
               素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
@@ -206,7 +257,12 @@ export function ResourceDetailModal({
             <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:opacity-50">
               {transferring ? "传输中…" : "传输"}
             </button>
-            <button type="button" disabled={webUsbTransferring || !canDirectTransfer} onClick={() => onWebUsbTransfer(resource, fps)} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">
+            <button
+              type="button"
+              disabled={webUsbTransferring || !canDirectTransfer}
+              onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
+              className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50"
+            >
               {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
             </button>
           </div>

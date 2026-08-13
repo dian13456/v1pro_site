@@ -11,7 +11,7 @@ import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
-import { ResourceDetailModal } from "../components/ResourceDetailModal";
+import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
 import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -35,7 +35,6 @@ import {
   requiredFramesForResource,
   resourceMetricsFromCatalog,
   type DeviceFrameCapacity,
-  type VideoFpsOption,
 } from "../utils/resourceCapacity";
 import { pickRandomItems } from "../utils/randomPick";
 import {
@@ -408,7 +407,7 @@ export default function ResourcesPage() {
     // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
-  const handleWebUsbTransfer = (resource: ResourceItem, videoFps?: VideoFpsOption) => {
+  const handleWebUsbTransfer = (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -424,7 +423,10 @@ export default function ResourcesPage() {
       onStatus: (message) => setTransferNotice(message),
       onProgress: setWebUsbProgress,
     }, {
-      videoFps: resource.materialType === "video" ? videoFps : undefined,
+      videoFps: resource.materialType === "video" ? options.videoFps : undefined,
+      fitMode: options.fitMode,
+      rotationDeg: options.rotationDeg,
+      colorProfile: options.colorProfile,
     })
       .then((result) => {
         let message = result.predictedFrameCount != null

@@ -721,6 +721,9 @@ export async function transferResourceViaWebUsb(
               ? "gif"
               : "image",
         pingFirst: false,
+        fitMode: options.fitMode ?? "fill",
+        rotationDeg: options.rotationDeg ?? 0,
+        colorProfile: options.colorProfile ?? "normal",
         onProgress: (info) => {
           if (info.note && info.sent === 0) {
             callbacks.onStatus?.(info.note);

@@ -631,6 +631,7 @@ export async function planGfm1Encode(blob, opts = {}) {
             bitmap.height,
             opts.fitMode,
             opts.rotationDeg,
+            opts.colorProfile,
           );
           onFrameEncoded?.(1, 1);
           yield rgb;
@@ -648,6 +649,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       onFrameEncoded,
       opts.fitMode,
       opts.rotationDeg,
+      opts.colorProfile,
     );
   } catch (err) {
     console.warn("[V1PRO] gifuct GIF failed:", err);
@@ -661,6 +663,7 @@ export async function planGfm1Encode(blob, opts = {}) {
         onFrameEncoded,
         opts.fitMode,
         opts.rotationDeg,
+        opts.colorProfile,
       );
     } catch (err) {
       console.warn("[V1PRO] ImageDecoder GIF failed:", err);
@@ -684,6 +687,7 @@ export async function planGfm1Encode(blob, opts = {}) {
           bitmap.height,
           opts.fitMode,
           opts.rotationDeg,
+          opts.colorProfile,
         );
         onFrameEncoded?.(1, 1);
         yield rgb;
@@ -745,7 +749,7 @@ function loadHtmlImage(url) {
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
+async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg, colorProfile) {
   const gifuct = await import("./gifuct-bundle.js?v=1.2.23");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
@@ -793,7 +797,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotat
         patchData.data.set(frame.patch);
         pCtx.putImageData(patchData, 0, 0);
         gCtx.drawImage(pCanvas, frame.dims.left, frame.dims.top);
-        const rgb = sourceToRgb565(gifCanvas, gifW, gifH, fitMode, rotationDeg);
+        const rgb = sourceToRgb565(gifCanvas, gifW, gifH, fitMode, rotationDeg, colorProfile);
         onFrameEncoded?.(i + 1, frameCount);
         yield rgb;
         if (frame.disposalType === 2) {
@@ -812,7 +816,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotat
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
+async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg, colorProfile) {
   const buffer = await blob.arrayBuffer();
   const decoder = new ImageDecoder({ data: buffer, type: "image/gif" });
 
@@ -871,6 +875,7 @@ async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode,
               bitmap.displayHeight,
               fitMode,
               rotationDeg,
+              colorProfile,
             );
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;

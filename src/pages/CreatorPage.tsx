@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CompactResourceCard } from "../components/CompactResourceCard";
-import { ResourceDetailModal } from "../components/ResourceDetailModal";
+import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
@@ -13,7 +13,6 @@ import { fetchResourceFavorites } from "../services/favoriteService";
 import { fetchResourceLikes } from "../services/likeService";
 import { transferResourceViaWebUsb } from "../services/v1proWebResourceTransferService";
 import type { ResourceItem } from "../types/resource";
-import type { VideoFpsOption } from "../utils/resourceCapacity";
 import { fetchCreatorProfile } from "../services/avatarService";
 
 export default function CreatorPage() {
@@ -84,7 +83,7 @@ export default function CreatorPage() {
     return resources.filter((item) => item.author?.trim().toLocaleLowerCase("zh-CN") === normalized);
   }, [author, resources]);
 
-  const handleWebUsbTransfer = (resource: ResourceItem, videoFps?: VideoFpsOption) => {
+  const handleWebUsbTransfer = (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -96,7 +95,12 @@ export default function CreatorPage() {
     void transferResourceViaWebUsb(
       resource,
       { onStatus: (message) => setTransferNotice(message), onProgress: setWebUsbProgress },
-      { videoFps: resource.materialType === "video" ? videoFps : undefined },
+      {
+        videoFps: resource.materialType === "video" ? options.videoFps : undefined,
+        fitMode: options.fitMode,
+        rotationDeg: options.rotationDeg,
+        colorProfile: options.colorProfile,
+      },
     )
       .then((result) => {
         const predicted = result.predictedFrameCount != null ? `预计 ${result.predictedFrameCount} 帧 · ` : "";
