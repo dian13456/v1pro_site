@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { SiteNav } from "./SiteNav";
 import { ThemeSelector } from "./ThemeSelector";
 import { clearAuthState } from "../services/authService";
+import { TechnicalSupportGroup } from "./TechnicalSupportGroup";
 import type { ThemeMode } from "../types/theme";
 
 interface SitePageToolbarProps {
@@ -22,6 +23,7 @@ export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToo
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ThemeSelector theme={theme} onChange={onSetTheme} />
+        <TechnicalSupportGroup />
       </div>
     );
   }
@@ -37,6 +39,7 @@ export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToo
       >
         退出认证
       </button>
+      <TechnicalSupportGroup />
     </div>
   );
 }

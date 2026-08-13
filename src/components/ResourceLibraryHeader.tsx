@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { clearAuthState } from "../services/authService";
+import { TechnicalSupportGroup } from "./TechnicalSupportGroup";
 
 interface ResourceLibraryHeaderProps {
   keyword: string;
@@ -94,6 +95,7 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
         >
           退出认证
         </button>
+        <TechnicalSupportGroup compact />
       </div>
     </header>
   );
