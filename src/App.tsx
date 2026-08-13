@@ -1,32 +1,33 @@
-import { type ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
 import { SiteLoadingScreen } from "./components/SiteUi";
 import { useAuthGuard } from "./hooks/useAuthGuard";
-import AiGuidePage from "./pages/AiGuidePage.tsx";
-import AiImagePage from "./pages/AiImagePage.tsx";
-import SharePage from "./pages/SharePage.tsx";
-import AuthPage from "./pages/AuthPage.tsx";
-import ProfilePage from "./pages/ProfilePage.tsx";
-import ShopPage from "./pages/ShopPage.tsx";
-import MallPage from "./pages/MallPage.tsx";
-import MallAdminPage from "./pages/MallAdminPage.tsx";
-import FavoritesPage from "./pages/FavoritesPage.tsx";
-import MessageBoardPage from "./pages/MessageBoardPage.tsx";
-import NotFoundPage from "./pages/NotFoundPage.tsx";
-import ResourcesPage from "./pages/ResourcesPage.tsx";
-import ActivityCenterPage from "./pages/ActivityCenterPage.tsx";
-import ActivityLotteryPage from "./pages/ActivityLotteryPage.tsx";
-import ActivityPrizeInfoPage from "./pages/ActivityPrizeInfoPage.tsx";
-import ActivityWinnerListPage from "./pages/ActivityWinnerListPage.tsx";
-import ActivityAdminPage from "./pages/ActivityAdminPage.tsx";
-import ActivityPromoPage from "./pages/ActivityPromoPage.tsx";
-import ActivityPromoAdminPage from "./pages/ActivityPromoAdminPage.tsx";
-import DownloadCenterPage from "./pages/DownloadCenterPage.tsx";
-import TermsPage from "./pages/TermsPage.tsx";
-import WebUsbTransferTestPage from "./pages/WebUsbTransferTestPage.tsx";
-import CreatorPage from "./pages/CreatorPage.tsx";
-import CreditLeaderboardPage from "./pages/CreditLeaderboardPage.tsx";
+
+const AiGuidePage = lazy(() => import("./pages/AiGuidePage"));
+const AiImagePage = lazy(() => import("./pages/AiImagePage"));
+const SharePage = lazy(() => import("./pages/SharePage"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const ShopPage = lazy(() => import("./pages/ShopPage"));
+const MallPage = lazy(() => import("./pages/MallPage"));
+const MallAdminPage = lazy(() => import("./pages/MallAdminPage"));
+const FavoritesPage = lazy(() => import("./pages/FavoritesPage"));
+const MessageBoardPage = lazy(() => import("./pages/MessageBoardPage"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const ResourcesPage = lazy(() => import("./pages/ResourcesPage"));
+const ActivityCenterPage = lazy(() => import("./pages/ActivityCenterPage"));
+const ActivityLotteryPage = lazy(() => import("./pages/ActivityLotteryPage"));
+const ActivityPrizeInfoPage = lazy(() => import("./pages/ActivityPrizeInfoPage"));
+const ActivityWinnerListPage = lazy(() => import("./pages/ActivityWinnerListPage"));
+const ActivityAdminPage = lazy(() => import("./pages/ActivityAdminPage"));
+const ActivityPromoPage = lazy(() => import("./pages/ActivityPromoPage"));
+const ActivityPromoAdminPage = lazy(() => import("./pages/ActivityPromoAdminPage"));
+const DownloadCenterPage = lazy(() => import("./pages/DownloadCenterPage"));
+const TermsPage = lazy(() => import("./pages/TermsPage"));
+const WebUsbTransferTestPage = lazy(() => import("./pages/WebUsbTransferTestPage"));
+const CreatorPage = lazy(() => import("./pages/CreatorPage"));
+const CreditLeaderboardPage = lazy(() => import("./pages/CreditLeaderboardPage"));
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -50,7 +51,8 @@ export default function App() {
   return (
     <>
       {showFirstVisitPrompts ? <LatestSoftwareModal /> : null}
-      <Routes location={location}>
+      <Suspense fallback={<SiteLoadingScreen message="正在加载页面…" />}>
+        <Routes location={location}>
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route
@@ -225,7 +227,8 @@ export default function App() {
             }
           />
           <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </>
   );
 }
