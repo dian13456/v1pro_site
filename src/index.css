@@ -20,3 +20,48 @@ body {
   text-rendering: optimizeLegibility;
   background: transparent;
 }
+
+@keyframes v1pro-transfer-wave-front {
+  from {
+    transform: translateX(-16%) rotate(0deg);
+  }
+  to {
+    transform: translateX(8%) rotate(360deg);
+  }
+}
+
+@keyframes v1pro-transfer-wave-back {
+  from {
+    transform: translateX(9%) rotate(0deg);
+  }
+  to {
+    transform: translateX(-13%) rotate(-360deg);
+  }
+}
+
+.v1pro-transfer-wave {
+  position: absolute;
+  left: -28%;
+  top: -8px;
+  width: 156%;
+  height: 18px;
+  border-radius: 44% 52% 48% 56%;
+  pointer-events: none;
+}
+
+.v1pro-transfer-wave-front {
+  background: rgba(255, 255, 255, 0.42);
+  animation: v1pro-transfer-wave-front 3.2s linear infinite;
+}
+
+.v1pro-transfer-wave-back {
+  top: -5px;
+  background: rgba(18, 164, 113, 0.34);
+  animation: v1pro-transfer-wave-back 4.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v1pro-transfer-wave {
+    animation: none;
+  }
+}

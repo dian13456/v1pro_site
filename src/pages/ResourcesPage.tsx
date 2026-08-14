@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
+import { V1ProTransferOrb } from "../components/V1ProTransferOrb";
 import { SiteFooter } from "../components/SiteFooter";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
@@ -644,6 +645,12 @@ export default function ResourcesPage() {
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
+      <V1ProTransferOrb
+        visible={webUsbTransferringId !== null && selectedResource?.id !== webUsbTransferringId}
+        progress={webUsbProgress}
+        transferId={webUsbTransferringId}
+        message={transferNotice}
+      />
       <ResourceLibraryHeader
         keyword={keyword}
         onSearch={(value) => {
