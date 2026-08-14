@@ -122,7 +122,6 @@ export default function ResourcesPage() {
   const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
   const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
-  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -390,7 +389,7 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [location.key, recommendationRefreshKey]);
+  }, [location.key]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -451,7 +450,6 @@ export default function ResourcesPage() {
         throw new Error("下载链接生成失败");
       }
       window.open(downloadResult.url, "_blank", "noopener,noreferrer");
-      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "下载失败";
       setErrorMessage(message);
@@ -501,7 +499,6 @@ export default function ResourcesPage() {
         }
         setTransferNotice(message);
         void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
-        setRecommendationRefreshKey((value) => value + 1);
         setWebUsbProgress(100);
         window.setTimeout(() => {
           setTransferNotice("");
@@ -533,7 +530,6 @@ export default function ResourcesPage() {
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
           void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
-          setRecommendationRefreshKey((value) => value + 1);
           window.setTimeout(() => setTransferNotice(""), 5000);
         },
         onError: (message) => {
@@ -556,7 +552,6 @@ export default function ResourcesPage() {
       setErrorMessage("");
       const result = await toggleResourceFavorite(resource.id);
       setFavoriteIds(result.state.favoriteIds);
-      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "收藏操作失败";
       setErrorMessage(message);
@@ -594,7 +589,6 @@ export default function ResourcesPage() {
           return next;
         });
       }
-      setRecommendationRefreshKey((value) => value + 1);
     } catch (err) {
       const message = (err as Error)?.message || "点赞失败";
       setErrorMessage(message);
