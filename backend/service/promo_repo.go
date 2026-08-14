@@ -271,3 +271,48 @@ func (r *PromoRepo) UpdateSubmissionStatus(id, status, adminNote string) (*Promo
 	}
 	return nil, errors.New("记录不存在")
 }
+
+// UpdateSubmissionContent updates fields owned by the applicant. Campaign and
+// ownership fields are intentionally immutable. A reviewed/approved submission
+// cannot be changed through this path.
+func (r *PromoRepo) UpdateSubmissionContent(id, userSerial string, content PromoSubmission) (*PromoSubmission, error) {
+	id = strings.TrimSpace(id)
+	userSerial = strings.TrimSpace(userSerial)
+	if id == "" || userSerial == "" {
+		return nil, errors.New("报名记录不存在")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.updateSubmissionContent(ctx, id, userSerial, content)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.loadJSONLocked(); err != nil {
+		return nil, err
+	}
+	for i := range r.cache.Submissions {
+		item := &r.cache.Submissions[i]
+		if item.ID != id || item.UserSerial != userSerial {
+			continue
+		}
+		if item.Status != PromoStatusPending && item.Status != PromoStatusRejected {
+			return nil, errors.New("该报名已审核通过，不能再修改")
+		}
+		item.OrderNo = content.OrderNo
+		item.OrderScreenshotURL = content.OrderScreenshotURL
+		item.InjectionColorNote = content.InjectionColorNote
+		item.ShippingAddressEnc = content.ShippingAddressEnc
+		item.VideoLink = content.VideoLink
+		item.PaymentQrURLEnc = content.PaymentQrURLEnc
+		item.Status = PromoStatusPending
+		item.AdminNote = ""
+		item.UpdatedAt = time.Now().UnixMilli()
+		copy := *item
+		if err := r.saveJSONLocked(); err != nil {
+			return nil, err
+		}
+		return &copy, nil
+	}
+	return nil, errors.New("报名记录不存在")
+}

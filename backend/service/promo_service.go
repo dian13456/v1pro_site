@@ -151,6 +151,109 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 	}, nil
 }
 
+// GetMySubmission returns the complete submission only to its authenticated
+// owner. Sensitive fields are decrypted for this response so the applicant can
+// verify and correct what they entered.
+func (s *PromoService) GetMySubmission(userSerial string) (PromoSubmissionPlain, error) {
+	item, err := s.repo.FindByUserAndGroup(strings.TrimSpace(userSerial), PromoChoiceGroupSpring2026)
+	if err != nil {
+		return PromoSubmissionPlain{}, err
+	}
+	if item == nil {
+		return PromoSubmissionPlain{}, errors.New("暂无报名记录")
+	}
+	return s.toPlain(*item, true)
+}
+
+// UpdateSubmission keeps the chosen campaign immutable. Pending and rejected
+// submissions may be corrected; a correction always re-enters pending review.
+func (s *PromoService) UpdateSubmission(userSerial string, input PromoSubmissionInput) (PromoSubmissionPlain, error) {
+	userSerial = strings.TrimSpace(userSerial)
+	existing, err := s.repo.FindByUserAndGroup(userSerial, PromoChoiceGroupSpring2026)
+	if err != nil {
+		return PromoSubmissionPlain{}, err
+	}
+	if existing == nil {
+		return PromoSubmissionPlain{}, errors.New("暂无可修改的报名记录")
+	}
+	if existing.Status != PromoStatusPending && existing.Status != PromoStatusRejected {
+		return PromoSubmissionPlain{}, errors.New("该报名已审核通过，不能再修改")
+	}
+	if campaignID := strings.TrimSpace(input.CampaignID); campaignID != "" && campaignID != existing.CampaignID {
+		return PromoSubmissionPlain{}, errors.New("已报名的活动不能更换")
+	}
+	campaign, ok := FindPromoCampaign(existing.CampaignID)
+	if !ok {
+		return PromoSubmissionPlain{}, errors.New("活动不存在")
+	}
+	if !PromoCampaignActive(campaign, time.Now()) {
+		return PromoSubmissionPlain{}, errors.New("活动已结束，不能再修改")
+	}
+
+	content, err := s.validateSubmissionContent(campaign, input)
+	if err != nil {
+		return PromoSubmissionPlain{}, err
+	}
+	updated, err := s.repo.UpdateSubmissionContent(existing.ID, userSerial, content)
+	if err != nil {
+		return PromoSubmissionPlain{}, err
+	}
+	return s.toPlain(*updated, true)
+}
+
+func (s *PromoService) validateSubmissionContent(campaign PromoCampaignDefinition, input PromoSubmissionInput) (PromoSubmission, error) {
+	orderNo := strings.TrimSpace(input.OrderNo)
+	orderScreenshot := strings.TrimSpace(input.OrderScreenshotURL)
+	if orderScreenshot == "" {
+		return PromoSubmission{}, errors.New("请上传订单截图")
+	}
+	if orderNo == "" && campaign.ID != PromoCampaignCNCRrepurchase {
+		return PromoSubmission{}, errors.New("请填写订单号")
+	}
+	content := PromoSubmission{
+		OrderNo:            orderNo,
+		OrderScreenshotURL: orderScreenshot,
+	}
+	switch campaign.ID {
+	case PromoCampaignCNCRrepurchase:
+		colorNote := strings.TrimSpace(input.InjectionColorNote)
+		address := strings.TrimSpace(input.ShippingAddress)
+		if colorNote == "" {
+			return PromoSubmission{}, errors.New("请填写注塑 V1PRO 颜色备注")
+		}
+		if address == "" {
+			return PromoSubmission{}, errors.New("请填写收货地址")
+		}
+		addressEnc, err := EncryptActivityField(s.jwtSecret, address)
+		if err != nil {
+			return PromoSubmission{}, errors.New("保存收货地址失败")
+		}
+		content.InjectionColorNote = colorNote
+		content.ShippingAddressEnc = addressEnc
+	case PromoCampaignVideoLikeFreeOrder:
+		videoLink := strings.TrimSpace(input.VideoLink)
+		paymentQr := strings.TrimSpace(input.PaymentQrURL)
+		if videoLink == "" {
+			return PromoSubmission{}, errors.New("请填写视频链接")
+		}
+		if _, err := url.ParseRequestURI(videoLink); err != nil {
+			return PromoSubmission{}, errors.New("视频链接格式不正确")
+		}
+		if paymentQr == "" {
+			return PromoSubmission{}, errors.New("请上传收款码")
+		}
+		qrEnc, err := EncryptActivityField(s.jwtSecret, paymentQr)
+		if err != nil {
+			return PromoSubmission{}, errors.New("保存收款码失败")
+		}
+		content.VideoLink = videoLink
+		content.PaymentQrURLEnc = qrEnc
+	default:
+		return PromoSubmission{}, errors.New("暂不支持该活动")
+	}
+	return content, nil
+}
+
 func (s *PromoService) ListAdminSubmissions(campaignID, status string) ([]PromoSubmissionPlain, error) {
 	items, err := s.repo.ListSubmissions(campaignID, status)
 	if err != nil {

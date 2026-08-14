@@ -30,12 +30,12 @@ type promoReviewRequest struct {
 }
 
 type promoRouteDeps struct {
-	promoService    *service.PromoService
+	promoService     *service.PromoService
 	reviewAdminToken string
-	jwtSecret       string
-	tokenTTL        time.Duration
-	imageSigner     *service.COSSigner
-	imagePublicBase string
+	jwtSecret        string
+	tokenTTL         time.Duration
+	imageSigner      *service.COSSigner
+	imagePublicBase  string
 }
 
 func registerPromoRoutes(router *gin.Engine, deps promoRouteDeps) {
@@ -52,6 +52,55 @@ func registerPromoRoutes(router *gin.Engine, deps promoRouteDeps) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "overview": overview})
+	})
+
+	router.GET("/api/activity/promo/submission", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		result, err := deps.promoService.GetMySubmission(serial)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "submission": result})
+	})
+
+	router.POST("/api/activity/promo/submission/update", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req promoSubmitRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		result, err := deps.promoService.UpdateSubmission(serial, service.PromoSubmissionInput{
+			CampaignID:         req.CampaignID,
+			OrderNo:            req.OrderNo,
+			OrderScreenshotURL: req.OrderScreenshotURL,
+			InjectionColorNote: req.InjectionColorNote,
+			ShippingAddress:    req.ShippingAddress,
+			VideoLink:          req.VideoLink,
+			PaymentQrURL:       req.PaymentQrURL,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"message":    "资料已更新，已重新进入待审核",
+			"submission": result,
+		})
 	})
 
 	router.POST("/api/activity/promo/submit", func(c *gin.Context) {
