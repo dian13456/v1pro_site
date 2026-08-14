@@ -1,6 +1,8 @@
 package service
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -14,6 +16,49 @@ func recommendationFixture(id int, tag, material, author, updated string) map[st
 		"materialType": material,
 		"author":       author,
 		"updatedAt":    updated,
+	}
+}
+
+func TestBuildResourceRecommendationsSupportsLargeCandidatePool(t *testing.T) {
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.Local)
+	catalog := make([]map[string]any, 0, 120)
+	for index := 1; index <= 120; index++ {
+		catalog = append(catalog, recommendationFixture(index, fmt.Sprintf("tag-%d", index%12), "image", fmt.Sprintf("author-%d", index%40), "2026-08-01"))
+	}
+	_, result := BuildResourceRecommendations(catalog, RecommendationSignals{}, 96, now)
+	if len(result) != 96 {
+		t.Fatalf("len(result)=%d, want 96", len(result))
+	}
+}
+
+func TestRotateResourceRecommendationsChangesSeedAndAvoidsRecentItems(t *testing.T) {
+	candidates := make([]Recommendation, 0, 192)
+	excluded := make(map[string]bool)
+	for index := 1; index <= 192; index++ {
+		id := fmt.Sprintf("%d", index)
+		candidates = append(candidates, Recommendation{ResourceID: id, Score: float64(193 - index)})
+		if index <= 16 {
+			excluded[id] = true
+		}
+	}
+	first := RotateResourceRecommendations(candidates, 64, "seed-a", excluded)
+	second := RotateResourceRecommendations(candidates, 64, "seed-b", excluded)
+	if len(first) != 64 || len(second) != 64 {
+		t.Fatalf("unexpected lengths: %d and %d", len(first), len(second))
+	}
+	for _, item := range first {
+		if excluded[item.ResourceID] {
+			t.Fatalf("recent item %s should not be selected while fresh candidates remain", item.ResourceID)
+		}
+	}
+	firstPage := make([]string, 0, 16)
+	secondPage := make([]string, 0, 16)
+	for index := 0; index < 16; index++ {
+		firstPage = append(firstPage, first[index].ResourceID)
+		secondPage = append(secondPage, second[index].ResourceID)
+	}
+	if reflect.DeepEqual(firstPage, secondPage) {
+		t.Fatalf("different seeds produced the same first page: %#v", firstPage)
 	}
 }
 

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"sort"
@@ -68,8 +70,8 @@ func BuildResourceRecommendations(catalog []map[string]any, signals Recommendati
 	if limit <= 0 {
 		limit = 8
 	}
-	if limit > 24 {
-		limit = 24
+	if limit > 192 {
+		limit = 192
 	}
 
 	resources := make([]recommendationResource, 0, len(catalog))
@@ -196,6 +198,88 @@ func BuildResourceRecommendations(catalog []map[string]any, signals Recommendati
 		result = append(result, item.Recommendation)
 	}
 	return mode, result
+}
+
+// RotateResourceRecommendations samples across score tiers while preferring
+// items that were not recently shown. The same seed is deterministic for
+// tests and retries; a new seed produces a fresh page from the larger pool.
+func RotateResourceRecommendations(candidates []Recommendation, limit int, seed string, excluded map[string]bool) []Recommendation {
+	if limit <= 0 || len(candidates) == 0 {
+		return []Recommendation{}
+	}
+	if limit > len(candidates) {
+		limit = len(candidates)
+	}
+	seed = strings.TrimSpace(seed)
+	if seed == "" {
+		seed = strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+
+	primary := [3][]Recommendation{}
+	fallback := [3][]Recommendation{}
+	seen := make(map[string]bool, len(candidates))
+	for index, item := range candidates {
+		if item.ResourceID == "" || seen[item.ResourceID] {
+			continue
+		}
+		seen[item.ResourceID] = true
+		tier := index * 3 / len(candidates)
+		if tier > 2 {
+			tier = 2
+		}
+		if excluded[item.ResourceID] {
+			fallback[tier] = append(fallback[tier], item)
+		} else {
+			primary[tier] = append(primary[tier], item)
+		}
+	}
+	shuffleRecommendationTiers(&primary, seed+"|new")
+	shuffleRecommendationTiers(&fallback, seed+"|recent")
+
+	result := make([]Recommendation, 0, limit)
+	result = appendRecommendationTiers(result, primary, limit)
+	if len(result) < limit {
+		result = appendRecommendationTiers(result, fallback, limit)
+	}
+	return result
+}
+
+func shuffleRecommendationTiers(tiers *[3][]Recommendation, seed string) {
+	for tier := range tiers {
+		keys := make(map[string][32]byte, len(tiers[tier]))
+		for _, item := range tiers[tier] {
+			keys[item.ResourceID] = sha256.Sum256([]byte(seed + "|" + item.ResourceID))
+		}
+		sort.Slice(tiers[tier], func(i, j int) bool {
+			left := keys[tiers[tier][i].ResourceID]
+			right := keys[tiers[tier][j].ResourceID]
+			return bytes.Compare(left[:], right[:]) < 0
+		})
+	}
+}
+
+func appendRecommendationTiers(result []Recommendation, tiers [3][]Recommendation, limit int) []Recommendation {
+	positions := [3]int{}
+	// 50% high-score, 30% middle-score and 20% exploration.
+	pattern := [...]int{0, 0, 1, 0, 2, 1, 0, 1, 2, 0}
+	for len(result) < limit {
+		progressed := false
+		for _, tier := range pattern {
+			if len(result) >= limit {
+				break
+			}
+			if positions[tier] >= len(tiers[tier]) {
+				continue
+			}
+			result = append(result, tiers[tier][positions[tier]])
+			positions[tier]++
+			progressed = true
+		}
+		if !progressed {
+			break
+		}
+	}
+	return result
 }
 
 func diversifyRecommendations(scored []scoredRecommendation, limit int) []scoredRecommendation {

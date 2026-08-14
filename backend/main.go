@@ -1861,6 +1861,9 @@ func main() {
 		if parsed, err := strconv.Atoi(strings.TrimSpace(c.Query("limit"))); err == nil && parsed > 0 {
 			limit = parsed
 		}
+		if limit > 64 {
+			limit = 64
+		}
 		catalog, err := loadResourceCatalog(resourcesPath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
@@ -1907,7 +1910,11 @@ func main() {
 		}
 		downloadsMu.Unlock()
 
-		mode, recommendations := service.BuildResourceRecommendations(catalog, service.RecommendationSignals{
+		poolLimit := limit * 3
+		if poolLimit < 96 {
+			poolLimit = 96
+		}
+		mode, recommendationPool := service.BuildResourceRecommendations(catalog, service.RecommendationSignals{
 			Liked:           deviceLikes,
 			Favorites:       deviceFavorites,
 			Interactions:    interactions,
@@ -1915,7 +1922,22 @@ func main() {
 			FavoriteCounts:  favoriteCounts,
 			TotalDownloads:  totalDownloads,
 			WeeklyDownloads: weeklyDownloads,
-		}, limit, time.Now())
+		}, poolLimit, time.Now())
+		excludedIDs := make(map[string]bool)
+		for _, id := range strings.Split(c.Query("exclude"), ",") {
+			id = strings.TrimSpace(id)
+			if id != "" && len(excludedIDs) < 96 {
+				excludedIDs[id] = true
+			}
+		}
+		seed := strings.TrimSpace(c.Query("seed"))
+		if len(seed) > 96 {
+			seed = seed[:96]
+		}
+		if seed == "" {
+			seed = fmt.Sprintf("%s-%d", serial, time.Now().UnixNano())
+		}
+		recommendations := service.RotateResourceRecommendations(recommendationPool, limit, seed, excludedIDs)
 		recommendedIDs := make([]string, 0, len(recommendations))
 		for _, recommendation := range recommendations {
 			recommendedIDs = append(recommendedIDs, recommendation.ResourceID)

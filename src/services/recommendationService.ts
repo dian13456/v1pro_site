@@ -25,7 +25,12 @@ interface RecommendationsResponse extends Record<string, unknown> {
   message?: string;
 }
 
-export async function fetchResourceRecommendations(limit = 8): Promise<{
+export interface RecommendationFetchOptions {
+  seed?: string;
+  excludeIds?: number[];
+}
+
+export async function fetchResourceRecommendations(limit = 8, options: RecommendationFetchOptions = {}): Promise<{
   mode: RecommendationMode;
   items: ResourceRecommendation[];
   resources: ResourceItem[];
@@ -34,8 +39,14 @@ export async function fetchResourceRecommendations(limit = 8): Promise<{
   if (!auth || !hasValidLocalAuth() || isStaticMode()) {
     return { mode: "popular", items: [], resources: [] };
   }
-  const safeLimit = Math.max(1, Math.min(24, Math.floor(limit)));
-  const payload = await apiFetch<RecommendationsResponse>(`/api/recommendations?limit=${safeLimit}`, {
+  const safeLimit = Math.max(1, Math.min(64, Math.floor(limit)));
+  const params = new URLSearchParams({ limit: String(safeLimit) });
+  if (options.seed) params.set("seed", options.seed.slice(0, 96));
+  const excludeIds = Array.from(new Set(options.excludeIds || []))
+    .filter((id) => Number.isSafeInteger(id) && id > 0)
+    .slice(0, 96);
+  if (excludeIds.length > 0) params.set("exclude", excludeIds.join(","));
+  const payload = await apiFetch<RecommendationsResponse>(`/api/recommendations?${params.toString()}`, {
     method: "GET",
     headers: { Authorization: `Bearer ${auth.token}` },
   }, { priority: true });

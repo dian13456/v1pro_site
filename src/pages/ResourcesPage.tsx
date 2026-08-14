@@ -53,14 +53,30 @@ import {
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 16;
+const RECOMMENDATION_FETCH_SIZE = 64;
+const RECENT_RECOMMENDATIONS_KEY = "jiadian_recent_recommendations_v2";
 
-function shuffleRecommendations(items: ResourceRecommendation[]): ResourceRecommendation[] {
-  const shuffled = [...items];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+function readRecentRecommendationIds(): number[] {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(RECENT_RECOMMENDATIONS_KEY) || "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is number => Number.isSafeInteger(id) && id > 0).slice(0, 96)
+      : [];
+  } catch {
+    return [];
   }
-  return shuffled;
+}
+
+function rememberRecommendationIds(ids: number[]): void {
+  const recent = readRecentRecommendationIds();
+  const merged = Array.from(new Set([...ids, ...recent])).slice(0, 96);
+  sessionStorage.setItem(RECENT_RECOMMENDATIONS_KEY, JSON.stringify(merged));
+}
+
+function newRecommendationSeed(): string {
+  const bytes = new Uint32Array(4);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("");
 }
 
 export default function ResourcesPage() {
@@ -354,11 +370,15 @@ export default function ResourcesPage() {
     }
     let active = true;
     setRecommendationsLoading(true);
-    fetchResourceRecommendations(24)
+    fetchResourceRecommendations(RECOMMENDATION_FETCH_SIZE, {
+      seed: newRecommendationSeed(),
+      excludeIds: readRecentRecommendationIds(),
+    })
       .then((result) => {
         if (!active) return;
-        setRecommendationItems(shuffleRecommendations(result.items));
+        setRecommendationItems(result.items);
         setRecommendationResources(result.resources);
+        rememberRecommendationIds(result.items.slice(0, DEFAULT_PAGE_SIZE).map((item) => item.resourceId));
       })
       .catch(() => {
         if (active) setRecommendationItems([]);
