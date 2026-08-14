@@ -55,7 +55,6 @@ export default function AiGuidePage() {
     likingId,
     likeCounts,
     likedIds,
-    favoriteIds,
     favoriteIdSet,
     favoritingId,
     totalDownloadCounts,

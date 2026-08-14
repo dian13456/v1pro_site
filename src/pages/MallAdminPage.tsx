@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { MallProductGallery } from "../components/MallProductGallery";
@@ -54,7 +54,7 @@ export default function MallAdminPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadAll = async (token: string) => {
+  const loadAll = useCallback(async (token: string) => {
     setLoading(true);
     setErrorMessage("");
     try {
@@ -74,13 +74,13 @@ export default function MallAdminPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleUnauthorized]);
 
   useEffect(() => {
     if (authenticated && adminToken) {
       void loadAll(adminToken);
     }
-  }, []);
+  }, [adminToken, authenticated, loadAll]);
 
   const handleLoggedIn = () => {
     refreshSession();

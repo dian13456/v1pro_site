@@ -110,7 +110,7 @@ export default function ShopPage() {
         <SitePanel>
           <SiteSectionTitle
             title="我的积分"
-            description={`被点赞 +${formatCredits(likeRewardCredits)}/次；点赞他人 +${formatCredits(actorLikeRewardCredits)}/次，每个 SN 每天前 ${actorLikeDailyLimit} 次有效（最高 ${formatCredits(actorLikeDailyCapCredits)} 积分）；被下载 +${formatCredits(downloadRewardCredits)}/次（日上限 ${formatCredits(downloadDailyCapCredits)}）。不能给自己点赞或下载得分。`}
+            description={`素材被有效点赞 +${formatCredits(likeRewardCredits)}/次（不受点赞者每日次数限制）；点赞他人 +${formatCredits(actorLikeRewardCredits)}/次，每个 SN 每天前 ${actorLikeDailyLimit} 次有效（最高 ${formatCredits(actorLikeDailyCapCredits)} 积分）；被下载 +${formatCredits(downloadRewardCredits)}/次（日上限 ${formatCredits(downloadDailyCapCredits)}）。不能给自己点赞或下载得分。`}
             action={
               <div className="text-3xl font-semibold text-violet-700 dark:text-violet-200">
                 {loading ? "—" : formatCredits(credits)}

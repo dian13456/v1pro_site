@@ -6,6 +6,9 @@ import { isStaticMode } from "./runtimeMode";
 import { fetchResources } from "./resourceService";
 
 const MAX_QUESTION_LENGTH = 300;
+type RawAiGuideResponse = Omit<AiGuideResponse, "resourceIds"> & {
+  resourceIds?: Array<number | string>;
+};
 
 function normalizeIds(raw: Array<number | string> | undefined): number[] {
   const ids: number[] = [];
@@ -92,13 +95,17 @@ export async function askAiGuide(question: string): Promise<AiGuideResponse> {
 
   const auth = getAuthState();
   try {
-    const payload = await apiFetch<AiGuideResponse>("/api/ai-guide", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${auth?.token || ""}`,
+    const payload = await apiFetch<RawAiGuideResponse>(
+      "/api/ai-guide",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${auth?.token || ""}`,
+        },
+        body: JSON.stringify({ question: trimmed }),
       },
-      body: JSON.stringify({ question: trimmed }),
-    });
+      { timeoutMs: 70_000 },
+    );
     if (!payload.success) {
       throw new Error(payload.message || "AI 助手请求失败");
     }

@@ -186,17 +186,21 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
     };
   }
 
-  const payload = await apiFetch<AiImageResponse>("/api/ai-image", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
+  const payload = await apiFetch<AiImageResponse>(
+    "/api/ai-image",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify({
+        prompt: trimmed,
+        aspectRatio: AI_IMAGE_ASPECT_RATIO,
+        count: AI_IMAGE_COUNT,
+      }),
     },
-    body: JSON.stringify({
-      prompt: trimmed,
-      aspectRatio: AI_IMAGE_ASPECT_RATIO,
-      count: AI_IMAGE_COUNT,
-    }),
-  });
+    { timeoutMs: 150_000 },
+  );
 
   throwIfPendingReview(payload);
 
@@ -205,7 +209,7 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
   }
 
   const images = (payload.images || [])
-    .map((item, index) => {
+    .map<GeneratedAiImage | null>((item, index) => {
       const dataUrl = normalizeBase64Image(item);
       if (!dataUrl) return null;
       return {
@@ -297,7 +301,8 @@ export async function transferAiImageToDevice(
         fileName,
         source: image.source || "ai",
       }),
-    }
+    },
+    { timeoutMs: 150_000 },
   );
 
   throwIfPendingReview(payload);
@@ -344,13 +349,17 @@ export async function shareAiImageToCatalog(
         source: "ai",
       };
 
-  const payload = await apiFetch<AiImageShareResponse>(path, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
+  const payload = await apiFetch<AiImageShareResponse>(
+    path,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    { timeoutMs: 150_000 },
+  );
 
   throwIfPendingReview(payload);
 

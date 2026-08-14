@@ -195,17 +195,21 @@ export async function shareGifToCatalog(
   await uploadSessionFile(session.sessionId, "cover", coverBlob, "cover.jpg");
 
   options.onProgress?.("提交分享...");
-  const payload = await apiFetch<GifShareResponse>("/api/user-gif/share", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
+  const payload = await apiFetch<GifShareResponse>(
+    "/api/user-gif/share",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify({
+        sessionId: session.sessionId,
+        title,
+        description,
+      }),
     },
-    body: JSON.stringify({
-      sessionId: session.sessionId,
-      title,
-      description,
-    }),
-  });
+    { timeoutMs: 150_000 },
+  );
 
   throwIfPendingReview(payload);
 

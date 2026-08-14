@@ -31,7 +31,6 @@ export default function FavoritesPage() {
     totalDownloadCounts,
     weeklyDownloadCounts,
     errorMessage,
-    setErrorMessage,
     setLikeCounts,
     setLikedIds,
     setFavoriteIds,

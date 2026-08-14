@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
@@ -39,22 +39,20 @@ export default function ActivityLotteryPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [countdown, setCountdown] = useState("");
 
-  const loadActivity = async () => {
+  const loadActivity = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
     try {
       const payload = await fetchCurrentLotteryActivity();
       setActivity(payload);
       const auth = getAuthState();
-      if (!sn && auth?.serial) {
-        setSn(auth.serial);
-      }
+      setSn((current) => current || auth?.serial || "");
     } catch (err) {
       setErrorMessage((err as Error)?.message || "加载活动失败");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!hasValidLocalAuth()) {
@@ -62,7 +60,7 @@ export default function ActivityLotteryPage() {
       return;
     }
     void loadActivity();
-  }, [navigate]);
+  }, [loadActivity, navigate]);
 
   useEffect(() => {
     if (!activity?.nextDrawAt) return;

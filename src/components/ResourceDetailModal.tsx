@@ -57,9 +57,10 @@ export function ResourceDetailModal({
   onTransfer,
   onWebUsbTransfer,
 }: ResourceDetailModalProps) {
+  const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
   const [fps, setFps] = useState<VideoFpsOption>(20);
   const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
-    defaultTransferFitMode(resource.materialType),
+    defaultTransferFitMode(transferMediaKind),
   );
   const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(0);
   const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>("normal");
@@ -69,8 +70,8 @@ export function ResourceDetailModal({
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    setFitMode(defaultTransferFitMode(resource.materialType));
-  }, [resource.id, resource.materialType]);
+    setFitMode(defaultTransferFitMode(transferMediaKind));
+  }, [resource.id, transferMediaKind]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

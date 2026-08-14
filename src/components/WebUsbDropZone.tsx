@@ -3,7 +3,7 @@ import { useRef, useState, type DragEvent } from "react";
 const FILE_ACCEPT =
   "image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.m4v";
 
-export function isWebUsbImageFile(file: File): boolean {
+function isWebUsbImageFile(file: File): boolean {
   const type = (file.type || "").toLowerCase();
   if (type === "image/png" || type === "image/jpeg" || type === "image/webp" || type === "image/gif") {
     return true;
@@ -11,7 +11,7 @@ export function isWebUsbImageFile(file: File): boolean {
   return /\.(png|jpe?g|webp|gif)$/i.test(file.name);
 }
 
-export function isWebUsbVideoFile(file: File): boolean {
+function isWebUsbVideoFile(file: File): boolean {
   const type = (file.type || "").toLowerCase();
   if (type.startsWith("video/")) {
     return true;
@@ -19,7 +19,7 @@ export function isWebUsbVideoFile(file: File): boolean {
   return /\.(mp4|webm|mov|m4v)$/i.test(file.name);
 }
 
-export function isWebUsbTransferFile(file: File): boolean {
+function isWebUsbTransferFile(file: File): boolean {
   return isWebUsbImageFile(file) || isWebUsbVideoFile(file);
 }
 

@@ -307,18 +307,22 @@ export async function shareVideoToCatalog(
   await uploadWithCosFallback(session, "cover", coverBlob, "cover.jpg", options.onProgress);
 
   options.onProgress?.("提交分享...");
-  const payload = await apiFetch<VideoShareResponse>("/api/user-video/share", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
+  const payload = await apiFetch<VideoShareResponse>(
+    "/api/user-video/share",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify({
+        sessionId: session.sessionId,
+        title,
+        description,
+        columnTag,
+      }),
     },
-    body: JSON.stringify({
-      sessionId: session.sessionId,
-      title,
-      description,
-      columnTag,
-    }),
-  });
+    { timeoutMs: 150_000 },
+  );
 
   throwIfPendingReview(payload);
 

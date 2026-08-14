@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { SitePageLayout } from "../components/SitePageLayout";
@@ -36,7 +36,7 @@ export default function ActivityAdminPage() {
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const loadAll = async (token: string) => {
+  const loadAll = useCallback(async (token: string) => {
     setLoading(true);
     setErrorMessage("");
     try {
@@ -62,13 +62,13 @@ export default function ActivityAdminPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleUnauthorized]);
 
   useEffect(() => {
     if (authenticated && adminToken) {
       void loadAll(adminToken);
     }
-  }, []);
+  }, [adminToken, authenticated, loadAll]);
 
   const handleLoggedIn = () => {
     refreshSession();

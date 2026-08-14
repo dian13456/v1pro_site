@@ -1,26 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { CategoryTabs } from "../components/CategoryTabs";
-import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
-import { SearchBar } from "../components/SearchBar";
-import { SitePageLayout } from "../components/SitePageLayout";
-import { SitePageShell } from "../components/SitePageShell";
 import { SiteFooter } from "../components/SiteFooter";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
 import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
-import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
+import { SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
-import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { hasValidLocalAuth } from "../services/authService";
-import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
-import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenResourceService";
@@ -44,7 +36,6 @@ import {
   prefetchTransferDownloadUrl,
 } from "../services/v1proTransferService";
 import {
-  canWebUsbDirectTransfer,
   transferAlbumResourcesViaWebUsb,
   transferResourceViaWebUsb,
   type AlbumTransition,
@@ -83,14 +74,10 @@ export default function ResourcesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [webUsbProgress, setWebUsbProgress] = useState<number | null>(null);
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
-  const [playingUrl, setPlayingUrl] = useState<string>("");
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
@@ -103,10 +90,8 @@ export default function ResourcesPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
-  const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState<number>(0);
-  const [pageJumpValue, setPageJumpValue] = useState("");
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -123,7 +108,6 @@ export default function ResourcesPage() {
   const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
-  const { theme, setTheme } = useThemeMode();
   const {
     resources,
     filtered,
@@ -132,7 +116,6 @@ export default function ResourcesPage() {
     keyword,
     setKeyword,
     category,
-    setCategory,
     materialType,
     setMaterialType,
     columnTag,
@@ -266,16 +249,6 @@ export default function ResourcesPage() {
       .sort((a, b) => a - b);
   }, [totalPages, currentPage]);
 
-  const handleJumpToPage = () => {
-    const parsed = Number.parseInt(pageJumpValue.trim(), 10);
-    if (!Number.isFinite(parsed)) {
-      return;
-    }
-    const target = Math.min(totalPages, Math.max(1, parsed));
-    setCurrentPage(target);
-    setPageJumpValue(String(target));
-  };
-
   const preloadList = useMemo(
     () =>
       isStaticMode()
@@ -327,7 +300,6 @@ export default function ResourcesPage() {
         if (!active) return;
         setTotalDownloadCounts(state.totalCounts);
         setWeeklyDownloadCounts(state.weeklyCounts);
-        setDownloadWeekKey(state.weekKey);
       })
       .catch(() => {
         // Ignore download stats init errors.
@@ -393,8 +365,6 @@ export default function ResourcesPage() {
     setRandomItems(pickRandomItems(pool, RANDOM_PAGE_SIZE));
     setRandomMode(true);
     setCurrentPage(1);
-    setPlayingResourceId(null);
-    setPlayingUrl("");
     setErrorMessage("");
   };
 
@@ -423,51 +393,11 @@ export default function ResourcesPage() {
       ...prev,
       [resourceId]: stats.weeklyCount,
     }));
-    if (stats.weekKey) {
-      setDownloadWeekKey(stats.weekKey);
-    }
   };
 
   const handleOpenResource = (resource: ResourceItem) => {
     setSelectedResource(resource);
     void recordResourceInteraction(resource.id, "view").catch(() => undefined);
-  };
-
-  const handleDownload = async (resource: ResourceItem) => {
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    try {
-      setDownloadingId(resource.id);
-      setErrorMessage("");
-      const downloadResult =
-        resource.materialType === "image"
-          ? await createImageUrl(resource.id, resource.image, { forDownload: true })
-          : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
-      applyDownloadStats(resource.id, downloadResult.stats);
-      if (!downloadResult.url) {
-        throw new Error("下载链接生成失败");
-      }
-      window.open(downloadResult.url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      const message = (err as Error)?.message || "下载失败";
-      setErrorMessage(message);
-      if (message.includes("认证")) {
-        navigate("/auth", { replace: true });
-      }
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const handleTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
-    prefetchTransferDownloadUrl(resource, options);
-  };
-
-  const handleWebUsbTransferPrepare = (_resource: ResourceItem, _options?: { urgent?: boolean }) => {
-    // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
   const handleWebUsbTransfer = (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => {
@@ -599,48 +529,6 @@ export default function ResourcesPage() {
     } finally {
       setLikingId(null);
     }
-  };
-
-  const handlePlay = async (resource: ResourceItem): Promise<string | void> => {
-    if (playingResourceId === resource.id) {
-      setPlayingResourceId(null);
-      setPlayingUrl("");
-      return;
-    }
-
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    try {
-      setPlayingId(resource.id);
-      setErrorMessage("");
-      const playResult = await createDownloadUrl(resource.id, resource.download, {
-        forDownload: false,
-      });
-      if (!playResult.url) {
-        throw new Error("播放链接生成失败");
-      }
-      setPlayingResourceId(resource.id);
-      setPlayingUrl(playResult.url);
-      return playResult.url;
-    } catch (err) {
-      const message = (err as Error)?.message || "播放链接生成失败";
-      setErrorMessage(message);
-      if (message.includes("认证")) {
-        navigate("/auth", { replace: true });
-      }
-      throw err;
-    } finally {
-      setPlayingId(null);
-    }
-  };
-
-  const handlePlayPrepare = (resource: ResourceItem) => {
-    if (resource.materialType !== "video" && resource.materialType !== "gif") return;
-    if (!hasValidLocalAuth()) return;
-    prefetchPlayUrl(resource.id, resource.download);
   };
 
   const handleHiddenChange = async (resource: ResourceItem, hidden: boolean) => {
