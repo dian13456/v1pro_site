@@ -68,7 +68,10 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     description: sanitized.description,
     author: (sanitized.author || "").trim() || undefined,
     uploaderSerial: (sanitized.uploaderSerial || "").trim() || undefined,
-    uploaderBlockable: Boolean(sanitized.uploaderBlockable || sanitized.uploaderSerial),
+    // The public catalog intentionally strips the real uploader SN. User-uploaded
+    // resources still carry an author, which hiddenResourceService can use as the
+    // privacy-safe local blocking key.
+    uploaderBlockable: Boolean(sanitized.uploaderBlockable || sanitized.uploaderSerial || sanitized.author?.trim()),
     columnTag: columnTag || undefined,
     size: sanitized.size || "未知",
     image: imageRaw,

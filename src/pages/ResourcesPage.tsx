@@ -122,6 +122,7 @@ export default function ResourcesPage() {
   const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
   const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -389,7 +390,7 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [location.key]);
+  }, [location.key, recommendationRefreshKey]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -863,7 +864,21 @@ export default function ResourcesPage() {
                 {recommendationsLoading ? "正在加载猜你喜欢…" : "正在加载素材…"}
               </div>
             ) : null}
-            {showingRecommendations ? <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2> : null}
+            {showingRecommendations ? (
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
+                <button
+                  type="button"
+                  disabled={recommendationsLoading}
+                  onClick={() => setRecommendationRefreshKey((value) => value + 1)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-orange-500 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-wait disabled:opacity-60 dark:border-orange-400/30 dark:bg-slate-900 dark:hover:bg-orange-500/10"
+                  aria-label="刷新猜你喜欢"
+                >
+                  <span aria-hidden="true">↻</span>
+                  {recommendationsLoading ? "刷新中…" : "换一批"}
+                </button>
+              </div>
+            ) : null}
             {canRenderCards ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {displayedItems.map((resource) => (
