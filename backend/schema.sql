@@ -80,6 +80,13 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   display_name VARCHAR(128) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS user_profile_avatars (
+  serial VARCHAR(191) NOT NULL PRIMARY KEY,
+  object_key VARCHAR(512) NOT NULL,
+  updated_at BIGINT NOT NULL DEFAULT 0,
+  KEY idx_profile_avatar_updated (updated_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS user_prompt_prefs (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
   software_dismissed_id BIGINT NOT NULL DEFAULT 0

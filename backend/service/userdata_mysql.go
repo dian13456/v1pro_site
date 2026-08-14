@@ -485,7 +485,7 @@ func (m *mysqlStore) saveMessages(ctx context.Context, store MessagesStore) erro
 }
 
 func (m *mysqlStore) loadUserProfiles(ctx context.Context) (UserProfilesStore, error) {
-	store := UserProfilesStore{Profiles: map[string]string{}}
+	store := UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}
 	rows, err := m.db.QueryContext(ctx, `SELECT serial, display_name FROM user_profiles`)
 	if err != nil {
 		return store, err
@@ -498,7 +498,27 @@ func (m *mysqlStore) loadUserProfiles(ctx context.Context) (UserProfilesStore, e
 		}
 		store.Profiles[serial] = displayName
 	}
-	return store, rows.Err()
+	if err := rows.Err(); err != nil {
+		return store, err
+	}
+	if err := rows.Close(); err != nil {
+		return store, err
+	}
+	avatarRows, err := m.db.QueryContext(ctx, `SELECT serial, object_key FROM user_profile_avatars`)
+	if err != nil {
+		return store, err
+	}
+	defer avatarRows.Close()
+	for avatarRows.Next() {
+		var serial, objectKey string
+		if err := avatarRows.Scan(&serial, &objectKey); err != nil {
+			return store, err
+		}
+		if strings.TrimSpace(objectKey) != "" {
+			store.Avatars[serial] = objectKey
+		}
+	}
+	return store, avatarRows.Err()
 }
 
 func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesStore) error {
@@ -518,6 +538,20 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO user_profiles (serial, display_name) VALUES (?, ?)`,
 			serial, displayName,
+		); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_profile_avatars`); err != nil {
+		return err
+	}
+	for serial, objectKey := range store.Avatars {
+		if strings.TrimSpace(objectKey) == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO user_profile_avatars (serial, object_key, updated_at) VALUES (?, ?, ?)`,
+			serial, objectKey, time.Now().UnixMilli(),
 		); err != nil {
 			return err
 		}

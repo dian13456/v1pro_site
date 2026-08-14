@@ -12,18 +12,19 @@ var ErrDisplayNameTaken = errors.New("display name already taken")
 
 type UserProfilesStore struct {
 	Profiles map[string]string `json:"profiles"`
+	Avatars  map[string]string `json:"avatars,omitempty"`
 }
 
 func LoadUserProfiles(path string) (UserProfilesStore, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return UserProfilesStore{Profiles: map[string]string{}}, nil
+			return UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}, nil
 		}
 		return UserProfilesStore{}, err
 	}
 	if strings.TrimSpace(string(raw)) == "" {
-		return UserProfilesStore{Profiles: map[string]string{}}, nil
+		return UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}, nil
 	}
 	var store UserProfilesStore
 	if err := json.Unmarshal(raw, &store); err != nil {
@@ -31,6 +32,9 @@ func LoadUserProfiles(path string) (UserProfilesStore, error) {
 	}
 	if store.Profiles == nil {
 		store.Profiles = map[string]string{}
+	}
+	if store.Avatars == nil {
+		store.Avatars = map[string]string{}
 	}
 	return store, nil
 }
@@ -41,6 +45,9 @@ func SaveUserProfiles(path string, store UserProfilesStore) error {
 	}
 	if store.Profiles == nil {
 		store.Profiles = map[string]string{}
+	}
+	if store.Avatars == nil {
+		store.Avatars = map[string]string{}
 	}
 	raw, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {

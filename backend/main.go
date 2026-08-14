@@ -65,6 +65,11 @@ type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+type profileAvatarUploadRequest struct {
+	ImageBase64 string `json:"imageBase64"`
+	ContentType string `json:"contentType"`
+}
+
 type softwarePromptDismissRequest struct {
 	ResourceID int64 `json:"resourceId"`
 }
@@ -1240,7 +1245,16 @@ func main() {
 
 		profilesMu.RLock()
 		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		avatarObjectKey := userProfiles.Avatars[serial]
 		profilesMu.RUnlock()
+		avatarURL := ""
+		if avatarObjectKey != "" {
+			if signedAvatarURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), avatarObjectKey, 7*24*time.Hour); signErr != nil {
+				log.Printf("warn: sign profile avatar failed for %s: %v", serial, signErr)
+			} else {
+				avatarURL = signedAvatarURL
+			}
+		}
 
 		promptPrefsMu.RLock()
 		softwarePromptDismissedID := service.GetSoftwarePromptDismissedID(userPromptPrefs, serial)
@@ -1258,10 +1272,12 @@ func main() {
 		}
 		creditLedger := service.ToCreditLedgerViews(creditLedgerEntries)
 
+		c.Header("Cache-Control", "private, no-store")
 		c.JSON(http.StatusOK, gin.H{
 			"success":                   true,
 			"serial":                    serial,
 			"displayName":               displayName,
+			"avatarUrl":                 avatarURL,
 			"credits":                   credits,
 			"creditsDefault":            service.DefaultAICredits,
 			"creditCost":                service.AICreditCostPerGeneration,
@@ -1274,6 +1290,123 @@ func main() {
 			"softwarePromptDismissedId": softwarePromptDismissedID,
 			"creditLedger":              creditLedger,
 		})
+	})
+
+	router.POST("/api/profile/avatar/upload", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 800<<10)
+		var req profileAvatarUploadRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像请求格式无效或文件过大"})
+			return
+		}
+		data, contentType, extension, err := service.DecodeProfileAvatar(req.ImageBase64, req.ContentType)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		objectKey := service.ProfileAvatarObjectKey(serial, extension, time.Now())
+		if err := imageSigner.UploadObject(c.Request.Context(), objectKey, contentType, data); err != nil {
+			log.Printf("warn: upload profile avatar failed for %s: %v", serial, err)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "头像上传到存储失败，请稍后重试"})
+			return
+		}
+		avatarURL, err := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, 7*24*time.Hour)
+		if err != nil {
+			_ = imageSigner.DeleteObject(c.Request.Context(), objectKey)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像访问地址生成失败"})
+			return
+		}
+
+		profilesMu.Lock()
+		if userProfiles.Avatars == nil {
+			userProfiles.Avatars = map[string]string{}
+		}
+		previousObjectKey := userProfiles.Avatars[serial]
+		userProfiles.Avatars[serial] = objectKey
+		if err := userDataRepo.SaveUserProfiles(userProfiles); err != nil {
+			if previousObjectKey == "" {
+				delete(userProfiles.Avatars, serial)
+			} else {
+				userProfiles.Avatars[serial] = previousObjectKey
+			}
+			profilesMu.Unlock()
+			_ = imageSigner.DeleteObject(c.Request.Context(), objectKey)
+			log.Printf("warn: save profile avatar failed for %s: %v", serial, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像保存失败，请稍后重试"})
+			return
+		}
+		profilesMu.Unlock()
+		if previousObjectKey != "" && previousObjectKey != objectKey {
+			if err := imageSigner.DeleteObject(c.Request.Context(), previousObjectKey); err != nil {
+				log.Printf("warn: delete replaced profile avatar failed for %s: %v", serial, err)
+			}
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "avatarUrl": avatarURL})
+	})
+
+	router.DELETE("/api/profile/avatar", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		profilesMu.Lock()
+		previousObjectKey := userProfiles.Avatars[serial]
+		delete(userProfiles.Avatars, serial)
+		if err := userDataRepo.SaveUserProfiles(userProfiles); err != nil {
+			if previousObjectKey != "" {
+				userProfiles.Avatars[serial] = previousObjectKey
+			}
+			profilesMu.Unlock()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像删除失败，请稍后重试"})
+			return
+		}
+		profilesMu.Unlock()
+		if previousObjectKey != "" {
+			if err := imageSigner.DeleteObject(c.Request.Context(), previousObjectKey); err != nil {
+				log.Printf("warn: delete profile avatar object failed for %s: %v", serial, err)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "avatarUrl": ""})
+	})
+
+	router.GET("/api/creator-profile", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if _, ok := serialFromToken(token, jwtSecret, tokenTTL); !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		requestedName := strings.TrimSpace(c.Query("displayName"))
+		if requestedName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "displayName 不能为空"})
+			return
+		}
+		profilesMu.RLock()
+		creatorSerial := service.FindProfileSerialByDisplayName(userProfiles, requestedName)
+		avatarObjectKey := userProfiles.Avatars[creatorSerial]
+		resolvedName := requestedName
+		if creatorSerial != "" {
+			resolvedName = service.ResolveStoredDisplayName(userProfiles, creatorSerial, "")
+		}
+		profilesMu.RUnlock()
+		avatarURL := ""
+		if avatarObjectKey != "" {
+			if signedAvatarURL, err := imageSigner.GenerateReadURL(c.Request.Context(), avatarObjectKey, 7*24*time.Hour); err == nil {
+				avatarURL = signedAvatarURL
+			} else {
+				log.Printf("warn: sign creator avatar failed: %v", err)
+			}
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "displayName": resolvedName, "avatarUrl": avatarURL})
 	})
 
 	router.GET("/api/leaderboard/credits", func(c *gin.Context) {
