@@ -57,6 +57,7 @@ interface ResourceLibrarySidebarProps {
   onMaterialType: (value: MaterialTypeFilter) => void;
   capacity: "all" | DeviceFrameCapacity;
   onCapacity: (value: "all" | DeviceFrameCapacity) => void;
+  showSortOptions?: boolean;
   sortMode: ResourceSortMode | "random";
   onSortMode: (value: ResourceSortMode | "random") => void;
   columnTag: string;
@@ -90,17 +91,19 @@ export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
           { value: 308, label: "308 帧设备", note: "≈12.3s · 25fps", icon: "◇" },
         ]}
       />
-      <FilterGroup
-        title="特色栏目"
-        value={props.sortMode}
-        onChange={props.onSortMode}
-        options={[
-          { value: "hot", label: "热门排行", icon: "🔥" },
-          { value: "random", label: "随机推荐", icon: "🎲" },
-          { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },
-          { value: "latest", label: "最新上传", icon: "✦" },
-        ]}
-      />
+      {props.showSortOptions !== false ? (
+        <FilterGroup
+          title="特色栏目"
+          value={props.sortMode}
+          onChange={props.onSortMode}
+          options={[
+            { value: "hot", label: "热门排行", icon: "🔥" },
+            { value: "random", label: "随机推荐", icon: "🎲" },
+            { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },
+            { value: "latest", label: "最新上传", icon: "✦" },
+          ]}
+        />
+      ) : null}
       <FilterGroup
         title="专栏"
         value={props.columnTag}

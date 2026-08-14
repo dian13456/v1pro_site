@@ -105,7 +105,7 @@ export default function ResourcesPage() {
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
   const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [currentPage, setCurrentPage] = useState<number>(0);
   const [pageJumpValue, setPageJumpValue] = useState("");
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
@@ -192,13 +192,11 @@ export default function ResourcesPage() {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
-    setCurrentPage(1);
     setRandomMode(false);
     setRandomItems([]);
   }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
 
   useEffect(() => {
-    setCurrentPage(1);
     setRandomMode(false);
     setRandomItems([]);
     setAlbumMode(false);
@@ -225,7 +223,8 @@ export default function ResourcesPage() {
     if (sortMode === "weeklyTop") {
       return capacityFilteredResources;
     }
-    const start = (currentPage - 1) * pageSize;
+    const catalogPage = Math.max(1, currentPage);
+    const start = (catalogPage - 1) * pageSize;
     return capacityFilteredResources.slice(start, start + pageSize);
   }, [randomMode, randomItems, sortMode, capacityFilteredResources, currentPage, pageSize]);
 
@@ -250,20 +249,12 @@ export default function ResourcesPage() {
     !showHidden &&
     !albumMode &&
     !randomMode &&
-    currentPage === 1 &&
-    pageSize === DEFAULT_PAGE_SIZE &&
-    !keyword.trim() &&
-    category === "all" &&
-    materialType === "all" &&
-    columnTag === "all" &&
-    sortMode === "latest" &&
-    capacityFilter === "all" &&
-    recommendedResources.length > 0;
+    currentPage === 0;
   const displayedItems = showingRecommendations ? recommendedResources : visibleItems;
-  const canRenderCards = showingRecommendations || !loading;
+  const canRenderCards = showingRecommendations ? !recommendationsLoading : !loading;
   const showInitialLoader = !canRenderCards;
-  const displayedTotalItems = loading && showingRecommendations ? recommendedResources.length : totalItems;
-  const displayedTotalPages = loading && showingRecommendations ? 1 : totalPages;
+  const displayedTotalItems = currentPage === 0 ? recommendedResources.length : totalItems;
+  const displayedTotalPages = currentPage === 0 ? 1 : totalPages;
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -405,6 +396,15 @@ export default function ResourcesPage() {
     setPlayingResourceId(null);
     setPlayingUrl("");
     setErrorMessage("");
+  };
+
+  const handleRecommendationHome = () => {
+    setCurrentPage(0);
+    setRandomMode(false);
+    setRandomItems([]);
+    setShowHidden(false);
+    setAlbumMode(false);
+    setAlbumSelectedIds([]);
   };
 
   const handleExitRandomMode = () => {
@@ -679,6 +679,7 @@ export default function ResourcesPage() {
         setAlbumTransferStatus("");
         return false;
       }
+      setCurrentPage(1);
       if (capacityFilter !== "all") {
         setAlbumCapacity(capacityFilter);
       }
@@ -769,19 +770,30 @@ export default function ResourcesPage() {
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}
-              onMaterialType={setMaterialType}
+              onMaterialType={(value) => {
+                setCurrentPage(1);
+                setMaterialType(value);
+              }}
               capacity={capacityFilter}
-              onCapacity={setCapacityFilter}
+              onCapacity={(value) => {
+                setCurrentPage(1);
+                setCapacityFilter(value);
+              }}
+              showSortOptions={currentPage !== 0}
               sortMode={randomMode ? "random" : sortMode}
               onSortMode={(value) => {
                 if (value === "random") handleRandomRecommend();
                 else {
                   handleExitRandomMode();
+                  setCurrentPage(1);
                   setSortMode(value);
                 }
               }}
               columnTag={columnTag}
-              onColumnTag={setColumnTag}
+              onColumnTag={(value) => {
+                setCurrentPage(1);
+                setColumnTag(value);
+              }}
               columnOptions={columnTagFilterOptions}
             />
           </div>
@@ -792,19 +804,30 @@ export default function ResourcesPage() {
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}
-              onMaterialType={setMaterialType}
+              onMaterialType={(value) => {
+                setCurrentPage(1);
+                setMaterialType(value);
+              }}
               capacity={capacityFilter}
-              onCapacity={setCapacityFilter}
+              onCapacity={(value) => {
+                setCurrentPage(1);
+                setCapacityFilter(value);
+              }}
+              showSortOptions={currentPage !== 0}
               sortMode={randomMode ? "random" : sortMode}
               onSortMode={(value) => {
                 if (value === "random") handleRandomRecommend();
                 else {
                   handleExitRandomMode();
+                  setCurrentPage(1);
                   setSortMode(value);
                 }
               }}
               columnTag={columnTag}
-              onColumnTag={setColumnTag}
+              onColumnTag={(value) => {
+                setCurrentPage(1);
+                setColumnTag(value);
+              }}
               columnOptions={columnTagFilterOptions}
             />
           </div>
@@ -812,15 +835,26 @@ export default function ResourcesPage() {
           <div className="min-w-0">
             <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
-                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页 · 每页
-                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                  {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
-                </select>
+                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页
+                {currentPage !== 0 ? (
+                  <>
+                    <span> · 每页</span>
+                    <select value={pageSize} onChange={(event) => {
+                      setCurrentPage(1);
+                      setPageSize(Number(event.target.value));
+                    }} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                      {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
+                    </select>
+                  </>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowHidden((current) => !current)}
+                  onClick={() => {
+                    setCurrentPage(1);
+                    setShowHidden((current) => !current);
+                  }}
                   aria-pressed={showHidden}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                     showHidden
@@ -844,16 +878,21 @@ export default function ResourcesPage() {
                   <span aria-hidden="true">▦</span>
                   {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
                 </button>
-                <select
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  <option value="latest">最新优先</option>
-                  <option value="earliest">最早优先</option>
-                  <option value="hot">热门排行</option>
-                  <option value="weeklyTop">周下载 TOP20</option>
-                </select>
+                {currentPage !== 0 ? (
+                  <select
+                    value={sortMode}
+                    onChange={(event) => {
+                      setCurrentPage(1);
+                      setSortMode(event.target.value as typeof sortMode);
+                    }}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    <option value="latest">最新优先</option>
+                    <option value="earliest">最早优先</option>
+                    <option value="hot">热门排行</option>
+                    <option value="weeklyTop">周下载 TOP20</option>
+                  </select>
+                ) : null}
               </div>
             </div>
 
@@ -906,15 +945,23 @@ export default function ResourcesPage() {
                 ))}
               </section>
             ) : null}
-            {!loading && displayedItems.length === 0 ? (
+            {canRenderCards && displayedItems.length === 0 ? (
               <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
-                {showHidden ? "当前设备没有已屏蔽素材。" : "没有匹配的素材，请调整筛选条件。"}
+                {showingRecommendations
+                  ? "暂时没有可推荐的素材，请点击“换一批”重试。"
+                  : showHidden
+                    ? "当前设备没有已屏蔽素材。"
+                    : "没有匹配的素材，请调整筛选条件。"}
               </div>
             ) : null}
 
-            {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
+            {!loading && !randomMode && totalItems > 0 && (currentPage === 0 || sortMode !== "weeklyTop") ? (
               <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
-                <button type="button" disabled={currentPage <= 1} onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                <button type="button" disabled={currentPage <= 0} onClick={() => {
+                  if (currentPage === 1) handleRecommendationHome();
+                  else setCurrentPage((value) => Math.max(0, value - 1));
+                }} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                <button type="button" onClick={handleRecommendationHome} className={`h-9 rounded-full px-3.5 text-sm ${currentPage === 0 ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>首页</button>
                 {pageList.map((page) => (
                   <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
                 ))}
