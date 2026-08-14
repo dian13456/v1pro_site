@@ -31,6 +31,7 @@ import {
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
 import { scheduleFfmpegAssetPreload } from "../services/ffmpegAssetCache";
+import { defaultTransferFitMode } from "../utils/transferFitMode";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
@@ -167,6 +168,7 @@ export default function SharePage() {
 
     setSelectedFile(file);
     setMediaKind(kind);
+    setFitMode(defaultTransferFitMode(kind));
     setTitle("");
     setDescription("");
     setColumnTag("");

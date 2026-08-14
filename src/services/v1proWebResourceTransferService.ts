@@ -533,6 +533,8 @@ export async function transferResourceViaWebUsb(
     throw new Error("请先等待当前网页直传完成");
   }
 
+  const effectiveFitMode = options.fitMode ?? (resource.materialType === "gif" ? "contain" : "fill");
+
   const task = (async () => {
     let lastReportedProgress = 0;
     const reportProgress = (progress: number) => {
@@ -613,7 +615,7 @@ export async function transferResourceViaWebUsb(
               totalBytes: prediction.totalBytes,
               note: prediction.note || `FFmpeg 本地转换 · ${prediction.frameCount} 帧 · ${prediction.fps}fps`,
             },
-            fitMode: options.fitMode ?? "fill",
+            fitMode: effectiveFitMode,
             rotationDeg: options.rotationDeg ?? 0,
             colorProfile: options.colorProfile ?? "normal",
             onStatus: callbacks.onStatus,
@@ -648,7 +650,7 @@ export async function transferResourceViaWebUsb(
             maxVideoFps: videoFps,
             minVideoFps: videoFps,
             maxVideoSpeed: 10,
-            fitMode: options.fitMode ?? "fill",
+            fitMode: effectiveFitMode,
             rotationDeg: options.rotationDeg ?? 0,
             colorProfile: options.colorProfile ?? "normal",
             pingFirst: false,
@@ -721,7 +723,7 @@ export async function transferResourceViaWebUsb(
               ? "gif"
               : "image",
         pingFirst: false,
-        fitMode: options.fitMode ?? "fill",
+        fitMode: effectiveFitMode,
         rotationDeg: options.rotationDeg ?? 0,
         colorProfile: options.colorProfile ?? "normal",
         onProgress: (info) => {

@@ -250,6 +250,10 @@ export class V1ProWebTransfer {
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
     const lowerType = (file.type || "").toLowerCase();
     const lowerName = fileName.toLowerCase();
+    const isGif =
+      opts.mediaType === "gif" ||
+      lowerType === "image/gif" ||
+      lowerName.endsWith(".gif");
     const isVideo =
       opts.mediaType === "video" ||
       lowerType.startsWith("video/") ||
@@ -315,7 +319,7 @@ export class V1ProWebTransfer {
             maxPayloadBytes,
             fileName,
             mediaType: opts.mediaType,
-            fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
+            fitMode: opts.fitMode ?? (isGif ? "contain" : "fill"),
             rotationDeg: opts.rotationDeg ?? 0,
             colorProfile: opts.colorProfile ?? "normal",
             onFrameEncoded: (frameIndex, frameCount) => {

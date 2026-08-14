@@ -13,6 +13,7 @@ import {
   type ResourceMediaMetrics,
   type VideoFpsOption,
 } from "../utils/resourceCapacity";
+import { defaultTransferFitMode } from "../utils/transferFitMode";
 
 interface ResourceDetailModalProps {
   resource: ResourceItem;
@@ -57,13 +58,19 @@ export function ResourceDetailModal({
   onWebUsbTransfer,
 }: ResourceDetailModalProps) {
   const [fps, setFps] = useState<VideoFpsOption>(20);
-  const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>("fill");
+  const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
+    defaultTransferFitMode(resource.materialType),
+  );
   const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(0);
   const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>("normal");
   const [previewUrl, setPreviewUrl] = useState("");
   const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
   const [probing, setProbing] = useState(false);
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
+
+  useEffect(() => {
+    setFitMode(defaultTransferFitMode(resource.materialType));
+  }, [resource.id, resource.materialType]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

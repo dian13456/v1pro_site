@@ -597,6 +597,7 @@ export async function planGfm1Encode(blob, opts = {}) {
     explicitMediaType === "gif" || type === "image/gif" || name.endsWith(".gif");
   const isVideo =
     explicitMediaType === "video" || isVideoBlob(type, name);
+  const fitMode = opts.fitMode ?? (isGif ? "contain" : "fill");
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -607,7 +608,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       minVideoFps: opts.minVideoFps,
       maxVideoSpeed: opts.maxVideoSpeed,
       maxPayloadBytes: opts.maxPayloadBytes,
-      fitMode: opts.fitMode,
+      fitMode,
       rotationDeg: opts.rotationDeg,
       colorProfile: opts.colorProfile,
       onFrameEncoded,
@@ -629,7 +630,7 @@ export async function planGfm1Encode(blob, opts = {}) {
             bitmap,
             bitmap.width,
             bitmap.height,
-            opts.fitMode,
+            fitMode,
             opts.rotationDeg,
             opts.colorProfile,
           );
@@ -647,7 +648,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       blob,
       maxFrames,
       onFrameEncoded,
-      opts.fitMode,
+      fitMode,
       opts.rotationDeg,
       opts.colorProfile,
     );
@@ -661,7 +662,7 @@ export async function planGfm1Encode(blob, opts = {}) {
         blob,
         maxFrames,
         onFrameEncoded,
-        opts.fitMode,
+        fitMode,
         opts.rotationDeg,
         opts.colorProfile,
       );
@@ -685,7 +686,7 @@ export async function planGfm1Encode(blob, opts = {}) {
           bitmap,
           bitmap.width,
           bitmap.height,
-          opts.fitMode,
+          fitMode,
           opts.rotationDeg,
           opts.colorProfile,
         );
