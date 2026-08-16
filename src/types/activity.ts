@@ -38,6 +38,7 @@ export interface PrizeInfoStatus {
   activityTitle?: string;
   contactStatus?: string;
   shippingStatus?: string;
+  trackingNo?: string;
   hasSubmitted?: boolean;
   shippingDays?: number;
 }
@@ -72,6 +73,7 @@ export interface ActivityWinnerRecord {
   winnerTime: number;
   contactStatus: string;
   shippingStatus: string;
+  trackingNo?: string;
   drawPeriod: string;
 }
 

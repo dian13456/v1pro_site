@@ -127,7 +127,10 @@ export default function ActivityPrizeInfoPage() {
 
           {submitted ? (
             <SiteAlert variant="success">
-              信息已提交。发货状态：{status.shippingStatus === "shipped" ? "已发货" : "待发货"}
+              <div className="space-y-1">
+                <p>信息已提交。发货状态：{status.shippingStatus === "shipped" ? "已发货" : "待发货"}</p>
+                {status.trackingNo ? <p className="font-semibold">快递单号：{status.trackingNo}</p> : null}
+              </div>
             </SiteAlert>
           ) : (
             <div className="mt-4 space-y-3">

@@ -176,11 +176,16 @@ export async function adminFetchWinnerContact(adminToken: string, winnerId: stri
   return payload.contact;
 }
 
-export async function adminUpdateShipping(adminToken: string, winnerId: string, shippingStatus: string): Promise<void> {
+export async function adminUpdateShipping(
+  adminToken: string,
+  winnerId: string,
+  shippingStatus: string,
+  trackingNo = "",
+): Promise<void> {
   await apiFetch("/api/admin/winners/" + encodeURIComponent(winnerId) + "/shipping", {
     method: "POST",
     headers: { ...adminHeaders(adminToken), "Content-Type": "application/json" },
-    body: JSON.stringify({ shippingStatus }),
+    body: JSON.stringify({ shippingStatus, trackingNo }),
   });
 }
 
