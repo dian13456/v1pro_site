@@ -60,7 +60,9 @@ function isAllowedVideoFile(file: File): boolean {
 export async function extractVideoCoverJpeg(file: File, maxEdge = 1280, quality = 0.85): Promise<Blob> {
   const objectUrl = URL.createObjectURL(file);
   try {
-    const video = await loadVideoFrame(objectUrl);
+    const video = await loadVideo(objectUrl);
+    const coverTime = await selectVideoCoverTime(video);
+    await seekVideoFrame(video, coverTime);
     const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
     const width = Math.max(1, Math.round(video.videoWidth * scale));
     const height = Math.max(1, Math.round(video.videoHeight * scale));
@@ -82,22 +84,125 @@ export async function extractVideoCoverJpeg(file: File, maxEdge = 1280, quality 
   }
 }
 
-function loadVideoFrame(src: string): Promise<HTMLVideoElement> {
+function loadVideo(src: string): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
     video.onerror = () => reject(new Error("无法读取视频文件"));
-    video.onloadedmetadata = () => {
-      const seekTime = Number.isFinite(video.duration) && video.duration > 0
-        ? Math.min(0.5, video.duration * 0.1)
-        : 0.1;
-      video.currentTime = seekTime;
-    };
-    video.onseeked = () => resolve(video);
+    video.onloadeddata = () => resolve(video);
     video.src = src;
   });
+}
+
+function buildVideoCoverSampleTimes(duration: number): number[] {
+  if (!Number.isFinite(duration) || duration <= 0) return [0.1];
+
+  const lastSafeTime = Math.max(0, duration - 0.05);
+  const candidates = [
+    Math.min(0.5, duration * 0.1),
+    Math.min(1, duration * 0.2),
+    duration * 0.35,
+    duration * 0.5,
+    duration * 0.75,
+  ];
+  const unique: number[] = [];
+  for (const candidate of candidates) {
+    const time = Math.max(0, Math.min(candidate, lastSafeTime));
+    if (!unique.some((existing) => Math.abs(existing - time) < 0.05)) {
+      unique.push(time);
+    }
+  }
+  return unique.length > 0 ? unique : [0];
+}
+
+function seekVideoFrame(video: HTMLVideoElement, time: number): Promise<void> {
+  const target = Math.max(0, Math.min(time, Math.max(0, video.duration - 0.05)));
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && Math.abs(video.currentTime - target) < 0.01) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("读取视频封面超时"));
+    }, 8_000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("seeked", handleSeeked);
+      video.removeEventListener("error", handleError);
+    };
+    const handleSeeked = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error("无法读取视频封面帧"));
+    };
+    video.addEventListener("seeked", handleSeeked, { once: true });
+    video.addEventListener("error", handleError, { once: true });
+    video.currentTime = target;
+  });
+}
+
+function scoreCurrentVideoFrame(video: HTMLVideoElement): number {
+  const width = 96;
+  const height = Math.max(1, Math.round(width * video.videoHeight / video.videoWidth));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return 0;
+
+  ctx.drawImage(video, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  let visiblePixels = 0;
+  let luminanceSum = 0;
+  let luminanceSquareSum = 0;
+  const pixelCount = pixels.length / 4;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    if (Math.max(red, green, blue) > 16) visiblePixels += 1;
+    luminanceSum += luminance;
+    luminanceSquareSum += luminance * luminance;
+  }
+
+  const mean = luminanceSum / pixelCount;
+  const variance = Math.max(0, luminanceSquareSum / pixelCount - mean * mean);
+  const visibleRatio = visiblePixels / pixelCount;
+  // Non-black coverage is the primary signal; brightness and detail break close ties.
+  return visibleRatio * 120 + mean * 0.15 + Math.min(80, Math.sqrt(variance)) * 0.5;
+}
+
+async function selectVideoCoverTime(video: HTMLVideoElement): Promise<number> {
+  const candidates = buildVideoCoverSampleTimes(video.duration);
+  let bestTime = candidates[0];
+  let bestScore = -1;
+  let successfulSamples = 0;
+
+  for (const time of candidates) {
+    try {
+      await seekVideoFrame(video, time);
+      const score = scoreCurrentVideoFrame(video);
+      successfulSamples += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        bestTime = time;
+      }
+    } catch {
+      // Some codecs reject individual seeks; continue with the remaining samples.
+    }
+  }
+
+  if (successfulSamples === 0) {
+    throw new Error("无法从视频中读取封面帧");
+  }
+  return bestTime;
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
