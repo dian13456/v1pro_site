@@ -263,6 +263,7 @@ export default function ActivityAdminPage() {
                   <div key={item.id} className="rounded-xl border border-white/20 bg-white/50 p-2 dark:border-white/10 dark:bg-slate-950/40">
                     <p>SN: {item.sn}</p>
                     <p>联系: {item.contactStatus} · 发货: {item.shippingStatus}</p>
+                    {item.trackingNo ? <p>快递: {item.trackingNo}</p> : null}
                     <div className="mt-2 flex gap-2">
                       <SiteButton type="button" className="px-3 py-1 text-xs" onClick={() => void handleViewContact(item.id)}>
                         查看联系方式
