@@ -29,6 +29,51 @@ func FindUploaderSerial(items []map[string]any, resourceID string) string {
 	return ""
 }
 
+// PrimaryCatalogAuthorsByUploaderSerial resolves the public author name that
+// represents each uploader most consistently. Profile names may change while
+// catalog records retain the author name attached to published works.
+func PrimaryCatalogAuthorsByUploaderSerial(items []map[string]any) map[string]string {
+	type authorStats struct {
+		count     int
+		lastIndex int
+	}
+
+	counts := make(map[string]map[string]authorStats)
+	for index, item := range items {
+		if item == nil {
+			continue
+		}
+		serial := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		author := strings.TrimSpace(stringifyCatalogValue(item["author"]))
+		if serial == "" || author == "" {
+			continue
+		}
+		if counts[serial] == nil {
+			counts[serial] = make(map[string]authorStats)
+		}
+		stats := counts[serial][author]
+		stats.count++
+		stats.lastIndex = index
+		counts[serial][author] = stats
+	}
+
+	primary := make(map[string]string, len(counts))
+	for serial, authors := range counts {
+		bestName := ""
+		best := authorStats{lastIndex: -1}
+		for author, stats := range authors {
+			if stats.count > best.count || (stats.count == best.count && stats.lastIndex > best.lastIndex) {
+				bestName = author
+				best = stats
+			}
+		}
+		if bestName != "" {
+			primary[serial] = bestName
+		}
+	}
+	return primary
+}
+
 // LoadUploaderSerialFromCatalogFile reads resources.json and finds uploader SN by resource id.
 func LoadUploaderSerialFromCatalogFile(path, resourceID string) (string, error) {
 	raw, err := os.ReadFile(path)

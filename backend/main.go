@@ -1429,18 +1429,52 @@ func main() {
 		aiCreditsMu.Unlock()
 
 		profilesMu.RLock()
-		profilesSnapshot := service.UserProfilesStore{Profiles: make(map[string]string, len(userProfiles.Profiles))}
+		profilesSnapshot := service.UserProfilesStore{
+			Profiles: make(map[string]string, len(userProfiles.Profiles)),
+			Avatars:  make(map[string]string, len(userProfiles.Avatars)),
+		}
 		for userSerial, displayName := range userProfiles.Profiles {
 			profilesSnapshot.Profiles[userSerial] = displayName
 		}
+		for userSerial, avatarKey := range userProfiles.Avatars {
+			profilesSnapshot.Avatars[userSerial] = avatarKey
+		}
 		profilesMu.RUnlock()
 
-		result := service.BuildCreditLeaderboard(creditsSnapshot, profilesSnapshot, serial, 50)
+		catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
+		if catalogErr != nil {
+			log.Printf("warn: load catalog creator names for leaderboard failed: %v", catalogErr)
+			catalogItems = []map[string]any{}
+		}
+		creatorNames := service.PrimaryCatalogAuthorsByUploaderSerial(catalogItems)
+		result := service.BuildCreditLeaderboard(creditsSnapshot, profilesSnapshot, creatorNames, serial, 50)
+		toView := func(entry service.CreditLeaderboardEntry) gin.H {
+			avatarURL := ""
+			if entry.AvatarKey != "" {
+				if signedURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), entry.AvatarKey, imageSignTTL); signErr == nil {
+					avatarURL = signedURL
+				} else {
+					log.Printf("warn: sign leaderboard avatar failed: %v", signErr)
+				}
+			}
+			return gin.H{
+				"rank":        entry.Rank,
+				"displayName": entry.DisplayName,
+				"creatorName": entry.CreatorName,
+				"credits":     entry.Credits,
+				"avatarUrl":   avatarURL,
+				"isCurrent":   entry.IsCurrent,
+			}
+		}
+		entries := make([]gin.H, 0, len(result.Entries))
+		for _, entry := range result.Entries {
+			entries = append(entries, toView(entry))
+		}
 		c.Header("Cache-Control", "private, no-store")
 		c.JSON(http.StatusOK, gin.H{
 			"success":    true,
-			"entries":    result.Entries,
-			"current":    result.Current,
+			"entries":    entries,
+			"current":    toView(result.Current),
 			"totalUsers": result.TotalUsers,
 			"updatedAt":  time.Now().UTC().Format(time.RFC3339),
 		})

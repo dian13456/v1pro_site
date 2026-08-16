@@ -11,6 +11,7 @@ type CreditLeaderboardEntry struct {
 	CreatorName string  `json:"creatorName,omitempty"`
 	Credits     float64 `json:"credits"`
 	IsCurrent   bool    `json:"isCurrent,omitempty"`
+	AvatarKey   string  `json:"-"`
 }
 
 type CreditLeaderboardResult struct {
@@ -31,6 +32,7 @@ type creditLeaderboardCandidate struct {
 func BuildCreditLeaderboard(
 	credits AICreditsStore,
 	profiles UserProfilesStore,
+	creatorNames map[string]string,
 	currentSerial string,
 	limit int,
 ) CreditLeaderboardResult {
@@ -75,9 +77,13 @@ func BuildCreditLeaderboard(
 		entry := CreditLeaderboardEntry{
 			Rank:        rank,
 			DisplayName: candidate.displayName,
-			CreatorName: candidate.displayName,
+			CreatorName: strings.TrimSpace(creatorNames[candidate.serial]),
 			Credits:     candidate.credits,
 			IsCurrent:   candidate.serial == currentSerial,
+			AvatarKey:   strings.TrimSpace(profiles.Avatars[candidate.serial]),
+		}
+		if entry.CreatorName == "" {
+			entry.CreatorName = candidate.displayName
 		}
 		allEntries = append(allEntries, entry)
 		previousCredits = candidate.credits

@@ -29,3 +29,16 @@ func TestShouldAwardLikeCredit(t *testing.T) {
 		t.Fatal("missing uploader should not reward")
 	}
 }
+
+func TestPrimaryCatalogAuthorsByUploaderSerialUsesMostFrequentName(t *testing.T) {
+	items := []map[string]any{
+		{"uploaderSerial": "sn-a", "author": "旧昵称"},
+		{"uploaderSerial": "SN-A", "author": "往复循环"},
+		{"uploaderSerial": "sn-a", "author": "往复循环"},
+		{"uploaderSerial": "sn-b", "author": "另一位作者"},
+	}
+	got := PrimaryCatalogAuthorsByUploaderSerial(items)
+	if got["SN-A"] != "往复循环" || got["SN-B"] != "另一位作者" {
+		t.Fatalf("unexpected author map: %#v", got)
+	}
+}
