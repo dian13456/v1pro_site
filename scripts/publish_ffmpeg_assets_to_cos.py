@@ -14,7 +14,12 @@ ASSETS = {
     "ffmpeg-core.js": "application/javascript; charset=utf-8",
     "ffmpeg-core.wasm": "application/wasm",
 }
-SITE_ORIGINS = ["https://www.jadot.cn", "https://jadot.cn"]
+SITE_ORIGINS = [
+    "https://www.jadot.cn",
+    "https://jadot.cn",
+    "https://www.jadot.club",
+    "https://jadot.club",
+]
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -65,22 +70,33 @@ def ensure_cors(client: CosS3Client, bucket: str) -> None:
             raise
         rules = []
 
-    for rule in rules:
-        origins = rule.get("AllowedOrigin", [])
-        methods = rule.get("AllowedMethod", [])
-        if "https://www.jadot.cn" in origins and "GET" in methods:
-            return
+    desired_rule = {
+        "ID": "v1pro-ffmpeg-browser",
+        "AllowedOrigin": SITE_ORIGINS,
+        "AllowedMethod": ["GET", "HEAD"],
+        "AllowedHeader": ["*"],
+        "ExposeHeader": [
+            "Content-Length",
+            "Content-Type",
+            "Content-Range",
+            "Accept-Ranges",
+            "ETag",
+            "x-cos-request-id",
+        ],
+        "MaxAgeSeconds": 86400,
+    }
 
-    rules.append(
-        {
-            "ID": "v1pro-ffmpeg-browser",
-            "AllowedOrigin": SITE_ORIGINS,
-            "AllowedMethod": ["GET", "HEAD"],
-            "AllowedHeader": ["*"],
-            "ExposeHeader": ["Content-Length", "ETag", "x-cos-request-id"],
-            "MaxAgeSeconds": 86400,
-        }
-    )
+    for index, rule in enumerate(rules):
+        origins = set(rule.get("AllowedOrigin", []))
+        methods = set(rule.get("AllowedMethod", []))
+        if rule.get("ID") == desired_rule["ID"]:
+            rules[index] = desired_rule
+            break
+        if set(SITE_ORIGINS).issubset(origins) and {"GET", "HEAD"}.issubset(methods):
+            return
+    else:
+        rules.append(desired_rule)
+
     client.put_bucket_cors(
         Bucket=bucket,
         CORSConfiguration={"CORSRule": rules},

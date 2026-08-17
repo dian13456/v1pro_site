@@ -95,6 +95,7 @@ function isBlockedTransferHost(host: string): boolean {
   if (normalized === "api.jadot.cn") return true;
   if (normalized === "jiadianer.cloud" || normalized.endsWith(".jiadianer.cloud")) return true;
   if (normalized === "jadot.cn" || normalized.endsWith(".jadot.cn")) return true;
+  if (normalized === "jadot.club" || normalized.endsWith(".jadot.club")) return true;
   return false;
 }
 
