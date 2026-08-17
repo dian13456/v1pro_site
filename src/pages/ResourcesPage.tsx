@@ -71,6 +71,16 @@ function newRecommendationSeed(): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("");
 }
 
+function fallbackRecommendationRank(resourceId: number, seed: string): number {
+  let hash = 2166136261;
+  const input = `${seed}:${resourceId}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export default function ResourcesPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -219,15 +229,37 @@ export default function ResourcesPage() {
       .filter((resource): resource is ResourceItem => Boolean(resource));
   }, [albumSelectedIds, resources]);
 
+  const fallbackRecommendationResources = useMemo(() => {
+    const eligible = resources.filter((resource) =>
+      resource.category === "gif" &&
+      (resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif") &&
+      !hiddenIdSet.has(resource.id)
+    );
+    const recentIds = new Set(readRecentRecommendationIds());
+    const unseen = eligible.filter((resource) => !recentIds.has(resource.id));
+    const seed = `${location.key}:${recommendationRefreshKey}`;
+    return [...(unseen.length >= DEFAULT_PAGE_SIZE ? unseen : eligible)]
+      .sort((left, right) => fallbackRecommendationRank(left.id, seed) - fallbackRecommendationRank(right.id, seed))
+      .slice(0, DEFAULT_PAGE_SIZE);
+  }, [hiddenIdSet, location.key, recommendationRefreshKey, resources]);
+
   const recommendedResources = useMemo(() => {
     const resourceMap = new Map(
       [...recommendationResources, ...resources].map((resource) => [resource.id, resource])
     );
-    return recommendationItems
+    const personalized = recommendationItems
       .map((recommendation) => resourceMap.get(recommendation.resourceId))
       .filter((resource): resource is ResourceItem => resource !== undefined && !hiddenIdSet.has(resource.id))
       .slice(0, DEFAULT_PAGE_SIZE);
-  }, [hiddenIdSet, recommendationItems, recommendationResources, resources]);
+    return personalized.length > 0 ? personalized : fallbackRecommendationResources;
+  }, [fallbackRecommendationResources, hiddenIdSet, recommendationItems, recommendationResources, resources]);
+
+  useEffect(() => {
+    if (recommendationsLoading || recommendationItems.length > 0 || fallbackRecommendationResources.length === 0) {
+      return;
+    }
+    rememberRecommendationIds(fallbackRecommendationResources.map((resource) => resource.id));
+  }, [fallbackRecommendationResources, recommendationItems.length, recommendationsLoading]);
 
   const showingRecommendations =
     !showHidden &&
