@@ -5,6 +5,7 @@ import { SitePageLayout } from "../components/SitePageLayout";
 import {
   SiteAlert,
   SiteButton,
+  SiteInput,
   SiteLoadingBlock,
   SitePanel,
   SiteSectionTitle,
@@ -32,6 +33,7 @@ export default function ActivityAdminPage() {
   const [selectedId, setSelectedId] = useState("");
   const [joins, setJoins] = useState<ActivityJoinRecord[]>([]);
   const [winners, setWinners] = useState<ActivityWinnerRecord[]>([]);
+  const [shippingTrackingNumbers, setShippingTrackingNumbers] = useState<Record<string, string>>({});
   const [contact, setContact] = useState<WinnerContactInfo | null>(null);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -51,6 +53,9 @@ export default function ActivityAdminPage() {
         ]);
         setJoins(joinList);
         setWinners(winnerList);
+        setShippingTrackingNumbers(
+          Object.fromEntries(winnerList.map((item) => [item.id, item.trackingNo || ""])),
+        );
       }
       setNotice("数据已刷新");
     } catch (err) {
@@ -85,6 +90,9 @@ export default function ActivityAdminPage() {
       ]);
       setJoins(joinList);
       setWinners(winnerList);
+      setShippingTrackingNumbers(
+        Object.fromEntries(winnerList.map((item) => [item.id, item.trackingNo || ""])),
+      );
       setContact(null);
     } catch (err) {
       setErrorMessage((err as Error)?.message || "加载活动数据失败");
@@ -138,10 +146,16 @@ export default function ActivityAdminPage() {
 
   const handleMarkShipped = async (winnerId: string) => {
     if (!adminToken) return;
+    const trackingNo = (shippingTrackingNumbers[winnerId] || "").trim();
+    if (!trackingNo) {
+      setErrorMessage("请先填写快递单号");
+      return;
+    }
     try {
-      await adminUpdateShipping(adminToken, winnerId, "shipped");
+      setErrorMessage("");
+      await adminUpdateShipping(adminToken, winnerId, "shipped", trackingNo);
       await handleSelectActivity(selectedId);
-      setNotice("已标记为已发货");
+      setNotice("快递单号已保存，并标记为已发货");
     } catch (err) {
       setErrorMessage((err as Error)?.message || "更新发货状态失败");
     }
@@ -264,16 +278,34 @@ export default function ActivityAdminPage() {
                     <p>SN: {item.sn}</p>
                     <p>联系: {item.contactStatus} · 发货: {item.shippingStatus}</p>
                     {item.trackingNo ? <p>快递: {item.trackingNo}</p> : null}
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <SiteButton type="button" className="px-3 py-1 text-xs" onClick={() => void handleViewContact(item.id)}>
                         查看联系方式
                       </SiteButton>
-                      {item.shippingStatus !== "shipped" ? (
-                        <SiteButton type="button" className="px-3 py-1 text-xs" onClick={() => void handleMarkShipped(item.id)}>
-                          标记已发货
-                        </SiteButton>
-                      ) : null}
                     </div>
+                    {item.shippingStatus !== "shipped" ? (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <SiteInput
+                          value={shippingTrackingNumbers[item.id] || ""}
+                          onChange={(event) =>
+                            setShippingTrackingNumbers((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="填写快递单号"
+                          maxLength={128}
+                        />
+                        <SiteButton
+                          type="button"
+                          className="px-3 py-1 text-xs"
+                          disabled={!(shippingTrackingNumbers[item.id] || "").trim()}
+                          onClick={() => void handleMarkShipped(item.id)}
+                        >
+                          保存单号并标记已发货
+                        </SiteButton>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
