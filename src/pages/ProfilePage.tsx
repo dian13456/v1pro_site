@@ -339,6 +339,9 @@ export default function ProfilePage() {
                   <button type="button" disabled={activating || !activationCode.trim()} onClick={() => void handleActivateFeatures()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
                     {activating ? "激活中…" : "立即激活"}
                   </button>
+                  <span className="flex shrink-0 items-center whitespace-nowrap text-[13px] font-semibold text-[#ff7b75] dark:text-[#ff9c98]">
+                    激活码 1234
+                  </span>
                 </div>
               </div>
             )}
