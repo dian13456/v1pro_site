@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.23";
+} from "./v1pro-constants.js?v=1.2.26";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -36,6 +36,145 @@ const JEDEC_PROBE_TIMEOUT_MS = 3000;
 
 /** @type {WeakMap<USBDevice, DeviceSession>} */
 const deviceSessions = new WeakMap();
+
+const DESKTOP_BRIDGE_BASE = "http://127.0.0.1:8765";
+const DESKTOP_HANDOFF_TTL_SECONDS = 90;
+const DESKTOP_HANDOFF_KEEPALIVE_MS = 30000;
+/** @type {Map<USBDevice, {leaseId: string, timer: number}>} */
+const desktopHandoffs = new Map();
+/** @type {WeakMap<USBDevice, {release: () => void, completed: Promise<void>}>} */
+const webUsbTabLocks = new WeakMap();
+
+function getWebUsbClientId() {
+  const key = "jadot-webusb-client-id";
+  try {
+    let value = window.sessionStorage.getItem(key);
+    if (!value) {
+      value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      window.sessionStorage.setItem(key, value);
+    }
+    return value;
+  } catch {
+    return `${Date.now()}-${Math.random()}`;
+  }
+}
+
+async function bridgeFetch(path, payload, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(`${DESKTOP_BRIDGE_BASE}${path}`, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function acquireWebUsbTabLock(device) {
+  if (!navigator.locks?.request || webUsbTabLocks.has(device)) return;
+  const identity = device.serialNumber || `${device.vendorId.toString(16)}-${device.productId.toString(16)}`;
+  const name = `jadot-v1pro-webusb:${identity}`;
+  let releaseHold = () => {};
+  let resolveAcquired;
+  let rejectAcquired;
+  const acquired = new Promise((resolve, reject) => {
+    resolveAcquired = resolve;
+    rejectAcquired = reject;
+  });
+  const completed = navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, async (lock) => {
+    if (!lock) {
+      rejectAcquired(new V1ProUsbError("tab_busy", "另一个网页标签正在使用这台设备，请等待其传输完成。"));
+      return;
+    }
+    await new Promise((resolve) => {
+      releaseHold = resolve;
+      resolveAcquired();
+    });
+  });
+  completed.catch(() => {});
+  await acquired;
+  webUsbTabLocks.set(device, { release: releaseHold, completed });
+}
+
+async function releaseWebUsbTabLock(device) {
+  const held = webUsbTabLocks.get(device);
+  if (!held) return;
+  webUsbTabLocks.delete(device);
+  held.release();
+  try {
+    await held.completed;
+  } catch {
+    // The lock is advisory; USB close already completed.
+  }
+}
+
+async function requestDesktopHandoff(device) {
+  if (desktopHandoffs.has(device)) return;
+  let response;
+  try {
+    response = await bridgeFetch("/usb/handoff/start", {
+      clientId: getWebUsbClientId(),
+      serial: device.serialNumber || "",
+      vid: device.vendorId,
+      pid: device.productId,
+      ttlSeconds: DESKTOP_HANDOFF_TTL_SECONDS,
+    }, 7000);
+  } catch {
+    // GUI is not running (or is an older release): normal WebUSB still works.
+    return;
+  }
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    return;
+  }
+  if (!response.ok || !body?.ok || !body?.leaseId) {
+    if (response.status === 404) return;
+    throw new V1ProUsbError(
+      "desktop_busy",
+      body?.error || "桌面 GUI 暂时无法移交 USB，请稍后重试。"
+    );
+  }
+  const leaseId = String(body.leaseId);
+  const timer = window.setInterval(() => {
+    bridgeFetch("/usb/handoff/keepalive", { leaseId }, 2500).catch(() => {});
+  }, DESKTOP_HANDOFF_KEEPALIVE_MS);
+  desktopHandoffs.set(device, { leaseId, timer });
+}
+
+async function releaseDesktopHandoff(device) {
+  const handoff = desktopHandoffs.get(device);
+  if (!handoff) return;
+  desktopHandoffs.delete(device);
+  window.clearInterval(handoff.timer);
+  try {
+    await bridgeFetch("/usb/handoff/finish", { leaseId: handoff.leaseId }, 2500);
+  } catch {
+    // GUI watchdog reclaims ownership when the lease expires.
+  }
+}
+
+window.addEventListener("pagehide", () => {
+  for (const handoff of desktopHandoffs.values()) {
+    window.clearInterval(handoff.timer);
+    try {
+      navigator.sendBeacon(
+        `${DESKTOP_BRIDGE_BASE}/usb/handoff/finish`,
+        JSON.stringify({ leaseId: handoff.leaseId })
+      );
+    } catch {
+      // Lease timeout remains the final safety net.
+    }
+  }
+  desktopHandoffs.clear();
+});
 
 export class V1ProUsbError extends Error {
   /**
@@ -388,6 +527,8 @@ export async function openSelectedDevice(device) {
  */
 async function openClaimed(device) {
   try {
+    await acquireWebUsbTabLock(device);
+    await requestDesktopHandoff(device);
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
     const endpoints = pickBulkEndpoints(device);
@@ -405,6 +546,8 @@ async function openClaimed(device) {
     } catch {
       /* ignore */
     }
+    await releaseDesktopHandoff(device);
+    await releaseWebUsbTabLock(device);
     throw new V1ProUsbError("claim_failed", formatUsbOpenHint(err), err);
   }
 }
@@ -428,6 +571,8 @@ export async function closeDevice(device) {
     /* ignore */
   }
   deviceSessions.delete(device);
+  await releaseDesktopHandoff(device);
+  await releaseWebUsbTabLock(device);
 }
 
 /**

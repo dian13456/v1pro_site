@@ -6,6 +6,7 @@ export interface UsbDeviceId {
 /** 授权 USB 设备列表（WebUSB 弹窗仅显示这些设备） */
 export const ALLOWED_USB_DEVICES: UsbDeviceId[] = [
   { vendorId: 0x0483, productId: 0x66aa },
+  { vendorId: 0x0483, productId: 0x66ab },
   { vendorId: 0x2e3c, productId: 0x5753 },
 ];
 

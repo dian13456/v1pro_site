@@ -37,6 +37,107 @@ const PROGRESS_UPDATE_MS = 60;
 const PERIODIC_DRAIN_MS = 250;
 
 let cachedWriteOnlyMode: boolean | null = null;
+const DESKTOP_BRIDGE_BASE = "http://127.0.0.1:8765";
+const desktopLeases = new WeakMap<USBDevice, { leaseId: string; timer: number }>();
+const tabLocks = new WeakMap<USBDevice, { release: () => void; completed: Promise<unknown> }>();
+
+function webUsbClientId(): string {
+  const key = "jadot-webusb-client-id";
+  let value = sessionStorage.getItem(key);
+  if (!value) {
+    value = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    sessionStorage.setItem(key, value);
+  }
+  return value;
+}
+
+async function bridgePost(path: string, payload: object, timeoutMs = 2500): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(`${DESKTOP_BRIDGE_BASE}${path}`, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function acquireTabLock(device: USBDevice): Promise<void> {
+  if (!navigator.locks?.request || tabLocks.has(device)) return;
+  const identity = device.serialNumber || `${device.vendorId.toString(16)}-${device.productId.toString(16)}`;
+  let release: () => void = () => {};
+  let acquiredResolve!: () => void;
+  let acquiredReject!: (reason: unknown) => void;
+  const acquired = new Promise<void>((resolve, reject) => {
+    acquiredResolve = resolve;
+    acquiredReject = reject;
+  });
+  const completed: Promise<unknown> = navigator.locks.request(
+    `jadot-v1pro-webusb:${identity}`,
+    { mode: "exclusive", ifAvailable: true },
+    async (lock) => {
+      if (!lock) {
+        acquiredReject(new Error("另一个网页标签正在使用这台设备，请等待其传输完成。"));
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        release = resolve;
+        acquiredResolve();
+      });
+    },
+  );
+  completed.catch(() => undefined);
+  await acquired;
+  tabLocks.set(device, { release, completed });
+}
+
+async function releaseTabLock(device: USBDevice): Promise<void> {
+  const held = tabLocks.get(device);
+  if (!held) return;
+  tabLocks.delete(device);
+  held.release();
+  await held.completed.catch(() => undefined);
+}
+
+async function acquireDesktopLease(device: USBDevice): Promise<void> {
+  if (desktopLeases.has(device)) return;
+  let response: Response;
+  try {
+    response = await bridgePost("/usb/handoff/start", {
+      clientId: webUsbClientId(),
+      serial: device.serialNumber || "",
+      vid: device.vendorId,
+      pid: device.productId,
+      ttlSeconds: 90,
+    }, 7000);
+  } catch {
+    return;
+  }
+  const body = await response.json().catch(() => null) as { ok?: boolean; leaseId?: string; error?: string } | null;
+  if (!response.ok || !body?.ok || !body.leaseId) {
+    if (response.status === 404) return;
+    throw new Error(body?.error || "桌面 GUI 暂时无法移交 USB，请稍后重试");
+  }
+  const leaseId = body.leaseId;
+  const timer = window.setInterval(() => {
+    bridgePost("/usb/handoff/keepalive", { leaseId }).catch(() => undefined);
+  }, 30000);
+  desktopLeases.set(device, { leaseId, timer });
+}
+
+async function releaseDesktopLease(device: USBDevice): Promise<void> {
+  const held = desktopLeases.get(device);
+  if (!held) return;
+  desktopLeases.delete(device);
+  window.clearInterval(held.timer);
+  await bridgePost("/usb/handoff/finish", { leaseId: held.leaseId }).catch(() => undefined);
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -107,26 +208,45 @@ function pickBulkEndpoints(device: USBDevice): { interfaceNumber: number; outEnd
 }
 
 export async function prepareUsbSession(device: USBDevice): Promise<UsbEndpoints> {
-  if (!device.opened) {
-    await device.open();
-  }
-
-  if (!device.configuration) {
-    await device.selectConfiguration(1);
-  }
-
-  const { interfaceNumber, outEndpoint, inEndpoint } = pickBulkEndpoints(device);
+  await acquireTabLock(device);
   try {
-    await device.claimInterface(interfaceNumber);
-  } catch (error) {
-    // Interface may already be claimed during auth flow.
-    const message = (error as Error)?.message || String(error);
-    if (/claimInterface|claim interface|Unable to claim|LIBUSB_ERROR_BUSY|busy|占用/i.test(message)) {
-      throw new Error("USB 接口被本地软件占用，请关闭本地软件后重试！");
+    await acquireDesktopLease(device);
+    if (!device.opened) {
+      await device.open();
     }
-  }
 
-  return { device, interfaceNumber, outEndpoint, inEndpoint };
+    if (!device.configuration) {
+      await device.selectConfiguration(1);
+    }
+
+    const { interfaceNumber, outEndpoint, inEndpoint } = pickBulkEndpoints(device);
+    try {
+      await device.claimInterface(interfaceNumber);
+    } catch (error) {
+      const message = (error as Error)?.message || String(error);
+      if (/claimInterface|claim interface|Unable to claim|LIBUSB_ERROR_BUSY|busy|占用/i.test(message)) {
+        throw new Error("USB 接口仍被其他任务占用，请稍后重试");
+      }
+    }
+    return { device, interfaceNumber, outEndpoint, inEndpoint };
+  } catch (error) {
+    await releaseDesktopLease(device);
+    await releaseTabLock(device);
+    throw error;
+  }
+}
+
+export async function releaseUsbSession(session: UsbEndpoints): Promise<void> {
+  const { device, interfaceNumber } = session;
+  try {
+    if (device.opened) {
+      await device.releaseInterface(interfaceNumber).catch(() => undefined);
+      await device.close();
+    }
+  } finally {
+    await releaseDesktopLease(device);
+    await releaseTabLock(device);
+  }
 }
 
 export async function drainIn(device: USBDevice, inEndpoint: number): Promise<void> {

@@ -20,7 +20,12 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
     transformIndexHtml(html, ctx) {
       if (ctx.server) return html;
 
-      const connectSrc = ["'self'", "https://*.myqcloud.com"];
+      const connectSrc = [
+        "'self'",
+        "https://*.myqcloud.com",
+        "http://127.0.0.1:8765",
+        "http://localhost:8765",
+      ];
       const scriptSrc = ["'self'", "'wasm-unsafe-eval'"];
       const trimmedApi = apiBase.trim().replace(/\/$/, "");
       if (trimmedApi) connectSrc.unshift(trimmedApi);

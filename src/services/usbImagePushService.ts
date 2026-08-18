@@ -2,7 +2,7 @@ import { DESKTOP_IMAGE_TRANSFER } from "../config/desktopTransfer";
 import { createImageUrl } from "./imageService";
 import { fetchImageToRgb565, prepareRgb565Payload, swapRgb565Bytes } from "./imageRgb565";
 import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authService";
-import { prepareUsbSession, pushStaticImagePayload, resolveAuthorizedDevice } from "./usbDeviceSession";
+import { prepareUsbSession, pushStaticImagePayload, releaseUsbSession, resolveAuthorizedDevice } from "./usbDeviceSession";
 
 export interface PushImageProgress {
   phase: "prepare" | "convert" | "transfer" | "done";
@@ -41,29 +41,31 @@ export async function pushResourceImageToDevice(
 
   const device = await resolveAuthorizedDevice();
   const session = await prepareUsbSession(device);
+  try {
+    onProgress?.({ phase: "transfer", sent: 0, total: payload.length });
+    await pushStaticImagePayload(session, payload, useRle, {
+      chunkSize: DESKTOP_IMAGE_TRANSFER.chunkSize,
+      writeRetries: DESKTOP_IMAGE_TRANSFER.writeRetries,
+      ackEach: DESKTOP_IMAGE_TRANSFER.ackEachWhenInAvailable,
+      onProgress: (sent, total) => {
+        onProgress?.({ phase: "transfer", sent, total });
+      },
+    });
 
-  onProgress?.({ phase: "transfer", sent: 0, total: payload.length });
-  await pushStaticImagePayload(session, payload, useRle, {
-    chunkSize: DESKTOP_IMAGE_TRANSFER.chunkSize,
-    writeRetries: DESKTOP_IMAGE_TRANSFER.writeRetries,
-    ackEach: DESKTOP_IMAGE_TRANSFER.ackEachWhenInAvailable,
-    onProgress: (sent, total) => {
-      onProgress?.({ phase: "transfer", sent, total });
-    },
-  });
-
-  const auth = getAuthState();
-  if (auth) {
-    localStorage.setItem(
-      "jiadian_hub_auth",
-      JSON.stringify({
-        ...auth,
-        verifiedAt: Date.now(),
-      })
-    );
+    const auth = getAuthState();
+    if (auth) {
+      localStorage.setItem(
+        "jiadian_hub_auth",
+        JSON.stringify({
+          ...auth,
+          verifiedAt: Date.now(),
+        })
+      );
+    }
+    onProgress?.({ phase: "done", sent: payload.length, total: payload.length });
+  } finally {
+    await releaseUsbSession(session);
   }
-
-  onProgress?.({ phase: "done", sent: payload.length, total: payload.length });
 }
 
 export async function pushDataUrlImageToDevice(
@@ -93,27 +95,29 @@ export async function pushDataUrlImageToDevice(
 
   const device = await resolveAuthorizedDevice();
   const session = await prepareUsbSession(device);
+  try {
+    onProgress?.({ phase: "transfer", sent: 0, total: payload.length });
+    await pushStaticImagePayload(session, payload, useRle, {
+      chunkSize: DESKTOP_IMAGE_TRANSFER.chunkSize,
+      writeRetries: DESKTOP_IMAGE_TRANSFER.writeRetries,
+      ackEach: DESKTOP_IMAGE_TRANSFER.ackEachWhenInAvailable,
+      onProgress: (sent, total) => {
+        onProgress?.({ phase: "transfer", sent, total });
+      },
+    });
 
-  onProgress?.({ phase: "transfer", sent: 0, total: payload.length });
-  await pushStaticImagePayload(session, payload, useRle, {
-    chunkSize: DESKTOP_IMAGE_TRANSFER.chunkSize,
-    writeRetries: DESKTOP_IMAGE_TRANSFER.writeRetries,
-    ackEach: DESKTOP_IMAGE_TRANSFER.ackEachWhenInAvailable,
-    onProgress: (sent, total) => {
-      onProgress?.({ phase: "transfer", sent, total });
-    },
-  });
-
-  const auth = getAuthState();
-  if (auth) {
-    localStorage.setItem(
-      "jiadian_hub_auth",
-      JSON.stringify({
-        ...auth,
-        verifiedAt: Date.now(),
-      })
-    );
+    const auth = getAuthState();
+    if (auth) {
+      localStorage.setItem(
+        "jiadian_hub_auth",
+        JSON.stringify({
+          ...auth,
+          verifiedAt: Date.now(),
+        })
+      );
+    }
+    onProgress?.({ phase: "done", sent: payload.length, total: payload.length });
+  } finally {
+    await releaseUsbSession(session);
   }
-
-  onProgress?.({ phase: "done", sent: payload.length, total: payload.length });
 }
