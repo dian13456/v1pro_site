@@ -270,12 +270,12 @@ export function ResourceDetailModal({
             </button>
             <button
               type="button"
-              disabled={webUsbTransferring || !canDirectTransfer || !featureEnabled}
-              title={featureEnabled ? "网页直传" : "请先到个人中心输入激活码"}
+              disabled={webUsbTransferring || !canDirectTransfer}
+              title="网页直传"
               onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
               className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50"
             >
-              {!featureEnabled ? "未激活" : !canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
+              {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
             </button>
           </div>
         </div>

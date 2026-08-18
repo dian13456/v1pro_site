@@ -125,7 +125,7 @@ function MediaResourceCard({
   }, [featureEnabled, resource, showTransfer, onTransferPrepare]);
 
   useEffect(() => {
-    if (!featureEnabled || !showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
+    if (!showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
     const node = cardRef.current;
     if (!node) return;
 
@@ -141,7 +141,7 @@ function MediaResourceCard({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [featureEnabled, resource, showWebUsbTransfer, onWebUsbTransferPrepare]);
+  }, [resource, showWebUsbTransfer, onWebUsbTransferPrepare]);
 
   const showVideoPlayer = isPlaying && Boolean(playUrl);
 
@@ -327,8 +327,8 @@ function MediaResourceCard({
       {showWebUsbTransfer ? (
         <button
           type="button"
-          disabled={actionBusy || !featureEnabled}
-          title={featureEnabled ? "网页直传" : "请先到个人中心输入激活码"}
+          disabled={actionBusy}
+          title="网页直传"
           onPointerDown={() => onWebUsbTransferPrepare?.(resource, { urgent: true })}
           onClick={() => void onWebUsbTransfer?.(resource)}
           className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-violet-600 px-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"

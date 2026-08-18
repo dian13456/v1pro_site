@@ -13,7 +13,6 @@ import {
 } from "./v1proWebTransferClient";
 import { guessTransferFileName } from "./v1proTransferService";
 import { convertBrowserVideoWithFfmpeg } from "./browserFfmpegVideoService";
-import { requireDeviceFeatureAccess } from "./featureAccessService";
 
 export { WEBUSB_TRANSFER_VERSION };
 
@@ -177,6 +176,7 @@ function formatUsbError(err: unknown): string {
 function transferPath(resource: ResourceItem, mode: "direct" | "proxyFallback"): string {
   const params = new URLSearchParams({
     id: String(resource.id),
+    webusb: "1",
   });
   if (mode === "direct") {
     params.set("download", "1");
@@ -371,7 +371,6 @@ export async function transferAlbumResourcesViaWebUsb(
     transition: AlbumTransition;
   },
 ): Promise<{ bytes: number; frameCount: number; note?: string }> {
-  await requireDeviceFeatureAccess();
   if (resources.length === 0) {
     throw new Error("请先选择要写入相册的素材");
   }
@@ -525,7 +524,6 @@ export async function transferResourceViaWebUsb(
     colorProfile?: "normal" | "vivid" | "professional";
   } = {},
 ): Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> {
-  await requireDeviceFeatureAccess();
   if (!canWebUsbDirectTransfer(resource)) {
     throw new Error("当前素材或浏览器不支持网页直传");
   }

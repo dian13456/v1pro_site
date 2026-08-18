@@ -3687,7 +3687,7 @@ func main() {
 		} else if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
 			return
 		}
-		if (!previewOnly || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
+		if c.Query("webusb") != "1" && (!previewOnly || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
 			return
 		}
 
@@ -3783,7 +3783,7 @@ func main() {
 		} else if abuseGuard.RejectRead(c, clientIP) {
 			return
 		}
-		if (forDownload || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
+		if c.Query("webusb") != "1" && (forDownload || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
 			return
 		}
 
