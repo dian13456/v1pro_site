@@ -4,6 +4,7 @@ import type { ResourceItem } from "../types/resource";
 import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
+import { requireDeviceFeatureAccess } from "./featureAccessService";
 
 export interface V1ProOpenOptions {
   auto?: boolean;
@@ -213,6 +214,7 @@ async function fetchTransferDownloadUrl(
   url: string;
   stats?: DownloadStatsSnapshot | null;
 }> {
+  await requireDeviceFeatureAccess();
   const mode = options.mode ?? "download";
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");

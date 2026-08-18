@@ -25,6 +25,10 @@ export interface ProfilePayload {
   downloadRewardCredits?: number;
   downloadDailyCapCredits?: number;
   softwarePromptDismissedId?: number;
+  downloadTransferEnabled?: boolean;
+  featureGrandfathered?: boolean;
+  deviceRegisteredAt?: number;
+  featureActivatedAt?: number;
   creditLedger?: CreditLedgerEntry[];
   message?: string;
 }

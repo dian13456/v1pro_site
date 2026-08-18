@@ -5,6 +5,7 @@ import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 import { canWebUsbDirectTransfer } from "../services/v1proWebResourceTransferService";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 function looksLikeFilename(text: string): boolean {
   const value = text.trim();
@@ -77,6 +78,8 @@ function MediaResourceCard({
   weeklyDownloadCount,
   showWeeklyDownloadCount = false,
 }: ResourceCardProps) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   const materialLabel =
     resource.materialType === "image"
       ? "图片素材"
@@ -103,7 +106,7 @@ function MediaResourceCard({
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    if (!showTransfer || !onTransferPrepare || transferPrefetchedRef.current) return;
+    if (!featureEnabled || !showTransfer || !onTransferPrepare || transferPrefetchedRef.current) return;
     const node = cardRef.current;
     if (!node) return;
 
@@ -119,10 +122,10 @@ function MediaResourceCard({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [resource, showTransfer, onTransferPrepare]);
+  }, [featureEnabled, resource, showTransfer, onTransferPrepare]);
 
   useEffect(() => {
-    if (!showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
+    if (!featureEnabled || !showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
     const node = cardRef.current;
     if (!node) return;
 
@@ -138,7 +141,7 @@ function MediaResourceCard({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [resource, showWebUsbTransfer, onWebUsbTransferPrepare]);
+  }, [featureEnabled, resource, showWebUsbTransfer, onWebUsbTransferPrepare]);
 
   const showVideoPlayer = isPlaying && Boolean(playUrl);
 
@@ -296,7 +299,8 @@ function MediaResourceCard({
         {showTransfer ? (
           <button
             type="button"
-            disabled={actionBusy}
+            disabled={actionBusy || !featureEnabled}
+            title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#32b879] px-1 text-sm font-medium text-white transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-60"
@@ -323,7 +327,8 @@ function MediaResourceCard({
       {showWebUsbTransfer ? (
         <button
           type="button"
-          disabled={actionBusy}
+          disabled={actionBusy || !featureEnabled}
+          title={featureEnabled ? "网页直传" : "请先到个人中心输入激活码"}
           onPointerDown={() => onWebUsbTransferPrepare?.(resource, { urgent: true })}
           onClick={() => void onWebUsbTransfer?.(resource)}
           className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-violet-600 px-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -336,6 +341,8 @@ function MediaResourceCard({
 }
 
 function ResourceCardComponent(props: ResourceCardProps) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   if (props.resource.category !== "software") {
     return <MediaResourceCard {...props} />;
   }
@@ -346,11 +353,12 @@ function ResourceCardComponent(props: ResourceCardProps) {
       {onDownload ? (
         <button
           type="button"
-          disabled={downloading}
+          disabled={downloading || !featureEnabled}
+          title={featureEnabled ? "下载" : "请先到个人中心输入激活码"}
           onClick={() => onDownload(resource)}
           className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
         >
-          {downloading ? "生成下载链接..." : "下载"}
+          {downloading ? "生成下载链接..." : featureEnabled ? "下载" : "未激活"}
         </button>
       ) : null}
     </article>

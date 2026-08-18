@@ -702,6 +702,46 @@ func (r *ActivityRepo) RegisterDevice(entry DeviceRegistryEntry) error {
 	})
 }
 
+func (r *ActivityRepo) GetDevice(sn string) (DeviceRegistryEntry, bool, error) {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.getDevice(ctx, sn)
+	}
+	var entry DeviceRegistryEntry
+	found := false
+	err := r.withJSON(func(store *ActivityDataStore) error {
+		for _, device := range store.Devices {
+			if device.Serial == sn {
+				entry = device
+				found = true
+				break
+			}
+		}
+		return nil
+	})
+	return entry, found, err
+}
+
+func (r *ActivityRepo) ActivateDeviceFeatures(sn string, activatedAt int64) error {
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.activateDeviceFeatures(ctx, sn, activatedAt)
+	}
+	return r.withJSON(func(store *ActivityDataStore) error {
+		for i := range store.Devices {
+			if store.Devices[i].Serial == sn {
+				if store.Devices[i].ActivatedAt <= 0 {
+					store.Devices[i].ActivatedAt = activatedAt
+				}
+				return nil
+			}
+		}
+		return errors.New("设备尚未登记")
+	})
+}
+
 func (r *ActivityRepo) ListDevices(limit int) ([]DeviceRegistryEntry, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()

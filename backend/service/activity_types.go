@@ -99,9 +99,10 @@ type WinnerInfoPlain struct {
 }
 
 type DeviceRegistryEntry struct {
-	Serial    string `json:"serial"`
-	Source    string `json:"source,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	Serial      string `json:"serial"`
+	Source      string `json:"source,omitempty"`
+	CreatedAt   int64  `json:"createdAt"`
+	ActivatedAt int64  `json:"activatedAt,omitempty"`
 }
 
 type ActivityDataStore struct {

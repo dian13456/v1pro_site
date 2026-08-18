@@ -32,6 +32,7 @@ import {
 } from "../services/profileService";
 import { V1PRO_TRANSFER_LAUNCHED_MESSAGE } from "../services/v1proTransferService";
 import type { GeneratedAiImage } from "../types/aiImage";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   const parts = [err.message];
@@ -47,6 +48,8 @@ function formatReviewPendingMessage(err: ImageReviewPendingError): string {
 export default function AiImagePage() {
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
+  const { access: featureAccess } = useDeviceFeatureAccess();
+  const featureEnabled = featureAccess?.enabled === true;
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [transferringId, setTransferringId] = useState<string | null>(null);
@@ -271,19 +274,21 @@ export default function AiImagePage() {
                     <SiteButton
                       type="button"
                       variant="secondary"
-                      disabled={isBusy}
+                      disabled={isBusy || !featureEnabled}
+                      title={featureEnabled ? "下载" : "请先到个人中心输入激活码"}
                       className="rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm"
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}
                     >
-                      下载
+                      {featureEnabled ? "下载" : "未激活"}
                     </SiteButton>
                     <SiteButton
                       type="button"
-                      disabled={isBusy}
-                      className="rounded-xl bg-[#32b879] px-2 py-2.5 text-xs hover:bg-[#299f69] sm:px-4 sm:text-sm"
+                      disabled={isBusy || !featureEnabled}
+                      title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"}
+                      className="rounded-xl bg-[#32b879] px-2 py-2.5 text-xs hover:bg-[#299f69] disabled:bg-slate-300 disabled:text-slate-500 sm:px-4 sm:text-sm"
                       onClick={() => void handleTransfer(image, index)}
                     >
-                      {transferringId === image.id ? "准备传输..." : "传输到设备"}
+                      {transferringId === image.id ? "准备传输..." : featureEnabled ? "传输到设备" : "未激活"}
                     </SiteButton>
                     <SiteButton
                       type="button"

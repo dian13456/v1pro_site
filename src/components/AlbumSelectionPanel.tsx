@@ -10,6 +10,7 @@ import {
   resourceMetricsFromCatalog,
   type DeviceFrameCapacity,
 } from "../utils/resourceCapacity";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 const ALBUM_PREVIEW_FPS = 25;
 
@@ -60,6 +61,8 @@ export function AlbumSelectionPanel({
   transferStatus: string;
   className?: string;
 }) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   const entries = resources.map((resource) => ({
     resource,
     frames: albumFrames(resource),
@@ -204,13 +207,14 @@ export function AlbumSelectionPanel({
 
         <button
           type="button"
-          disabled={resources.length === 0 || overflowFrames > 0 || transferring}
+          disabled={resources.length === 0 || overflowFrames > 0 || transferring || !featureEnabled}
+          title={featureEnabled ? "选择设备并传输" : "请先到个人中心输入激活码"}
           onClick={onTransfer}
           className="mt-4 w-full rounded-xl bg-[#32b879] px-4 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(50,184,121,.25)] transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-45"
         >
           {transferring
             ? `正在传输${transferProgress == null ? "…" : ` ${Math.round(transferProgress)}%`}`
-            : `选择并传输 · ${resources.length} 个素材`}
+            : featureEnabled ? `选择并传输 · ${resources.length} 个素材` : "未激活"}
         </button>
         {transferring && transferProgress != null ? (
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">

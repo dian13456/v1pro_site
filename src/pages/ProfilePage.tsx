@@ -25,6 +25,7 @@ import { formatCredits } from "../utils/formatCredits";
 import { removeProfileAvatar, uploadProfileAvatar } from "../services/avatarService";
 import { ThemeSelector } from "../components/ThemeSelector";
 import { useThemeMode } from "../hooks/useThemeMode";
+import { activateDeviceFeatures, useDeviceFeatureAccess } from "../services/featureAccessService";
 import {
   downloadDefaultThemePackage,
   getInstalledThemePackage,
@@ -39,6 +40,7 @@ export default function ProfilePage() {
   const { theme, setTheme } = useThemeMode();
   const auth = getAuthState();
   const serial = auth?.serial || "";
+  const { access: featureAccess, loading: featureAccessLoading } = useDeviceFeatureAccess();
   const [displayName, setDisplayName] = useState(() => getDisplayName(serial));
   const [nameInput, setNameInput] = useState(() => getDisplayName(serial));
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,10 @@ export default function ProfilePage() {
   const [themeNotice, setThemeNotice] = useState("");
   const [themeError, setThemeError] = useState("");
   const [themeImporting, setThemeImporting] = useState(false);
+  const [activationCode, setActivationCode] = useState("");
+  const [activating, setActivating] = useState(false);
+  const [activationNotice, setActivationNotice] = useState("");
+  const [activationError, setActivationError] = useState("");
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const themeInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,6 +206,22 @@ export default function ProfilePage() {
     setThemeNotice("已移除导入主题并恢复浅色主题");
   };
 
+  const handleActivateFeatures = async () => {
+    if (!activationCode.trim() || activating) return;
+    setActivating(true);
+    setActivationNotice("");
+    setActivationError("");
+    try {
+      await activateDeviceFeatures(activationCode);
+      setActivationCode("");
+      setActivationNotice("激活成功，软件下载和设备传输功能已开启");
+    } catch (err) {
+      setActivationError((err as Error)?.message || "激活失败");
+    } finally {
+      setActivating(false);
+    }
+  };
+
   const defaultName = serial ? getDefaultDisplayName(serial) : "—";
   const usingCustomName = Boolean(serial && displayName !== defaultName);
 
@@ -281,6 +303,47 @@ export default function ProfilePage() {
               <p className="mt-3 text-xs leading-relaxed text-[#8a93a8]">被点赞 +{formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +{formatCredits(downloadRewardCredits)}</p>
               <CreditLedgerPanel entries={creditLedger} loading={loading} />
             </section>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)] dark:border-slate-800 dark:bg-slate-900">
+          <header className="border-b border-[#e6e9f2] px-6 py-4 dark:border-slate-800">
+            <h2 className="text-[15px] font-extrabold dark:text-white">下载与传输激活</h2>
+            <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">2026-08-18 之前登记的设备自动开放；新设备输入激活码后永久开启。</p>
+          </header>
+          <div className="p-6">
+            {featureAccessLoading ? (
+              <p className="text-sm text-[#8a93a8]">正在读取设备权限…</p>
+            ) : featureAccess?.enabled ? (
+              <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                已开启软件下载和设备传输{featureAccess.grandfathered ? "（老客户设备自动开放）" : "（激活码已生效）"}
+              </div>
+            ) : (
+              <div className="max-w-lg">
+                <label className="text-[12.5px] font-semibold text-[#4a5270] dark:text-slate-200">激活码</label>
+                <div className="mt-2 flex gap-2.5">
+                  <input
+                    value={activationCode}
+                    disabled={activating}
+                    onChange={(event) => {
+                      setActivationCode(event.target.value.slice(0, 32));
+                      setActivationError("");
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void handleActivateFeatures();
+                    }}
+                    placeholder="请输入激活码"
+                    autoComplete="off"
+                    className="min-w-0 flex-1 rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
+                  />
+                  <button type="button" disabled={activating || !activationCode.trim()} onClick={() => void handleActivateFeatures()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                    {activating ? "激活中…" : "立即激活"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {activationNotice ? <SiteAlert variant="success" className="mt-4">{activationNotice}</SiteAlert> : null}
+            {activationError ? <SiteAlert variant="error" className="mt-4">{activationError}</SiteAlert> : null}
           </div>
         </section>
 

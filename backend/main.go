@@ -65,6 +65,10 @@ type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+type deviceFeatureActivationRequest struct {
+	Code string `json:"code"`
+}
+
 type profileAvatarUploadRequest struct {
 	ImageBase64 string `json:"imageBase64"`
 	ContentType string `json:"contentType"`
@@ -1133,6 +1137,20 @@ func main() {
 	router.Use(apiSignVerifier.Middleware())
 	router.Use(abuseGuard.Middleware())
 
+	requireDeviceFeatureAccess := func(c *gin.Context, serial string) bool {
+		access, accessErr := activityService.GetDeviceFeatureAccess(serial)
+		if accessErr != nil {
+			log.Printf("warn: resolve device feature access failed: %v", accessErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "设备权限读取失败，请稍后重试"})
+			return false
+		}
+		if !access.Enabled {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "请先到个人中心输入激活码，激活下载与传输功能"})
+			return false
+		}
+		return true
+	}
+
 	router.POST("/api/auth", func(c *gin.Context) {
 		clientIP := service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
 		if !authRateLimiter.Allow(clientIP) {
@@ -1242,6 +1260,12 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		featureAccess, featureAccessErr := activityService.GetDeviceFeatureAccess(serial)
+		if featureAccessErr != nil {
+			log.Printf("warn: load device feature access failed: %v", featureAccessErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "设备权限读取失败，请稍后重试"})
+			return
+		}
 
 		profilesMu.RLock()
 		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
@@ -1288,8 +1312,54 @@ func main() {
 			"downloadRewardCredits":     service.UnitsToCredits(service.DownloadRewardUnits),
 			"downloadDailyCapCredits":   service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
 			"softwarePromptDismissedId": softwarePromptDismissedID,
+			"downloadTransferEnabled":   featureAccess.Enabled,
+			"featureGrandfathered":      featureAccess.Grandfathered,
+			"deviceRegisteredAt":        featureAccess.RegisteredAt,
+			"featureActivatedAt":        featureAccess.ActivatedAt,
 			"creditLedger":              creditLedger,
 		})
+	})
+
+	router.GET("/api/profile/feature-access", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		access, err := activityService.GetDeviceFeatureAccess(serial)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "设备权限读取失败，请稍后重试"})
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "access": access})
+	})
+
+	router.POST("/api/profile/feature-access/activate", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req deviceFeatureActivationRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请输入激活码"})
+			return
+		}
+		access, err := activityService.ActivateDeviceFeatures(serial, req.Code)
+		if errors.Is(err, service.ErrInvalidDeviceFeatureActivationCode) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if err != nil {
+			log.Printf("warn: activate device features failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "激活失败，请稍后重试"})
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "激活成功，下载与传输功能已开启", "access": access})
 	})
 
 	router.POST("/api/profile/avatar/upload", func(c *gin.Context) {
@@ -2192,6 +2262,9 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if !requireDeviceFeatureAccess(c, serial) {
 			return
 		}
 		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 图片请求过于频繁，请稍后再试") {
@@ -3505,6 +3578,9 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		if !requireDeviceFeatureAccess(c, serial) {
+			return
+		}
 		if abuseGuard.RejectDownloadSign(c, ginClientIP(c), serial) {
 			return
 		}
@@ -3611,6 +3687,9 @@ func main() {
 		} else if abuseGuard.RejectDownloadSign(c, clientIP, serial) {
 			return
 		}
+		if (!previewOnly || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
+			return
+		}
 
 		rawObjectKey, ok := resourceMapStore.get(id)
 		objectKey := normalizeObjectKey(rawObjectKey)
@@ -3702,6 +3781,9 @@ func main() {
 				return
 			}
 		} else if abuseGuard.RejectRead(c, clientIP) {
+			return
+		}
+		if (forDownload || c.Query("blob") == "1") && !requireDeviceFeatureAccess(c, serial) {
 			return
 		}
 

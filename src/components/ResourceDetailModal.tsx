@@ -14,6 +14,7 @@ import {
   type VideoFpsOption,
 } from "../utils/resourceCapacity";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 interface ResourceDetailModalProps {
   resource: ResourceItem;
@@ -57,6 +58,8 @@ export function ResourceDetailModal({
   onTransfer,
   onWebUsbTransfer,
 }: ResourceDetailModalProps) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
   const [fps, setFps] = useState<VideoFpsOption>(20);
   const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
@@ -262,16 +265,17 @@ export function ResourceDetailModal({
           ) : null}
 
           <div className="mt-auto grid grid-cols-2 gap-2.5 pt-2">
-            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:opacity-50">
-              {transferring ? "传输中…" : "传输"}
+            <button type="button" disabled={transferring || !featureEnabled} title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:opacity-100">
+              {transferring ? "传输中…" : featureEnabled ? "传输" : "未激活"}
             </button>
             <button
               type="button"
-              disabled={webUsbTransferring || !canDirectTransfer}
+              disabled={webUsbTransferring || !canDirectTransfer || !featureEnabled}
+              title={featureEnabled ? "网页直传" : "请先到个人中心输入激活码"}
               onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
               className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50"
             >
-              {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
+              {!featureEnabled ? "未激活" : !canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
             </button>
           </div>
         </div>
