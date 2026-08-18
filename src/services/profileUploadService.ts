@@ -145,6 +145,54 @@ export interface DeleteMyUploadInput {
   reviewId?: string;
 }
 
+export interface RenameMyUploadInput {
+  kind: ProfileUploadDeleteKind;
+  title: string;
+  resourceId?: number | string;
+  reviewId?: string;
+}
+
+export async function renameMyUpload(input: RenameMyUploadInput): Promise<string> {
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("素材标题不能为空");
+  }
+  if ([...title].length > 80) {
+    throw new Error("素材标题不能超过 80 个字符");
+  }
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  if (isStaticMode()) {
+    throw new Error("静态模式下无法修改标题");
+  }
+
+  const auth = getAuthState();
+  if (!auth?.token) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  const payload = await apiFetch<{ success?: boolean; message?: string; title?: string }>(
+    "/api/profile/uploads/title",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        kind: input.kind,
+        title,
+        resourceId: input.kind === "published" ? String(input.resourceId ?? "") : undefined,
+        reviewId: input.kind === "review" ? input.reviewId : undefined,
+      }),
+    },
+  );
+  if (payload.success === false) {
+    throw new Error(payload.message || "修改标题失败");
+  }
+  return String(payload.title || title).trim();
+}
+
 export async function deleteMyUpload(input: DeleteMyUploadInput): Promise<void> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");

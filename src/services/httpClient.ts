@@ -555,6 +555,17 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     return { success: true, message: "素材已删除" };
   }
 
+  if (path.startsWith("/api/profile/uploads/title")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const title = String(body.title || "").trim();
+    if (!title) {
+      return { success: false, message: "素材标题不能为空" };
+    }
+    return { success: true, message: "标题已修改", title };
+  }
+
   if (path.startsWith("/api/profile/uploads")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };

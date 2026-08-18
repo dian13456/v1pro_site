@@ -16,6 +16,7 @@ import {
   fetchMyUploads,
   formatUploadTimestamp,
   materialTypeLabel,
+  renameMyUpload,
   uploadStatusLabel,
   type ProfileUploadReview,
 } from "../services/profileUploadService";
@@ -74,10 +75,14 @@ function UploadPreview({
 function UploadCard({
   item,
   deleting,
+  saving,
+  onRename,
   onDelete,
 }: {
   item: UploadListItem;
   deleting: boolean;
+  saving: boolean;
+  onRename: (item: UploadListItem, title: string) => void;
   onDelete: (item: UploadListItem) => void;
 }) {
   const title = item.kind === "published" ? item.resource.title : item.review.title;
@@ -128,12 +133,24 @@ function UploadCard({
             <span className="text-rose-600 dark:text-rose-300">原因：{item.review.reviewNote}</span>
           ) : null}
         </div>
-        <div className="pt-1">
+        <div className="grid grid-cols-2 gap-2 pt-1">
           <SiteButton
             type="button"
             variant="secondary"
-            disabled={deleting}
-            className="w-full border-rose-200/80 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-200 dark:hover:bg-rose-500/10"
+            disabled={deleting || saving}
+            onClick={() => {
+              const nextTitle = window.prompt("请输入新的素材标题（最多 80 个字符）", title);
+              if (nextTitle === null || nextTitle.trim() === title.trim()) return;
+              onRename(item, nextTitle);
+            }}
+          >
+            {saving ? "保存中…" : "修改标题"}
+          </SiteButton>
+          <SiteButton
+            type="button"
+            variant="secondary"
+            disabled={deleting || saving}
+            className="border-rose-200/80 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-200 dark:hover:bg-rose-500/10"
             onClick={() => {
               if (!window.confirm(deleteLabel)) return;
               onDelete(item);
@@ -154,6 +171,7 @@ export function MyUploadsPanel() {
   const [published, setPublished] = useState<ResourceItem[]>([]);
   const [reviews, setReviews] = useState<ProfileUploadReview[]>([]);
   const [deletingKey, setDeletingKey] = useState("");
+  const [savingKey, setSavingKey] = useState("");
 
   const loadUploads = useCallback(() => {
     setLoading(true);
@@ -213,12 +231,34 @@ export function MyUploadsPanel() {
     }
   };
 
+  const handleRename = async (item: UploadListItem, nextTitle: string) => {
+    const key = item.kind === "published" ? `pub-${item.resource.id}` : `rev-${item.review.reviewId}`;
+    setSavingKey(key);
+    setErrorMessage("");
+    setNoticeMessage("");
+    try {
+      await renameMyUpload({
+        kind: item.kind,
+        title: nextTitle,
+        resourceId: item.kind === "published" ? item.resource.id : undefined,
+        reviewId: item.kind === "review" ? item.review.reviewId : undefined,
+      });
+      setNoticeMessage("标题已修改");
+      window.setTimeout(() => setNoticeMessage(""), 3000);
+      await loadUploads();
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "修改标题失败");
+    } finally {
+      setSavingKey("");
+    }
+  };
+
   return (
     <SitePanel className="mt-0 space-y-4 !rounded-[18px] !border-[#e6e9f2] !bg-white !p-6 !shadow-[0_10px_30px_rgba(43,50,69,.06)]">
       <div className="space-y-1">
         <SiteLabel>本设备上传的素材</SiteLabel>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          展示当前 SN 码分享至素材库的内容，含已发布与审核中的记录；可自行删除本设备上传的素材。
+          展示当前 SN 码分享至素材库的内容，含已发布与审核中的记录；可自行修改标题或删除素材。
         </p>
       </div>
 
@@ -245,6 +285,8 @@ export function MyUploadsPanel() {
                 key={key}
                 item={item}
                 deleting={deletingKey === key}
+                saving={savingKey === key}
+                onRename={(target, nextTitle) => void handleRename(target, nextTitle)}
                 onDelete={(target) => void handleDelete(target)}
               />
             );

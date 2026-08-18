@@ -6,7 +6,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+const maxUploadTitleRunes = 80
+
+func ValidateUploadTitle(raw string) (string, error) {
+	title := strings.TrimSpace(raw)
+	if title == "" {
+		return "", fmt.Errorf("素材标题不能为空")
+	}
+	if utf8.RuneCountInString(title) > maxUploadTitleRunes {
+		return "", fmt.Errorf("素材标题不能超过 %d 个字符", maxUploadTitleRunes)
+	}
+	return title, nil
+}
 
 func FilterCatalogByUploaderSerial(items []map[string]any, serial string) []map[string]any {
 	target := normalizeUploaderSerial(serial)
@@ -153,6 +167,70 @@ func parseUploadEntryTime(item map[string]any, timeKey string) time.Time {
 
 func SortCatalogByUpdatedAtDesc(items []map[string]any) {
 	sortUploadEntriesByTime(items, "updatedAt")
+}
+
+func UpdateOwnPublishedUploadTitle(serial string, resourceID int64, rawTitle, resourcesPath string) error {
+	target := normalizeUploaderSerial(serial)
+	if target == "" {
+		return fmt.Errorf("设备 SN 无效")
+	}
+	if resourceID <= 0 {
+		return fmt.Errorf("素材编号无效")
+	}
+	title, err := ValidateUploadTitle(rawTitle)
+	if err != nil {
+		return err
+	}
+
+	aiImageShareMu.Lock()
+	defer aiImageShareMu.Unlock()
+	resources, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		return fmt.Errorf("读取素材清单失败")
+	}
+	entry, _, ok := findCatalogEntryByID(resources, resourceID)
+	if !ok {
+		return fmt.Errorf("素材不存在")
+	}
+	if !catalogEntryOwnedBySerial(entry, target) {
+		return fmt.Errorf("无权修改该素材")
+	}
+	entry["title"] = title
+	entry["updatedAt"] = time.Now().UTC().Format(time.RFC3339)
+	if err := saveResourceCatalogFile(resourcesPath, resources); err != nil {
+		return fmt.Errorf("保存素材清单失败")
+	}
+	return nil
+}
+
+func UpdateOwnReviewUploadTitle(store *ImageReviewStore, reviewID, serial, rawTitle string) error {
+	target := normalizeUploaderSerial(serial)
+	if target == "" {
+		return fmt.Errorf("设备 SN 无效")
+	}
+	title, err := ValidateUploadTitle(rawTitle)
+	if err != nil {
+		return err
+	}
+	if store == nil {
+		return fmt.Errorf("复核队列未配置")
+	}
+	item, idx, ok := store.Find(strings.TrimSpace(reviewID))
+	if !ok {
+		return fmt.Errorf("上传记录不存在")
+	}
+	if normalizeUploaderSerial(item.Serial) != target {
+		return fmt.Errorf("无权修改该素材")
+	}
+	if !isShareReviewAction(item.Action) {
+		return fmt.Errorf("该记录不可修改")
+	}
+	status := strings.TrimSpace(strings.ToLower(item.Status))
+	if status != ImageReviewStatusPending && status != ImageReviewStatusRejected {
+		return fmt.Errorf("该记录不可修改")
+	}
+	store.Items[idx].Title = title
+	return nil
 }
 
 type ReviewPreviewSigners struct {

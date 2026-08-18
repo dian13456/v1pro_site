@@ -84,6 +84,13 @@ type profileUploadDeleteRequest struct {
 	ReviewID   string `json:"reviewId"`
 }
 
+type profileUploadTitleRequest struct {
+	Kind       string `json:"kind"`
+	ResourceID string `json:"resourceId"`
+	ReviewID   string `json:"reviewId"`
+	Title      string `json:"title"`
+}
+
 type messagePostRequest struct {
 	Content     string `json:"content"`
 	DisplayName string `json:"displayName"`
@@ -1616,6 +1623,78 @@ func main() {
 			"success":   true,
 			"published": published,
 			"reviews":   reviews,
+		})
+	})
+
+	router.POST("/api/profile/uploads/title", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		var req profileUploadTitleRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		title, titleErr := service.ValidateUploadTitle(req.Title)
+		if titleErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": titleErr.Error()})
+			return
+		}
+
+		kind := strings.TrimSpace(strings.ToLower(req.Kind))
+		switch kind {
+		case "published":
+			resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(req.ResourceID), 10, 64)
+			if parseErr != nil || resourceID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+				return
+			}
+			if err := service.UpdateOwnPublishedUploadTitle(serial, resourceID, title, resourcesPath); err != nil {
+				status := http.StatusBadRequest
+				if strings.Contains(err.Error(), "不存在") {
+					status = http.StatusNotFound
+				} else if strings.Contains(err.Error(), "无权") {
+					status = http.StatusForbidden
+				}
+				c.JSON(status, gin.H{"success": false, "message": err.Error()})
+				return
+			}
+		case "review":
+			reviewID := strings.TrimSpace(req.ReviewID)
+			if reviewID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "复核编号无效"})
+				return
+			}
+			imageReviewMu.Lock()
+			updateErr := service.UpdateOwnReviewUploadTitle(&imageReviewStore, reviewID, serial, title)
+			if updateErr == nil {
+				updateErr = service.SaveImageReviewStore(imageReviewPath, imageReviewStore)
+			}
+			imageReviewMu.Unlock()
+			if updateErr != nil {
+				status := http.StatusBadRequest
+				if strings.Contains(updateErr.Error(), "不存在") {
+					status = http.StatusNotFound
+				} else if strings.Contains(updateErr.Error(), "无权") {
+					status = http.StatusForbidden
+				}
+				c.JSON(status, gin.H{"success": false, "message": updateErr.Error()})
+				return
+			}
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材类型无效"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "标题已修改",
+			"kind":    kind,
+			"title":   title,
 		})
 	})
 

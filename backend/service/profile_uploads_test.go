@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,49 @@ func TestRemoveDeviceReviewUpload(t *testing.T) {
 	}
 	if item.ID != "r1" || len(store.Items) != 1 {
 		t.Fatalf("unexpected store after remove: %#v", store.Items)
+	}
+}
+
+func TestUpdateOwnPublishedUploadTitle(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resources := []map[string]any{
+		{"id": 1001, "title": "旧标题", "uploaderSerial": "sn1", "updatedAt": "2026-01-01T00:00:00Z"},
+	}
+	raw, _ := json.Marshal(resources)
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateOwnPublishedUploadTitle("SN1", 1001, "  新标题  ", resourcesPath); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	updated, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated[0]["title"] != "新标题" {
+		t.Fatalf("unexpected title: %#v", updated[0]["title"])
+	}
+	if err := UpdateOwnPublishedUploadTitle("SN2", 1001, "越权", resourcesPath); err == nil {
+		t.Fatal("expected ownership error")
+	}
+}
+
+func TestUpdateOwnReviewUploadTitle(t *testing.T) {
+	store := ImageReviewStore{Items: []PendingImageReview{
+		{ID: "r1", Serial: "sn1", Action: ReviewActionShareUserGif, Status: ImageReviewStatusPending, Title: "旧标题"},
+	}}
+	if err := UpdateOwnReviewUploadTitle(&store, "r1", "SN1", "新标题"); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if store.Items[0].Title != "新标题" {
+		t.Fatalf("unexpected title: %q", store.Items[0].Title)
+	}
+	if err := UpdateOwnReviewUploadTitle(&store, "r1", "SN2", "越权"); err == nil {
+		t.Fatal("expected ownership error")
+	}
+	if _, err := ValidateUploadTitle(strings.Repeat("题", 81)); err == nil {
+		t.Fatal("expected title length error")
 	}
 }
 
