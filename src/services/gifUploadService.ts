@@ -2,6 +2,7 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { ImageReviewPendingError } from "./aiImageService";
+import { prepareShareCoverJpeg } from "./shareCoverService";
 
 export const MAX_GIF_UPLOAD_BYTES = 15 * 1024 * 1024;
 
@@ -148,7 +149,7 @@ export async function createGifUploadSession(file: File): Promise<GifUploadSessi
 
 export async function shareGifToCatalog(
   file: File,
-  options: { title?: string; description?: string; onProgress?: (stage: string) => void } = {}
+  options: { title?: string; description?: string; coverFile?: File; onProgress?: (stage: string) => void } = {}
 ): Promise<GifShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -190,8 +191,10 @@ export async function shareGifToCatalog(
   options.onProgress?.("上传 GIF...");
   await uploadSessionFile(session.sessionId, "gif", file, file.name);
 
-  options.onProgress?.("生成并上传封面...");
-  const coverBlob = await extractGifCoverJpeg(file);
+  options.onProgress?.(options.coverFile ? "处理并上传自定义封面..." : "生成并上传封面...");
+  const coverBlob = options.coverFile
+    ? await prepareShareCoverJpeg(options.coverFile)
+    : await extractGifCoverJpeg(file);
   await uploadSessionFile(session.sessionId, "cover", coverBlob, "cover.jpg");
 
   options.onProgress?.("提交分享...");

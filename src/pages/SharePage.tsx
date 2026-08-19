@@ -31,6 +31,7 @@ import {
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
 import { scheduleFfmpegAssetPreload } from "../services/ffmpegAssetCache";
+import { validateShareCoverFile } from "../services/shareCoverService";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
 
 type ShareMediaKind = "image" | "gif" | "video";
@@ -113,9 +114,12 @@ export default function SharePage() {
     [columnTagOptions]
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mediaKind, setMediaKind] = useState<ShareMediaKind | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [customCoverFile, setCustomCoverFile] = useState<File | null>(null);
+  const [customCoverPreviewUrl, setCustomCoverPreviewUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [columnTag, setColumnTag] = useState("");
@@ -146,6 +150,16 @@ export default function SharePage() {
     return () => URL.revokeObjectURL(url);
   }, [selectedFile]);
 
+  useEffect(() => {
+    if (!customCoverFile) {
+      setCustomCoverPreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(customCoverFile);
+    setCustomCoverPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [customCoverFile]);
+
   const selectFile = (file?: File) => {
     setErrorMessage("");
     setNotice("");
@@ -168,6 +182,7 @@ export default function SharePage() {
 
     setSelectedFile(file);
     setMediaKind(kind);
+    setCustomCoverFile(null);
     setFitMode(defaultTransferFitMode(kind));
     setTitle("");
     setDescription("");
@@ -178,6 +193,19 @@ export default function SharePage() {
     const file = event.target.files?.[0];
     event.target.value = "";
     selectFile(file);
+  };
+
+  const handleCoverPick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const validationError = validateShareCoverFile(file);
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+    setErrorMessage("");
+    setCustomCoverFile(file);
   };
 
   const handleShare = async () => {
@@ -206,6 +234,7 @@ export default function SharePage() {
           const result = await shareGifToCatalog(selectedFile, {
             title,
             description,
+            coverFile: customCoverFile || undefined,
             onProgress: setProgress,
           });
           resourceId = result.resourceId;
@@ -218,6 +247,7 @@ export default function SharePage() {
             title,
             description,
             columnTag,
+            coverFile: customCoverFile || undefined,
             onProgress: setProgress,
           });
           resourceId = result.resourceId;
@@ -250,6 +280,7 @@ export default function SharePage() {
       }
       setSelectedFile(null);
       setMediaKind(null);
+      setCustomCoverFile(null);
       setTitle("");
       setDescription("");
       setColumnTag("");
@@ -258,6 +289,7 @@ export default function SharePage() {
         setNotice(formatReviewPendingMessage(err));
         setSelectedFile(null);
         setMediaKind(null);
+        setCustomCoverFile(null);
         return;
       }
       setErrorMessage(formatClientError(err, `${kindLabel(mediaKind)} 分享失败`));
@@ -438,6 +470,56 @@ export default function SharePage() {
                 onChange={handlePick}
               />
             </div>
+
+            {mediaKind === "video" || mediaKind === "gif" ? (
+              <div className="mb-4">
+                <label className={fieldLabelClass}>自定义封面 <span className="font-normal text-[#8a93a8]">（可选）</span></label>
+                <div className="flex min-h-[92px] items-center gap-3 rounded-xl border border-[#e6e9f2] bg-[#fafbfe] p-3">
+                  {customCoverPreviewUrl ? (
+                    <img
+                      src={customCoverPreviewUrl}
+                      alt="自定义封面预览"
+                      className="h-[68px] w-[108px] shrink-0 rounded-lg border border-[#e6e9f2] bg-white object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-[68px] w-[108px] shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cfd5ea] bg-white text-2xl">🖼️</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12.5px] font-semibold text-[#4a5270]">
+                      {customCoverFile ? customCoverFile.name : "未选择时自动生成封面"}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">支持 JPG、PNG、WebP，最大 8MB</p>
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={uploading || transferring}
+                        onClick={() => coverInputRef.current?.click()}
+                        className="rounded-lg border border-[#cfd5ea] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:opacity-50"
+                      >
+                        {customCoverFile ? "更换封面" : "上传封面"}
+                      </button>
+                      {customCoverFile ? (
+                        <button
+                          type="button"
+                          disabled={uploading || transferring}
+                          onClick={() => setCustomCoverFile(null)}
+                          className="rounded-lg px-2 py-1.5 text-[11.5px] text-[#8a93a8] transition hover:text-rose-600 disabled:opacity-50"
+                        >
+                          恢复自动生成
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  className="hidden"
+                  onChange={handleCoverPick}
+                />
+              </div>
+            ) : null}
 
             <div className="mb-4">
               <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 标题</label>
