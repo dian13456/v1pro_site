@@ -15,7 +15,7 @@ import {
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.23";
+} from "./v1pro-constants.js?v=1.2.27";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -669,7 +669,10 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     await writeChunk(gfm1.subarray(i, Math.min(i + USB_CHUNK, gfm1.length)));
   }
 
-  await drainInQuick(device);
+  /* A successful PONG is a FIFO barrier: firmware can only process this PING
+   * after every preceding GFM1 packet has been written, validated and switched
+   * to playback. Do not close WebUSB before this confirmation. */
+  await ping(device);
 }
 
 function buildStartPreamble(totalBytes) {
@@ -803,5 +806,8 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     );
   }
 
-  await drainInQuick(device);
+  /* Wait for the device to finish draining its USB ring and commit playback.
+   * Closing the interface immediately after transferOut can otherwise make the
+   * firmware classify an otherwise complete browser transfer as interrupted. */
+  await ping(device);
 }
