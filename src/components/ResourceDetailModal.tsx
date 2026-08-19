@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import type { ResourceItem } from "../types/resource";
 import { createImageUrl } from "../services/imageService";
 import { probeResourceMedia } from "../services/resourceMediaProbe";
+import { fetchMessages, MAX_MESSAGE_LENGTH, postMessage } from "../services/messageBoardService";
+import type { BoardMessage } from "../types/messageBoard";
 import {
   assessDeviceCapacities,
   formatMediaDuration,
@@ -47,6 +49,15 @@ function materialLabel(resource: ResourceItem): string {
   return "图片素材";
 }
 
+function formatCommentTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function ResourceDetailModal({
   resource,
   downloadCount,
@@ -70,6 +81,12 @@ export function ResourceDetailModal({
   const [previewUrl, setPreviewUrl] = useState("");
   const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
   const [probing, setProbing] = useState(false);
+  const [comments, setComments] = useState<BoardMessage[]>([]);
+  const [commentTotal, setCommentTotal] = useState(0);
+  const [commentContent, setCommentContent] = useState("");
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState("");
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
@@ -115,6 +132,30 @@ export function ResourceDetailModal({
     };
   }, [isAnimated, resource]);
 
+  useEffect(() => {
+    let active = true;
+    setComments([]);
+    setCommentTotal(0);
+    setCommentContent("");
+    setCommentError("");
+    setCommentsLoading(true);
+    void fetchMessages(100, String(resource.id))
+      .then((result) => {
+        if (!active) return;
+        setComments(result.messages);
+        setCommentTotal(result.total);
+      })
+      .catch((error) => {
+        if (active) setCommentError((error as Error)?.message || "评论加载失败");
+      })
+      .finally(() => {
+        if (active) setCommentsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [resource.id]);
+
   const assessments = useMemo(
     () => assessDeviceCapacities(resource, metrics, fps),
     [fps, metrics, resource],
@@ -124,6 +165,23 @@ export function ResourceDetailModal({
   const metricsKnown = measuredFrames != null;
   const durationText = formatMediaDuration(metrics.durationSec);
   const canDirectTransfer = resource.materialType === "image" || resource.materialType === "gif" || resource.materialType === "video";
+
+  const handleCommentSubmit = async () => {
+    const content = commentContent.trim();
+    if (!content || commentSubmitting) return;
+    setCommentSubmitting(true);
+    setCommentError("");
+    try {
+      const entry = await postMessage(content, String(resource.id));
+      setComments((current) => [entry, ...current]);
+      setCommentTotal((current) => current + 1);
+      setCommentContent("");
+    } catch (error) {
+      setCommentError((error as Error)?.message || "评论发布失败");
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
 
   const modal = (
     <div
@@ -135,7 +193,7 @@ export function ResourceDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="grid max-h-[90vh] w-full max-w-[780px] overflow-auto rounded-[18px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.15fr_1fr]">
+      <div className="grid max-h-[92vh] w-full max-w-[1180px] overflow-auto rounded-[18px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.05fr_1fr] lg:grid-cols-[minmax(300px,1.05fr)_minmax(320px,1fr)_minmax(280px,.9fr)]">
         <div className="relative flex min-h-[220px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-4 md:min-h-[400px]">
           {previewUrl ? (
             resource.materialType === "video" ? (
@@ -279,6 +337,84 @@ export function ResourceDetailModal({
             </button>
           </div>
         </div>
+
+        <aside className="flex min-h-[360px] flex-col border-t border-[#e6e9f2] bg-[#fafbfe] p-5 md:col-span-2 lg:col-span-1 lg:max-h-[92vh] lg:border-l lg:border-t-0">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[15px] font-bold text-[#2b3245]">评论区</h3>
+              <p className="mt-1 text-[11.5px] text-[#8a93a8]">共 {commentTotal} 条评论</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCommentsLoading(true);
+                setCommentError("");
+                void fetchMessages(100, String(resource.id))
+                  .then((result) => {
+                    setComments(result.messages);
+                    setCommentTotal(result.total);
+                  })
+                  .catch((error) => setCommentError((error as Error)?.message || "评论加载失败"))
+                  .finally(() => setCommentsLoading(false));
+              }}
+              className="rounded-full border border-[#e1e5ef] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#6f7890] transition hover:border-[#b9b0ff] hover:text-[#6f60dd]"
+            >
+              刷新
+            </button>
+          </div>
+
+          <div className="mt-4 min-h-[170px] flex-1 space-y-3 overflow-y-auto pr-1 lg:min-h-0">
+            {commentsLoading ? <p className="py-8 text-center text-xs text-[#8a93a8]">正在加载评论…</p> : null}
+            {!commentsLoading && comments.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#dfe3ed] bg-white/70 px-4 py-8 text-center">
+                <p className="text-2xl">💬</p>
+                <p className="mt-2 text-xs font-semibold text-[#6f7890]">还没有评论，来说两句吧</p>
+              </div>
+            ) : null}
+            {!commentsLoading ? comments.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-white bg-white p-3 shadow-[0_5px_18px_rgba(43,50,69,.06)]">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#8d7df4] to-[#58a5ff] text-sm font-bold text-white">
+                    {item.avatarUrl ? <img src={item.avatarUrl} alt={`${item.username}的头像`} className="h-full w-full object-cover" loading="lazy" /> : (item.username.trim().slice(0, 1) || "佳")}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12.5px] font-bold text-[#3b4359]">{item.username || "佳点用户"}</p>
+                    <time className="text-[10.5px] text-[#9aa2b4]">{formatCommentTime(item.createdAt)}</time>
+                  </div>
+                </div>
+                <p className="mt-2.5 whitespace-pre-wrap break-words text-[12.5px] leading-5 text-[#5d657a]">{item.content}</p>
+              </article>
+            )) : null}
+          </div>
+
+          <div className="mt-4 border-t border-[#e5e8f0] pt-4">
+            {commentError ? <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[11px] text-rose-600">{commentError}</p> : null}
+            <textarea
+              value={commentContent}
+              onChange={(event) => setCommentContent(event.target.value.slice(0, MAX_MESSAGE_LENGTH))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  void handleCommentSubmit();
+                }
+              }}
+              rows={3}
+              placeholder="输入评论，Ctrl + Enter 发送…"
+              className="w-full resize-none rounded-xl border border-[#dfe3ed] bg-white px-3 py-2.5 text-[12.5px] leading-5 text-[#3b4359] outline-none transition placeholder:text-[#aab1bf] focus:border-[#8b7cf5] focus:ring-2 focus:ring-[#8b7cf5]/10"
+            />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="text-[10.5px] text-[#9aa2b4]">{commentContent.trim().length}/{MAX_MESSAGE_LENGTH}</span>
+              <button
+                type="button"
+                disabled={commentSubmitting || !commentContent.trim()}
+                onClick={() => void handleCommentSubmit()}
+                className="rounded-[10px] bg-gradient-to-r from-[#7c6cf0] to-[#5a9cff] px-4 py-2 text-[12px] font-semibold text-white shadow-[0_5px_14px_rgba(124,108,240,.24)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {commentSubmitting ? "发送中…" : "发送评论"}
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );

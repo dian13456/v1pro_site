@@ -4,6 +4,8 @@ export interface BoardMessage {
   content: string;
   createdAt: number;
   serial?: string;
+  resourceId?: string;
+  avatarUrl?: string;
 }
 
 export interface MessageBoardState {

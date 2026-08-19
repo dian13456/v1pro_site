@@ -2,16 +2,17 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { getDisplayName } from "./welcomeService";
+import { getDevProfileAvatar } from "./avatarService";
 import type { BoardMessage, MessageBoardState } from "../types/messageBoard";
 
-interface MessagesResponse {
+interface MessagesResponse extends Record<string, unknown> {
   success?: boolean;
   messages?: BoardMessage[];
   total?: number;
   message?: string;
 }
 
-interface PostMessageResponse {
+interface PostMessageResponse extends Record<string, unknown> {
   success?: boolean;
   message?: BoardMessage;
 }
@@ -42,30 +43,35 @@ function normalizeMessage(raw: unknown): BoardMessage | null {
   const content = typeof item.content === "string" ? item.content : "";
   const createdAt = Number(item.createdAt);
   const serial = typeof item.serial === "string" ? item.serial : undefined;
+  const resourceId = typeof item.resourceId === "string" ? item.resourceId : undefined;
+  const avatarUrl = typeof item.avatarUrl === "string" ? item.avatarUrl : undefined;
   if (!id || !content || !Number.isFinite(createdAt)) return null;
-  return { id, username, content, createdAt, serial };
+  return { id, username, content, createdAt, serial, resourceId, avatarUrl };
 }
 
 function resolveMessageDisplayName(message: BoardMessage): BoardMessage {
-  if (!message.serial) return message;
+  if (!message.serial || message.username.trim()) return message;
   return { ...message, username: getDisplayName(message.serial) };
 }
 
-export async function fetchMessages(limit = 100): Promise<MessageBoardState> {
+export async function fetchMessages(limit = 100, resourceId = ""): Promise<MessageBoardState> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
 
   if (isStaticMode()) {
-    const messages = readLocalMessages()
+    const all = readLocalMessages().filter((item) => (item.resourceId || "") === resourceId);
+    const messages = all
       .map(resolveMessageDisplayName)
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
-    return { messages, total: readLocalMessages().length };
+    return { messages, total: all.length };
   }
 
   const auth = getAuthState();
-  const payload = await apiFetch<MessagesResponse>(`/api/messages?limit=${limit}`, {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (resourceId) query.set("resourceId", resourceId);
+  const payload = await apiFetch<MessagesResponse>(`/api/messages?${query.toString()}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${auth?.token || ""}`,
@@ -83,7 +89,7 @@ export async function fetchMessages(limit = 100): Promise<MessageBoardState> {
   };
 }
 
-export async function postMessage(content: string): Promise<BoardMessage> {
+export async function postMessage(content: string, resourceId = ""): Promise<BoardMessage> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
@@ -108,6 +114,8 @@ export async function postMessage(content: string): Promise<BoardMessage> {
       username: getDisplayName(auth.serial),
       content: trimmed,
       createdAt: Date.now(),
+      resourceId: resourceId || undefined,
+      avatarUrl: getDevProfileAvatar(auth.serial) || undefined,
     };
     const messages = readLocalMessages();
     messages.push(entry);
@@ -123,6 +131,7 @@ export async function postMessage(content: string): Promise<BoardMessage> {
     body: JSON.stringify({
       content: trimmed,
       displayName: getDisplayName(auth.serial),
+      resourceId: resourceId || undefined,
     }),
   });
 
