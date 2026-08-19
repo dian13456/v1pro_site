@@ -9,13 +9,14 @@ import {
   IO_TIMEOUT_MS,
   PING_TIMEOUT_MS,
   USB_CHUNK,
+  USBDL_CMD_ERASE,
   USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
   USBDL_CMD_START,
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.27";
+} from "./v1pro-constants.js?v=1.2.28";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -681,7 +682,7 @@ export async function queryDeviceCapacity(device, opts = {}) {
  * @param {USBDevice} device
  * @returns {Promise<boolean>}
  */
-export async function ping(device) {
+export async function ping(device, opts = {}) {
   const { outEndpoint } = getSession(device);
   await drainInQuick(device);
 
@@ -698,7 +699,15 @@ export async function ping(device) {
     ["PONG"],
     Math.max(PING_TIMEOUT_MS, PROBE_POLL_TIMEOUT_MS)
   );
-  if (pong) return true;
+  if (pong) {
+    if (opts.requireAnimation === true && /,A0(?:,|$)/.test(pong)) {
+      throw new V1ProUsbError(
+        "gfm1_rejected",
+        "设备未接受本次动画数据，请重新连接后重试。"
+      );
+    }
+    return true;
+  }
 
   const jedecCmd = new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_JEDEC]);
   try {
@@ -817,7 +826,7 @@ export async function sendGfm1(device, gfm1, opts = {}) {
   /* A successful PONG is a FIFO barrier: firmware can only process this PING
    * after every preceding GFM1 packet has been written, validated and switched
    * to playback. Do not close WebUSB before this confirmation. */
-  await ping(device);
+  await ping(device, { requireAnimation: true });
 }
 
 function buildStartPreamble(totalBytes) {
@@ -846,13 +855,23 @@ function validateStreamSize(totalBytes, maxPayloadBytes) {
 }
 
 /**
- * Send only the START header so flash erase can overlap with network download.
+ * Start a sized erase without entering GFM1 receive state. New firmware erases
+ * in parallel with download/encode; old firmware safely ignores this command
+ * and performs its normal erase when START arrives later.
  */
 export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   validateStreamSize(totalBytes, maxPayloadBytes);
   await drainInQuick(device);
-  await bulkOut(device, buildStartPreamble(totalBytes));
+  const erase = new Uint8Array(7);
+  erase[0] = USBDL_MAGIC0;
+  erase[1] = USBDL_MAGIC1;
+  erase[2] = USBDL_CMD_ERASE;
+  erase[3] = totalBytes & 0xff;
+  erase[4] = (totalBytes >>> 8) & 0xff;
+  erase[5] = (totalBytes >>> 16) & 0xff;
+  erase[6] = (totalBytes >>> 24) & 0xff;
+  await bulkOut(device, erase);
 }
 
 /**
@@ -954,5 +973,5 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   /* Wait for the device to finish draining its USB ring and commit playback.
    * Closing the interface immediately after transferOut can otherwise make the
    * firmware classify an otherwise complete browser transfer as interrupted. */
-  await ping(device);
+  await ping(device, { requireAnimation: true });
 }
