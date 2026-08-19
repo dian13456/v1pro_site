@@ -471,55 +471,59 @@ export default function SharePage() {
               />
             </div>
 
-            {mediaKind === "video" || mediaKind === "gif" ? (
-              <div className="mb-4">
-                <label className={fieldLabelClass}>自定义封面 <span className="font-normal text-[#8a93a8]">（可选）</span></label>
-                <div className="flex min-h-[92px] items-center gap-3 rounded-xl border border-[#e6e9f2] bg-[#fafbfe] p-3">
-                  {customCoverPreviewUrl ? (
-                    <img
-                      src={customCoverPreviewUrl}
-                      alt="自定义封面预览"
-                      className="h-[68px] w-[108px] shrink-0 rounded-lg border border-[#e6e9f2] bg-white object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-[68px] w-[108px] shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cfd5ea] bg-white text-2xl">🖼️</div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12.5px] font-semibold text-[#4a5270]">
-                      {customCoverFile ? customCoverFile.name : "未选择时自动生成封面"}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">支持 JPG、PNG、WebP，最大 8MB</p>
-                    <div className="mt-1.5 flex flex-wrap gap-2">
+            <div className="mb-4">
+              <label className={fieldLabelClass}>自定义封面 <span className="font-normal text-[#8a93a8]">（视频/GIF 可选）</span></label>
+              <div className="flex min-h-[92px] items-center gap-3 rounded-xl border border-[#e6e9f2] bg-[#fafbfe] p-3">
+                {customCoverPreviewUrl ? (
+                  <img
+                    src={customCoverPreviewUrl}
+                    alt="自定义封面预览"
+                    className="h-[68px] w-[108px] shrink-0 rounded-lg border border-[#e6e9f2] bg-white object-cover"
+                  />
+                ) : (
+                  <div className="flex h-[68px] w-[108px] shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cfd5ea] bg-white text-2xl">🖼️</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12.5px] font-semibold text-[#4a5270]">
+                    {customCoverFile
+                      ? customCoverFile.name
+                      : !mediaKind
+                        ? "请先选择视频或 GIF 素材"
+                        : mediaKind === "image"
+                          ? "图片素材默认使用原图作为封面"
+                          : "未上传时自动生成封面"}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">支持 JPG、PNG、WebP，最大 8MB</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={(mediaKind !== "video" && mediaKind !== "gif") || uploading || transferring}
+                      onClick={() => coverInputRef.current?.click()}
+                      className="rounded-lg border border-[#cfd5ea] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {customCoverFile ? "更换封面" : "上传封面"}
+                    </button>
+                    {customCoverFile ? (
                       <button
                         type="button"
                         disabled={uploading || transferring}
-                        onClick={() => coverInputRef.current?.click()}
-                        className="rounded-lg border border-[#cfd5ea] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:opacity-50"
+                        onClick={() => setCustomCoverFile(null)}
+                        className="rounded-lg px-2 py-1.5 text-[11.5px] text-[#8a93a8] transition hover:text-rose-600 disabled:opacity-50"
                       >
-                        {customCoverFile ? "更换封面" : "上传封面"}
+                        恢复自动生成
                       </button>
-                      {customCoverFile ? (
-                        <button
-                          type="button"
-                          disabled={uploading || transferring}
-                          onClick={() => setCustomCoverFile(null)}
-                          className="rounded-lg px-2 py-1.5 text-[11.5px] text-[#8a93a8] transition hover:text-rose-600 disabled:opacity-50"
-                        >
-                          恢复自动生成
-                        </button>
-                      ) : null}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
-                <input
-                  ref={coverInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-                  className="hidden"
-                  onChange={handleCoverPick}
-                />
               </div>
-            ) : null}
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                className="hidden"
+                onChange={handleCoverPick}
+              />
+            </div>
 
             <div className="mb-4">
               <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 标题</label>
