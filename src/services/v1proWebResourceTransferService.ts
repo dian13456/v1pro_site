@@ -275,7 +275,7 @@ async function fetchDirectTransferUrl(resource: ResourceItem, signal?: AbortSign
 async function fetchTransferBlob(
   resource: ResourceItem,
   onProgress?: (received: number, total: number) => void,
-  onFallback?: () => void,
+  onFallback?: (reason: string) => void,
   preparedDirectUrl?: string,
 ): Promise<Blob> {
   if (!hasValidLocalAuth()) {
@@ -300,22 +300,50 @@ async function fetchTransferBlob(
   try {
     const directUrl =
       preparedDirectUrl || (await fetchDirectTransferUrl(resource, controller.signal));
-
-    try {
-      const directResponse = await fetch(directUrl, {
-        method: "GET",
-        mode: "cors",
-        signal: controller.signal,
-      });
-      return await readBlobResponse(directResponse, reportProgress);
-    } catch (directError) {
-      if (controller.signal.aborted) throw directError;
-      onFallback?.();
-      resetIdleTimeout();
-      const fallbackPath = transferPath(resource, "proxyFallback");
-      const fallbackResponse = await authorizedApiResponse(fallbackPath, controller.signal);
-      return await readBlobResponse(fallbackResponse, reportProgress);
+    let lastDirectError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const directResponse = await fetch(directUrl, {
+          method: "GET",
+          mode: "cors",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal: controller.signal,
+        });
+        return await readBlobResponse(directResponse, reportProgress);
+      } catch (directError) {
+        if (controller.signal.aborted) throw directError;
+        lastDirectError = directError;
+        if (attempt === 0) {
+          resetIdleTimeout();
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+        }
+      }
     }
+
+    let directHost = "COS";
+    try {
+      directHost = new URL(directUrl).hostname;
+    } catch {
+      // Keep the generic label when the returned URL is malformed.
+    }
+    const errorDetail = lastDirectError instanceof Error
+      ? lastDirectError.message.trim()
+      : String(lastDirectError || "未知错误");
+    const readableError = /failed to fetch|networkerror|load failed/i.test(errorDetail)
+      ? "浏览器网络或跨域请求被拦截"
+      : errorDetail;
+    const fallbackReason = `${directHost}：${readableError}`;
+    console.warn("[V1PRO] COS direct download failed, using API fallback", {
+      resourceId: resource.id,
+      host: directHost,
+      reason: errorDetail,
+    });
+    onFallback?.(fallbackReason);
+    resetIdleTimeout();
+    const fallbackPath = transferPath(resource, "proxyFallback");
+    const fallbackResponse = await authorizedApiResponse(fallbackPath, controller.signal);
+    return await readBlobResponse(fallbackResponse, reportProgress);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(
@@ -460,7 +488,7 @@ export async function transferAlbumResourcesViaWebUsb(
             const itemRatio = Math.min(1, received / total) * 0.4;
             reportProgress(5 + ((index + itemRatio) / resources.length) * 65);
           },
-          () => callbacks.onStatus?.(`素材 ${index + 1}/${resources.length} COS 直连不可用，已切换服务器下载…`),
+          (reason) => callbacks.onStatus?.(`素材 ${index + 1}/${resources.length} COS 直连不可用（${reason}），已切换服务器下载…`),
         );
         await validateTransferBlob(resource, blob);
 
@@ -621,9 +649,9 @@ export async function transferResourceViaWebUsb(
             callbacks.onStatus?.(formatDownloadProgress(received, total, usingProxyFallback));
             if (total > 0) reportProgress(18 + (received / total) * 22);
           },
-          () => {
+          (reason) => {
             usingProxyFallback = true;
-            callbacks.onStatus?.("COS 直连不可用，已切换服务器中转下载…");
+            callbacks.onStatus?.(`COS 直连不可用（${reason}），已切换服务器中转下载…`);
           },
           directUrl,
         );
@@ -725,7 +753,7 @@ export async function transferResourceViaWebUsb(
         (received, total) => {
           if (total > 0) reportProgress(5 + (received / total) * 30);
         },
-        () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
+        (reason) => callbacks.onStatus?.(`COS 直连不可用（${reason}），已切换服务器下载…`),
       ).then((blob) => {
         downloadDone = true;
         if (!connected) {
