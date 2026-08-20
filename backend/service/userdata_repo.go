@@ -237,6 +237,31 @@ func (r *UserDataRepo) SaveDownloads(store DownloadsStore) error {
 	return saveDownloadsJSON(r.paths.DownloadsPath, store)
 }
 
+func (r *UserDataRepo) RecordResourceInteraction(serial, resourceID, action string, now time.Time) error {
+	serial = NormalizeLikeSerial(serial)
+	resourceID = strings.TrimSpace(resourceID)
+	action = strings.ToLower(strings.TrimSpace(action))
+	if serial == "" || resourceID == "" || !IsResourceInteractionAction(action) {
+		return fmt.Errorf("invalid resource interaction")
+	}
+	if !r.UsesMySQL() {
+		return nil
+	}
+	ctx, cancel := r.ctx()
+	defer cancel()
+	return r.mysql.recordResourceInteraction(ctx, serial, resourceID, action, now)
+}
+
+func (r *UserDataRepo) ListResourceInteractions(serial string, limit int) ([]ResourceInteraction, error) {
+	serial = NormalizeLikeSerial(serial)
+	if serial == "" || !r.UsesMySQL() {
+		return []ResourceInteraction{}, nil
+	}
+	ctx, cancel := r.ctx()
+	defer cancel()
+	return r.mysql.listResourceInteractions(ctx, serial, limit)
+}
+
 func (r *UserDataRepo) LoadMessages() (MessagesStore, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()

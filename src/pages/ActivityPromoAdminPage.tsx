@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
@@ -37,7 +37,7 @@ export default function ActivityPromoAdminPage() {
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const loadList = async (token: string) => {
+  const loadList = useCallback(async (token: string) => {
     setLoading(true);
     setErrorMessage("");
     try {
@@ -53,13 +53,13 @@ export default function ActivityPromoAdminPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [campaignFilter, handleUnauthorized, statusFilter]);
 
   useEffect(() => {
     if (authenticated && adminToken) {
       void loadList(adminToken);
     }
-  }, []);
+  }, [adminToken, authenticated, loadList]);
 
   useEffect(() => {
     if (!detail) return;

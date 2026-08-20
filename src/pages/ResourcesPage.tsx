@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { CategoryTabs } from "../components/CategoryTabs";
-import { ResourceCard } from "../components/ResourceCard";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { V1ProTransferOrb } from "../components/V1ProTransferOrb";
-import { SearchBar } from "../components/SearchBar";
-import { SitePageLayout } from "../components/SitePageLayout";
-import { SitePageShell } from "../components/SitePageShell";
 import { SiteFooter } from "../components/SiteFooter";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
 import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
-import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
+import { SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
-import { useThemeMode } from "../hooks/useThemeMode";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
 import { hasValidLocalAuth } from "../services/authService";
-import { createDownloadUrl, prefetchPlayUrl } from "../services/downloadService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
-import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenResourceService";
@@ -46,7 +38,6 @@ import {
   prefetchTransferDownloadUrl,
 } from "../services/v1proTransferService";
 import {
-  canWebUsbDirectTransfer,
   transferAlbumResourcesViaWebUsb,
   transferResourceViaWebUsb,
   type AlbumTransition,
@@ -55,18 +46,50 @@ import {
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 16;
+const RECOMMENDATION_FETCH_SIZE = 64;
+const RECENT_RECOMMENDATIONS_KEY = "jiadian_recent_recommendations_v2";
+
+function readRecentRecommendationIds(): number[] {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(RECENT_RECOMMENDATIONS_KEY) || "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is number => Number.isSafeInteger(id) && id > 0).slice(0, 96)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecommendationIds(ids: number[]): void {
+  const recent = readRecentRecommendationIds();
+  const merged = Array.from(new Set([...ids, ...recent])).slice(0, 96);
+  sessionStorage.setItem(RECENT_RECOMMENDATIONS_KEY, JSON.stringify(merged));
+}
+
+function newRecommendationSeed(): string {
+  const bytes = new Uint32Array(4);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("");
+}
+
+function fallbackRecommendationRank(resourceId: number, seed: string): number {
+  let hash = 2166136261;
+  const input = `${seed}:${resourceId}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
 
 export default function ResourcesPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
   const [webUsbProgress, setWebUsbProgress] = useState<number | null>(null);
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const [playingResourceId, setPlayingResourceId] = useState<number | null>(null);
-  const [playingUrl, setPlayingUrl] = useState<string>("");
   const [likingId, setLikingId] = useState<number | null>(null);
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set<number>());
@@ -84,10 +107,8 @@ export default function ResourcesPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
-  const [downloadWeekKey, setDownloadWeekKey] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageJumpValue, setPageJumpValue] = useState("");
+  const [currentPage, setCurrentPage] = useState<number>(0);
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -101,7 +122,9 @@ export default function ResourcesPage() {
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
   const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
-  const { theme, setTheme } = useThemeMode();
+  const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const {
     resources,
     filtered,
@@ -110,7 +133,6 @@ export default function ResourcesPage() {
     keyword,
     setKeyword,
     category,
-    setCategory,
     materialType,
     setMaterialType,
     columnTag,
@@ -176,13 +198,11 @@ export default function ResourcesPage() {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
-    setCurrentPage(1);
     setRandomMode(false);
     setRandomItems([]);
   }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
 
   useEffect(() => {
-    setCurrentPage(1);
     setRandomMode(false);
     setRandomItems([]);
     setAlbumMode(false);
@@ -209,7 +229,8 @@ export default function ResourcesPage() {
     if (sortMode === "weeklyTop") {
       return capacityFilteredResources;
     }
-    const start = (currentPage - 1) * pageSize;
+    const catalogPage = Math.max(1, currentPage);
+    const start = (catalogPage - 1) * pageSize;
     return capacityFilteredResources.slice(start, start + pageSize);
   }, [randomMode, randomItems, sortMode, capacityFilteredResources, currentPage, pageSize]);
 
@@ -220,15 +241,48 @@ export default function ResourcesPage() {
       .filter((resource): resource is ResourceItem => Boolean(resource));
   }, [albumSelectedIds, resources]);
 
+  const fallbackRecommendationResources = useMemo(() => {
+    const eligible = resources.filter((resource) =>
+      resource.category === "gif" &&
+      (resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif") &&
+      !hiddenIdSet.has(resource.id)
+    );
+    const recentIds = new Set(readRecentRecommendationIds());
+    const unseen = eligible.filter((resource) => !recentIds.has(resource.id));
+    const seed = `${location.key}:${recommendationRefreshKey}`;
+    return [...(unseen.length >= DEFAULT_PAGE_SIZE ? unseen : eligible)]
+      .sort((left, right) => fallbackRecommendationRank(left.id, seed) - fallbackRecommendationRank(right.id, seed))
+      .slice(0, DEFAULT_PAGE_SIZE);
+  }, [hiddenIdSet, location.key, recommendationRefreshKey, resources]);
+
   const recommendedResources = useMemo(() => {
-    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
-    return recommendationItems
-      .map((recommendation) => {
-        const resource = resourceMap.get(recommendation.resourceId);
-        return resource ? { resource, reason: recommendation.reason } : null;
-      })
-      .filter((item): item is { resource: ResourceItem; reason: string } => Boolean(item));
-  }, [recommendationItems, resources]);
+    const resourceMap = new Map(
+      [...recommendationResources, ...resources].map((resource) => [resource.id, resource])
+    );
+    const personalized = recommendationItems
+      .map((recommendation) => resourceMap.get(recommendation.resourceId))
+      .filter((resource): resource is ResourceItem => resource !== undefined && !hiddenIdSet.has(resource.id))
+      .slice(0, DEFAULT_PAGE_SIZE);
+    return personalized.length > 0 ? personalized : fallbackRecommendationResources;
+  }, [fallbackRecommendationResources, hiddenIdSet, recommendationItems, recommendationResources, resources]);
+
+  useEffect(() => {
+    if (recommendationsLoading || recommendationItems.length > 0 || fallbackRecommendationResources.length === 0) {
+      return;
+    }
+    rememberRecommendationIds(fallbackRecommendationResources.map((resource) => resource.id));
+  }, [fallbackRecommendationResources, recommendationItems.length, recommendationsLoading]);
+
+  const showingRecommendations =
+    !showHidden &&
+    !albumMode &&
+    !randomMode &&
+    currentPage === 0;
+  const displayedItems = showingRecommendations ? recommendedResources : visibleItems;
+  const canRenderCards = showingRecommendations ? !recommendationsLoading : !loading;
+  const showInitialLoader = !canRenderCards;
+  const displayedTotalItems = currentPage === 0 ? recommendedResources.length : totalItems;
+  const displayedTotalPages = currentPage === 0 ? 1 : totalPages;
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -240,36 +294,26 @@ export default function ResourcesPage() {
       .sort((a, b) => a - b);
   }, [totalPages, currentPage]);
 
-  const handleJumpToPage = () => {
-    const parsed = Number.parseInt(pageJumpValue.trim(), 10);
-    if (!Number.isFinite(parsed)) {
-      return;
-    }
-    const target = Math.min(totalPages, Math.max(1, parsed));
-    setCurrentPage(target);
-    setPageJumpValue(String(target));
-  };
-
   const preloadList = useMemo(
     () =>
       isStaticMode()
-        ? visibleItems
-            .slice(0, Math.min(visibleItems.length + 6, 26))
+        ? displayedItems
+            .slice(0, Math.min(displayedItems.length + 6, 26))
             .map((item) => item.image)
             .filter((url) => /^https?:\/\//i.test(url))
         : [],
-    [visibleItems]
+    [displayedItems]
   );
   useImagePreload(preloadList);
 
   useEffect(() => {
     if (!hasValidLocalAuth() || isStaticMode()) return;
-    for (const item of visibleItems) {
+    for (const item of displayedItems) {
       if (canTransferViaV1Pro(item)) {
         prefetchTransferDownloadUrl(item);
       }
     }
-  }, [visibleItems]);
+  }, [displayedItems]);
 
   useEffect(() => {
     let active = true;
@@ -301,7 +345,6 @@ export default function ResourcesPage() {
         if (!active) return;
         setTotalDownloadCounts(state.totalCounts);
         setWeeklyDownloadCounts(state.weeklyCounts);
-        setDownloadWeekKey(state.weekKey);
       })
       .catch(() => {
         // Ignore download stats init errors.
@@ -312,6 +355,7 @@ export default function ResourcesPage() {
   }, []);
 
   useEffect(() => {
+    if (resources.length === 0) return;
     let active = true;
     fetchHiddenResourceState(resources)
       .then((state) => {
@@ -328,8 +372,8 @@ export default function ResourcesPage() {
   }, [resources]);
 
   useEffect(() => {
+    if (resources.length === 0) return;
     let active = true;
-    if (resources.length === 0) return () => { active = false; };
     fetchUploaderFollows(resources)
       .then((state) => {
         if (!active) return;
@@ -340,24 +384,39 @@ export default function ResourcesPage() {
       .catch(() => {
         if (active) setErrorMessage((current) => current || "关注列表加载失败，刷新页面后可重试");
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [resources]);
 
   useEffect(() => {
-    if (loading || resources.length === 0 || !hasValidLocalAuth() || isStaticMode()) return;
+    if (!hasValidLocalAuth() || isStaticMode()) {
+      setRecommendationsLoading(false);
+      return;
+    }
     let active = true;
-    fetchResourceRecommendations(6)
+    setRecommendationsLoading(true);
+    fetchResourceRecommendations(RECOMMENDATION_FETCH_SIZE, {
+      seed: newRecommendationSeed(),
+      excludeIds: readRecentRecommendationIds(),
+    })
       .then((result) => {
         if (!active) return;
         setRecommendationItems(result.items);
+        setRecommendationResources(result.resources);
+        rememberRecommendationIds(result.items.slice(0, DEFAULT_PAGE_SIZE).map((item) => item.resourceId));
       })
       .catch(() => {
         if (active) setRecommendationItems([]);
+        if (active) setRecommendationResources([]);
+      })
+      .finally(() => {
+        if (active) setRecommendationsLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [loading, resources]);
+  }, [location.key, recommendationRefreshKey]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -369,9 +428,17 @@ export default function ResourcesPage() {
     setRandomItems(pickRandomItems(pool, RANDOM_PAGE_SIZE));
     setRandomMode(true);
     setCurrentPage(1);
-    setPlayingResourceId(null);
-    setPlayingUrl("");
     setErrorMessage("");
+  };
+
+  const handleRecommendationHome = () => {
+    setCurrentPage(0);
+    setRandomMode(false);
+    setRandomItems([]);
+    setShowHidden(false);
+    setFollowingOnly(false);
+    setAlbumMode(false);
+    setAlbumSelectedIds([]);
   };
 
   const handleExitRandomMode = () => {
@@ -390,51 +457,11 @@ export default function ResourcesPage() {
       ...prev,
       [resourceId]: stats.weeklyCount,
     }));
-    if (stats.weekKey) {
-      setDownloadWeekKey(stats.weekKey);
-    }
   };
 
   const handleOpenResource = (resource: ResourceItem) => {
     setSelectedResource(resource);
     void recordResourceInteraction(resource.id, "view").catch(() => undefined);
-  };
-
-  const handleDownload = async (resource: ResourceItem) => {
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    try {
-      setDownloadingId(resource.id);
-      setErrorMessage("");
-      const downloadResult =
-        resource.materialType === "image"
-          ? await createImageUrl(resource.id, resource.image, { forDownload: true })
-          : await createDownloadUrl(resource.id, resource.download, { forDownload: true });
-      applyDownloadStats(resource.id, downloadResult.stats);
-      if (!downloadResult.url) {
-        throw new Error("下载链接生成失败");
-      }
-      window.open(downloadResult.url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      const message = (err as Error)?.message || "下载失败";
-      setErrorMessage(message);
-      if (message.includes("认证")) {
-        navigate("/auth", { replace: true });
-      }
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const handleTransferPrepare = (resource: ResourceItem, options?: { urgent?: boolean }) => {
-    prefetchTransferDownloadUrl(resource, options);
-  };
-
-  const handleWebUsbTransferPrepare = (_resource: ResourceItem, _options?: { urgent?: boolean }) => {
-    // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
   const handleWebUsbTransfer = (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => {
@@ -568,48 +595,6 @@ export default function ResourcesPage() {
     }
   };
 
-  const handlePlay = async (resource: ResourceItem): Promise<string | void> => {
-    if (playingResourceId === resource.id) {
-      setPlayingResourceId(null);
-      setPlayingUrl("");
-      return;
-    }
-
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    try {
-      setPlayingId(resource.id);
-      setErrorMessage("");
-      const playResult = await createDownloadUrl(resource.id, resource.download, {
-        forDownload: false,
-      });
-      if (!playResult.url) {
-        throw new Error("播放链接生成失败");
-      }
-      setPlayingResourceId(resource.id);
-      setPlayingUrl(playResult.url);
-      return playResult.url;
-    } catch (err) {
-      const message = (err as Error)?.message || "播放链接生成失败";
-      setErrorMessage(message);
-      if (message.includes("认证")) {
-        navigate("/auth", { replace: true });
-      }
-      throw err;
-    } finally {
-      setPlayingId(null);
-    }
-  };
-
-  const handlePlayPrepare = (resource: ResourceItem) => {
-    if (resource.materialType !== "video" && resource.materialType !== "gif") return;
-    if (!hasValidLocalAuth()) return;
-    prefetchPlayUrl(resource.id, resource.download);
-  };
-
   const handleFollowChange = async (resource: ResourceItem, followed: boolean) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
@@ -671,6 +656,7 @@ export default function ResourcesPage() {
         setAlbumTransferStatus("");
         return false;
       }
+      setCurrentPage(1);
       if (capacityFilter !== "all") {
         setAlbumCapacity(capacityFilter);
       }
@@ -767,9 +753,16 @@ export default function ResourcesPage() {
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}
-              onMaterialType={setMaterialType}
+              onMaterialType={(value) => {
+                setCurrentPage(1);
+                setMaterialType(value);
+              }}
               capacity={capacityFilter}
-              onCapacity={setCapacityFilter}
+              onCapacity={(value) => {
+                setCurrentPage(1);
+                setCapacityFilter(value);
+              }}
+              showSortOptions={currentPage !== 0}
               sortMode={followingOnly ? "following" : randomMode ? "random" : sortMode}
               onSortMode={(value) => {
                 if (value === "following") {
@@ -783,12 +776,16 @@ export default function ResourcesPage() {
                 else {
                   setFollowingOnly(false);
                   handleExitRandomMode();
+                  setCurrentPage(1);
                   setSortMode(value);
                 }
               }}
               followedUploaderCount={followedUploaderCount}
               columnTag={columnTag}
-              onColumnTag={setColumnTag}
+              onColumnTag={(value) => {
+                setCurrentPage(1);
+                setColumnTag(value);
+              }}
               columnOptions={columnTagFilterOptions}
             />
           </div>
@@ -799,9 +796,16 @@ export default function ResourcesPage() {
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}
-              onMaterialType={setMaterialType}
+              onMaterialType={(value) => {
+                setCurrentPage(1);
+                setMaterialType(value);
+              }}
               capacity={capacityFilter}
-              onCapacity={setCapacityFilter}
+              onCapacity={(value) => {
+                setCurrentPage(1);
+                setCapacityFilter(value);
+              }}
+              showSortOptions={currentPage !== 0}
               sortMode={followingOnly ? "following" : randomMode ? "random" : sortMode}
               onSortMode={(value) => {
                 if (value === "following") {
@@ -815,12 +819,16 @@ export default function ResourcesPage() {
                 else {
                   setFollowingOnly(false);
                   handleExitRandomMode();
+                  setCurrentPage(1);
                   setSortMode(value);
                 }
               }}
               followedUploaderCount={followedUploaderCount}
               columnTag={columnTag}
-              onColumnTag={setColumnTag}
+              onColumnTag={(value) => {
+                setCurrentPage(1);
+                setColumnTag(value);
+              }}
               columnOptions={columnTagFilterOptions}
             />
           </div>
@@ -828,15 +836,24 @@ export default function ResourcesPage() {
           <div className="min-w-0">
             <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
-                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{totalItems}</strong> 张，{totalPages} 页 · 每页
-                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                  {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
-                </select>
+                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页
+                {currentPage !== 0 ? (
+                  <>
+                    <span> · 每页</span>
+                    <select value={pageSize} onChange={(event) => {
+                      setCurrentPage(1);
+                      setPageSize(Number(event.target.value));
+                    }} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                      {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
+                    </select>
+                  </>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
+                    setCurrentPage(1);
                     setFollowingOnly(false);
                     setShowHidden((current) => !current);
                   }}
@@ -863,58 +880,50 @@ export default function ResourcesPage() {
                   <span aria-hidden="true">▦</span>
                   {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
                 </button>
-                <select
-                  value={sortMode}
-                  onChange={(event) => {
-                    setFollowingOnly(false);
-                    setSortMode(event.target.value as typeof sortMode);
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  <option value="latest">最新优先</option>
-                  <option value="earliest">最早优先</option>
-                  <option value="hot">热门排行</option>
-                  <option value="weeklyTop">周下载 TOP20</option>
-                </select>
+                {currentPage !== 0 ? (
+                  <select
+                    value={sortMode}
+                    onChange={(event) => {
+                      setCurrentPage(1);
+                      setFollowingOnly(false);
+                      setSortMode(event.target.value as typeof sortMode);
+                    }}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    <option value="latest">最新优先</option>
+                    <option value="earliest">最早优先</option>
+                    <option value="hot">热门排行</option>
+                    <option value="weeklyTop">周下载 TOP20</option>
+                  </select>
+                ) : null}
               </div>
             </div>
 
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
-            {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
-            {!loading && !albumMode && !randomMode && !followingOnly && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
-              <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {recommendedResources.map(({ resource, reason }) => (
-                    <div key={`recommendation-${resource.id}`} className="relative pt-7">
-                      <span className="absolute left-2 top-0 max-w-[calc(100%-1rem)] truncate rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm" title={reason}>
-                        {reason}
-                      </span>
-                      <CompactResourceCard
-                        resource={resource}
-                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
-                        likeCount={likeCounts[resource.id] || 0}
-                        liked={likedIds.has(resource.id)}
-                        liking={likingId === resource.id}
-                        favorited={favoriteIds.includes(resource.id)}
-                        favoriting={favoritingId === resource.id}
-                        onOpen={handleOpenResource}
-                        onLike={(item) => void handleLike(item)}
-                        onFavorite={(item) => void handleFavorite(item)}
-                        followed={followedIdSet.has(resource.id)}
-                        following={followingId === resource.id}
-                        onFollow={resource.uploaderBlockable && !ownResourceIdSet.has(resource.id)
-                          ? (item, followed) => void handleFollowChange(item, followed)
-                          : undefined}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </section>
+            {showInitialLoader ? (
+              <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
+                {recommendationsLoading ? "正在加载猜你喜欢…" : "正在加载素材…"}
+              </div>
             ) : null}
-            {!loading ? (
+            {showingRecommendations ? (
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
+                <button
+                  type="button"
+                  disabled={recommendationsLoading}
+                  onClick={() => setRecommendationRefreshKey((value) => value + 1)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-orange-500 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-wait disabled:opacity-60 dark:border-orange-400/30 dark:bg-slate-900 dark:hover:bg-orange-500/10"
+                  aria-label="刷新猜你喜欢"
+                >
+                  <span aria-hidden="true">↻</span>
+                  {recommendationsLoading ? "刷新中…" : "换一批"}
+                </button>
+              </div>
+            ) : null}
+            {canRenderCards ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {visibleItems.map((resource) => (
+                {displayedItems.map((resource) => (
                   <CompactResourceCard
                     key={resource.id}
                     resource={resource}
@@ -944,19 +953,25 @@ export default function ResourcesPage() {
                 ))}
               </section>
             ) : null}
-            {!loading && visibleItems.length === 0 ? (
+            {canRenderCards && displayedItems.length === 0 ? (
               <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
-                {showHidden
-                  ? "当前设备没有已屏蔽素材。"
-                  : followingOnly
-                    ? "还没有关注上传者，先在喜欢的上传者素材卡片上点击关注。"
-                    : "没有匹配的素材，请调整筛选条件。"}
+                {showingRecommendations
+                  ? "暂时没有可推荐的素材，请点击“换一批”重试。"
+                  : showHidden
+                    ? "当前设备没有已屏蔽素材。"
+                    : followingOnly
+                      ? "还没有关注上传者，先在喜欢的上传者素材卡片上点击关注。"
+                      : "没有匹配的素材，请调整筛选条件。"}
               </div>
             ) : null}
 
-            {!loading && !randomMode && sortMode !== "weeklyTop" && totalItems > 0 ? (
+            {!loading && !randomMode && totalItems > 0 && (currentPage === 0 || sortMode !== "weeklyTop") ? (
               <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
-                <button type="button" disabled={currentPage <= 1} onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                <button type="button" disabled={currentPage <= 0} onClick={() => {
+                  if (currentPage === 1) handleRecommendationHome();
+                  else setCurrentPage((value) => Math.max(0, value - 1));
+                }} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                <button type="button" onClick={handleRecommendationHome} className={`h-9 rounded-full px-3.5 text-sm ${currentPage === 0 ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>首页</button>
                 {pageList.map((page) => (
                   <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
                 ))}

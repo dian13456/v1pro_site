@@ -19,13 +19,14 @@ export function MallProductGallery({
     () => imageUrls.map((item) => item.trim()).filter(Boolean),
     [imageUrls],
   );
+  const imagesKey = images.join("\u0000");
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState("");
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [images.join("|")]);
+  }, [imagesKey]);
 
   const active = images[Math.min(activeIndex, images.length - 1)];
 

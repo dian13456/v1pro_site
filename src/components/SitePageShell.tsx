@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { ThemeMode } from "../types/theme";
 
 export const SITE_PAGE_CONTAINER_CLASS = "mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8";
 

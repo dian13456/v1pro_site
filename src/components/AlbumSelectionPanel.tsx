@@ -205,6 +205,7 @@ export function AlbumSelectionPanel({
         <button
           type="button"
           disabled={resources.length === 0 || overflowFrames > 0 || transferring}
+          title="选择设备并传输"
           onClick={onTransfer}
           className="mt-4 w-full rounded-xl bg-[#32b879] px-4 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(50,184,121,.25)] transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-45"
         >

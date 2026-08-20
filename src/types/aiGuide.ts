@@ -8,7 +8,7 @@ export interface AiGuideMessage {
 export interface AiGuideResponse {
   success?: boolean;
   answer?: string;
-  resourceIds?: Array<number | string>;
+  resourceIds?: number[];
   mode?: "deepseek" | "fallback";
   message?: string;
 }

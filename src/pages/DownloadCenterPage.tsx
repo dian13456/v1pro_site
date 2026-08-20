@@ -5,6 +5,7 @@ import { SiteFooter } from "../components/SiteFooter";
 import { createDownloadUrl } from "../services/downloadService";
 import { fetchResources } from "../services/resourceService";
 import type { ResourceCategory, ResourceItem } from "../types/resource";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 const CATEGORY_LABELS: Partial<Record<ResourceCategory, string>> = {
   software: "软件",
@@ -38,6 +39,8 @@ function versionName(item: ResourceItem): string {
 
 export default function DownloadCenterPage() {
   const navigate = useNavigate();
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   const [items, setItems] = useState<ResourceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -142,7 +145,7 @@ export default function DownloadCenterPage() {
                 <p><span className="font-semibold text-[#4a5270]">资料类型：</span>{CATEGORY_LABELS[latest.category] || "其他资料"}</p>
                 <p><span className="font-semibold text-[#4a5270]">文件大小：</span>{latest.size || "未知"} · <span className="font-semibold text-[#4a5270]">更新时间：</span>{formatDate(latest.updatedAt)}</p>
               </div>
-              <button type="button" disabled={downloadingId === latest.id} onClick={() => void handleDownload(latest)} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.3)] disabled:opacity-60">{downloadingId === latest.id ? "正在生成链接…" : "↓ 立即下载"}</button>
+              <button type="button" disabled={downloadingId === latest.id || !featureEnabled} title={featureEnabled ? "立即下载" : "请先到个人中心输入激活码"} onClick={() => void handleDownload(latest)} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.3)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:opacity-100">{downloadingId === latest.id ? "正在生成链接…" : featureEnabled ? "↓ 立即下载" : "未激活"}</button>
             </div>
           </section>
         ) : null}
@@ -169,7 +172,7 @@ export default function DownloadCenterPage() {
                   </div>
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f6] pt-4">
                     <span className="text-[11px] text-[#8a93a8]">{item.size || "未知"} · {formatDate(item.updatedAt)}</span>
-                    <button type="button" disabled={downloadingId === item.id} onClick={() => void handleDownload(item)} className="rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-xs font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:opacity-60">{downloadingId === item.id ? "准备中…" : "下载"}</button>
+                    <button type="button" disabled={downloadingId === item.id || !featureEnabled} title={featureEnabled ? "下载" : "请先到个人中心输入激活码"} onClick={() => void handleDownload(item)} className="rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-xs font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100">{downloadingId === item.id ? "准备中…" : featureEnabled ? "下载" : "未激活"}</button>
                   </div>
                 </article>
               ))}

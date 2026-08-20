@@ -184,3 +184,25 @@ UPDATE promo_submission SET status = ?, admin_note = ?, updated_at = ? WHERE id 
 	}
 	return s.getSubmission(ctx, id)
 }
+
+func (s *promoMySQLStore) updateSubmissionContent(ctx context.Context, id, userSerial string, content PromoSubmission) (*PromoSubmission, error) {
+	now := time.Now().UnixMilli()
+	res, err := s.db.ExecContext(ctx, `
+UPDATE promo_submission
+SET order_no = ?, order_screenshot_url = ?, injection_color_note = ?,
+    shipping_address_enc = ?, video_link = ?, payment_qr_url_enc = ?,
+    status = ?, admin_note = '', updated_at = ?
+WHERE id = ? AND user_serial = ? AND status IN (?, ?)`,
+		content.OrderNo, content.OrderScreenshotURL, content.InjectionColorNote,
+		content.ShippingAddressEnc, content.VideoLink, content.PaymentQrURLEnc,
+		PromoStatusPending, now, id, userSerial, PromoStatusPending, PromoStatusRejected,
+	)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return nil, errors.New("报名记录不存在、不属于当前用户，或已审核通过")
+	}
+	return s.getSubmission(ctx, id)
+}

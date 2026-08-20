@@ -1,4 +1,4 @@
-﻿/**
+/**
  * High-level WebUSB transfer API for website / demo pages.
  */
 import {
@@ -250,6 +250,10 @@ export class V1ProWebTransfer {
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
     const lowerType = (file.type || "").toLowerCase();
     const lowerName = fileName.toLowerCase();
+    const isGif =
+      opts.mediaType === "gif" ||
+      lowerType === "image/gif" ||
+      lowerName.endsWith(".gif");
     const isVideo =
       opts.mediaType === "video" ||
       lowerType.startsWith("video/") ||
@@ -315,7 +319,7 @@ export class V1ProWebTransfer {
             maxPayloadBytes,
             fileName,
             mediaType: opts.mediaType,
-            fitMode: opts.fitMode ?? (isVideo ? "fill" : "contain"),
+            fitMode: opts.fitMode ?? (isGif ? "contain" : "fill"),
             rotationDeg: opts.rotationDeg ?? 0,
             colorProfile: opts.colorProfile ?? "normal",
             onFrameEncoded: (frameIndex, frameCount) => {
@@ -358,8 +362,8 @@ export class V1ProWebTransfer {
 
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
-        /* beginPreparedVideoTransfer performs only sized erase. START must be
-         * sent now, immediately before the already prepared payload. */
+        /* Prepared mode performs only sized erase. Send START immediately
+         * before the already encoded payload so firmware RX cannot time out. */
         startAlreadySent: false,
         prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
         onProgress: (sent, total) => {

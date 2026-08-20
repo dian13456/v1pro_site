@@ -60,6 +60,7 @@ interface ResourceLibrarySidebarProps {
   sortMode: ResourceSortMode | "random" | "following";
   onSortMode: (value: ResourceSortMode | "random" | "following") => void;
   followedUploaderCount?: number;
+  showSortOptions?: boolean;
   columnTag: string;
   onColumnTag: (value: string) => void;
   columnOptions: Array<{ value: string; label: string }>;
@@ -91,18 +92,20 @@ export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
           { value: 308, label: "308 帧设备", note: "≈12.3s · 25fps", icon: "◇" },
         ]}
       />
-      <FilterGroup
-        title="特色栏目"
-        value={props.sortMode}
-        onChange={props.onSortMode}
-        options={[
-          { value: "following", label: "关注上传", count: props.followedUploaderCount || undefined, icon: "🔔" },
-          { value: "hot", label: "热门排行", icon: "🔥" },
-          { value: "random", label: "随机推荐", icon: "🎲" },
-          { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },
-          { value: "latest", label: "最新上传", icon: "✦" },
-        ]}
-      />
+      {props.showSortOptions !== false ? (
+        <FilterGroup
+          title="特色栏目"
+          value={props.sortMode}
+          onChange={props.onSortMode}
+          options={[
+            { value: "following", label: "关注上传", count: props.followedUploaderCount || undefined, icon: "🔔" },
+            { value: "hot", label: "热门排行", icon: "🔥" },
+            { value: "random", label: "随机推荐", icon: "🎲" },
+            { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },
+            { value: "latest", label: "最新上传", icon: "✦" },
+          ]}
+        />
+      ) : null}
       <FilterGroup
         title="专栏"
         value={props.columnTag}

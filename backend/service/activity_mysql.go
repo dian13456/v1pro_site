@@ -32,6 +32,14 @@ func openActivityMySQLStore(dsn string) (*activityMySQLStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS device_feature_access (
+			serial VARCHAR(191) NOT NULL PRIMARY KEY,
+			activated_at BIGINT NOT NULL DEFAULT 0
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ensure device feature access schema: %w", err)
+	}
 	store := &activityMySQLStore{db: db}
 	if err := store.ensureTrackingNoColumn(ctx); err != nil {
 		_ = db.Close()
@@ -187,6 +195,14 @@ func (m *activityMySQLStore) hasJoinInPeriod(ctx context.Context, activityID, sn
 	err := m.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM activity_join
 		WHERE activity_id = ? AND sn = ? AND draw_period = ?`, activityID, sn, period).Scan(&count)
+	return count > 0, err
+}
+
+func (m *activityMySQLStore) hasIPJoinInPeriod(ctx context.Context, activityID, userIP, period string) (bool, error) {
+	var count int
+	err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM activity_join
+		WHERE activity_id = ? AND user_ip = ? AND draw_period = ?`, activityID, userIP, period).Scan(&count)
 	return count > 0, err
 }
 
@@ -421,8 +437,31 @@ func (m *activityMySQLStore) registerDevice(ctx context.Context, entry DeviceReg
 	return err
 }
 
+func (m *activityMySQLStore) getDevice(ctx context.Context, sn string) (DeviceRegistryEntry, bool, error) {
+	var entry DeviceRegistryEntry
+	err := m.db.QueryRowContext(ctx, `
+		SELECT d.serial, d.source, d.created_at, COALESCE(a.activated_at, 0)
+		FROM device_registry d
+		LEFT JOIN device_feature_access a ON a.serial = d.serial
+		WHERE d.serial = ?`, sn).Scan(&entry.Serial, &entry.Source, &entry.CreatedAt, &entry.ActivatedAt)
+	if err == sql.ErrNoRows {
+		return DeviceRegistryEntry{}, false, nil
+	}
+	return entry, err == nil, err
+}
+
+func (m *activityMySQLStore) activateDeviceFeatures(ctx context.Context, sn string, activatedAt int64) error {
+	_, err := m.db.ExecContext(ctx, `
+		INSERT INTO device_feature_access (serial, activated_at)
+		VALUES (?, ?)
+		ON DUPLICATE KEY UPDATE activated_at = IF(activated_at > 0, activated_at, VALUES(activated_at))`, sn, activatedAt)
+	return err
+}
+
 func (m *activityMySQLStore) listDevices(ctx context.Context, limit int) ([]DeviceRegistryEntry, error) {
-	query := `SELECT serial, source, created_at FROM device_registry ORDER BY created_at DESC`
+	query := `SELECT d.serial, d.source, d.created_at, COALESCE(a.activated_at, 0)
+		FROM device_registry d LEFT JOIN device_feature_access a ON a.serial = d.serial
+		ORDER BY d.created_at DESC`
 	args := []any{}
 	if limit > 0 {
 		query += " LIMIT ?"
@@ -436,7 +475,7 @@ func (m *activityMySQLStore) listDevices(ctx context.Context, limit int) ([]Devi
 	var out []DeviceRegistryEntry
 	for rows.Next() {
 		var entry DeviceRegistryEntry
-		if err := rows.Scan(&entry.Serial, &entry.Source, &entry.CreatedAt); err != nil {
+		if err := rows.Scan(&entry.Serial, &entry.Source, &entry.CreatedAt, &entry.ActivatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, entry)

@@ -63,3 +63,25 @@ func TestSanitizePublicResourceCatalog(t *testing.T) {
 		t.Fatalf("uploader serial should remain private")
 	}
 }
+
+func TestSelectPublicResourceCatalogPreservesRecommendationOrder(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(1), "title": "one", "image": "https://example.com/one.png", "download": "secret-one"},
+		{"id": float64(2), "title": "two", "image": "two.png", "uploaderSerial": "SN-2"},
+	}
+	selected := SelectPublicResourceCatalog(items, []string{"2", "1", "missing"})
+	if len(selected) != 2 {
+		t.Fatalf("len(selected) = %d, want 2", len(selected))
+	}
+	if recommendationString(selected[0]["id"]) != "2" || recommendationString(selected[1]["id"]) != "1" {
+		t.Fatalf("unexpected order: %#v", selected)
+	}
+	for _, item := range selected {
+		if _, ok := item["download"]; ok {
+			t.Fatal("download must be removed")
+		}
+		if _, ok := item["uploaderSerial"]; ok {
+			t.Fatal("uploaderSerial must be removed")
+		}
+	}
+}

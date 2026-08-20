@@ -139,26 +139,26 @@ func (s *ActivityService) Join(input JoinActivityInput) (JoinActivityResult, err
 	if !s.isKnownDevice(sn, input.UserSerial) {
 		return JoinActivityResult{}, errors.New(JoinErrorSNNotFound)
 	}
-	has, err := s.repo.HasJoinInPeriod(activity.ID, sn, period)
-	if err != nil {
-		return JoinActivityResult{}, err
-	}
-	if has {
-		return JoinActivityResult{}, errors.New(JoinErrorAlreadyJoined)
-	}
 	join := ActivityJoin{
 		ID:         NewActivityID(),
 		ActivityID: activity.ID,
 		SN:         sn,
 		DeviceID:   sn,
 		UserSerial: strings.TrimSpace(input.UserSerial),
-		UserIP:     strings.TrimSpace(input.UserIP),
+		UserIP:     NormalizeActivityIP(input.UserIP),
 		JoinTime:   nowMs,
 		DrawPeriod: period,
 		Status:     JoinStatusActive,
 	}
-	if err := s.repo.AddJoin(join); err != nil {
+	conflict, err := s.repo.AddJoinIfEligible(join)
+	if err != nil {
 		return JoinActivityResult{}, err
+	}
+	if conflict == ActivityJoinConflictSN {
+		return JoinActivityResult{}, errors.New(JoinErrorAlreadyJoined)
+	}
+	if conflict == ActivityJoinConflictIP {
+		return JoinActivityResult{}, errors.New(JoinErrorIPAlreadyJoined)
 	}
 	return JoinActivityResult{
 		Message:    "报名成功，开奖后系统会自动通知",
@@ -541,6 +541,14 @@ func (s *ActivityService) EnsureLotterySchedule() error {
 	}
 	if strings.TrimSpace(activity.Rule) != defaults.Rule {
 		activity.Rule = defaults.Rule
+		changed = true
+	}
+	if activity.PrizeTitle != defaults.PrizeTitle {
+		activity.PrizeTitle = defaults.PrizeTitle
+		changed = true
+	}
+	if activity.PrizeDescription != defaults.PrizeDescription {
+		activity.PrizeDescription = defaults.PrizeDescription
 		changed = true
 	}
 	if !changed {

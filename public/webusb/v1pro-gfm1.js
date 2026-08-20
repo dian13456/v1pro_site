@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Browser-side GFM1 encoder (320×170 RGB565 LE).
  * Aligns with tools/usb_send_gif.py header layout.
  */
@@ -599,6 +599,7 @@ export async function planGfm1Encode(blob, opts = {}) {
     explicitMediaType === "gif" || type === "image/gif" || name.endsWith(".gif");
   const isVideo =
     explicitMediaType === "video" || isVideoBlob(type, name);
+  const fitMode = opts.fitMode ?? (isGif ? "contain" : "fill");
   const onFrameEncoded =
     typeof opts.onFrameEncoded === "function" ? opts.onFrameEncoded : null;
 
@@ -609,7 +610,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       minVideoFps: opts.minVideoFps,
       maxVideoSpeed: opts.maxVideoSpeed,
       maxPayloadBytes: opts.maxPayloadBytes,
-      fitMode: opts.fitMode,
+      fitMode,
       rotationDeg: opts.rotationDeg,
       colorProfile: opts.colorProfile,
       onFrameEncoded,
@@ -631,7 +632,7 @@ export async function planGfm1Encode(blob, opts = {}) {
             bitmap,
             bitmap.width,
             bitmap.height,
-            opts.fitMode,
+            fitMode,
             opts.rotationDeg,
             opts.colorProfile,
           );
@@ -649,7 +650,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       blob,
       maxFrames,
       onFrameEncoded,
-      opts.fitMode,
+      fitMode,
       opts.rotationDeg,
       opts.colorProfile,
     );
@@ -663,7 +664,7 @@ export async function planGfm1Encode(blob, opts = {}) {
         blob,
         maxFrames,
         onFrameEncoded,
-        opts.fitMode,
+        fitMode,
         opts.rotationDeg,
         opts.colorProfile,
       );
@@ -687,7 +688,7 @@ export async function planGfm1Encode(blob, opts = {}) {
           bitmap,
           bitmap.width,
           bitmap.height,
-          opts.fitMode,
+          fitMode,
           opts.rotationDeg,
           opts.colorProfile,
         );
@@ -752,7 +753,7 @@ function loadHtmlImage(url) {
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
 async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg, colorProfile) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.27");
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.26");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {

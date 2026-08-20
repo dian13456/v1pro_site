@@ -241,12 +241,16 @@ export async function fetchWelcomeMessage(): Promise<WelcomePayload> {
 
   const query = encodeURIComponent(displayName);
   try {
-    const payload = await apiFetch<WelcomePayload>(`/api/welcome?displayName=${query}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
+    const payload = await apiFetch<WelcomePayload>(
+      `/api/welcome?displayName=${query}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+        },
       },
-    });
+      { timeoutMs: 30_000 },
+    );
     if (!payload.message) {
       return buildLocalWelcome(displayName);
     }

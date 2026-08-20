@@ -7,7 +7,7 @@ import { resourceMatchesColumn } from "../utils/columnMatch";
 export type ResourceSortMode = "earliest" | "latest" | "hot" | "weeklyTop";
 
 export function useResourceCatalog() {
-  const { columnTagOptions, columnTagFilterOptions, columnTagsLoading } = useColumnTags();
+  const { columnTagOptions, columnTagFilterOptions } = useColumnTags();
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -68,7 +68,7 @@ export function useResourceCatalog() {
   return {
     resources,
     filtered,
-    loading: loading || columnTagsLoading,
+    loading,
     error,
     keyword,
     setKeyword,

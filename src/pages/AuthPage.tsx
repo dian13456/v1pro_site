@@ -175,6 +175,9 @@ export default function AuthPage() {
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
             请使用 Edge 或 Chrome。系统会自动识别佳点授权设备；已授权过的设备无需手动选择，插入即可进入。
           </p>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            新设备首次进入网站并完成连接后，系统会自动关闭设备的“上电打开网站”，以后插入不会重复弹出。
+          </p>
 
           <SiteButton type="button" className="mt-8 w-full" disabled={busy} onClick={() => void handleVerify()}>
             {autoConnecting ? "正在自动连接设备…" : loading ? "连接中..." : "同意条款并连接"}

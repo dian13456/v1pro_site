@@ -47,3 +47,29 @@ func SanitizePublicResourceCatalog(items []map[string]any) []map[string]any {
 	}
 	return sanitized
 }
+
+// SelectPublicResourceCatalog returns sanitized catalog records in the exact
+// order requested. It is used by the recommendation fast path so the browser
+// can paint the first page without downloading the complete catalog first.
+func SelectPublicResourceCatalog(items []map[string]any, resourceIDs []string) []map[string]any {
+	if len(items) == 0 || len(resourceIDs) == 0 {
+		return []map[string]any{}
+	}
+	byID := make(map[string]map[string]any, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		id := recommendationString(item["id"])
+		if id != "" {
+			byID[id] = item
+		}
+	}
+	selected := make([]map[string]any, 0, len(resourceIDs))
+	for _, id := range resourceIDs {
+		if item := byID[id]; item != nil {
+			selected = append(selected, item)
+		}
+	}
+	return SanitizePublicResourceCatalog(selected)
+}

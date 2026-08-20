@@ -8,6 +8,7 @@ import {
   MAX_SHARE_VIDEO_OUTPUT_BYTES,
   MAX_SHARE_VIDEO_SOURCE_BYTES,
 } from "./browserVideoUploadCompressionService";
+import { prepareShareCoverJpeg } from "./shareCoverService";
 
 /** Source file limit shown on the share page. The COS object remains <=20MB. */
 export const MAX_VIDEO_UPLOAD_BYTES = MAX_SHARE_VIDEO_SOURCE_BYTES;
@@ -349,7 +350,13 @@ export async function createVideoUploadSession(file: File): Promise<VideoUploadS
 
 export async function shareVideoToCatalog(
   file: File,
-  options: { title?: string; description?: string; columnTag?: string; onProgress?: (stage: string) => void } = {}
+  options: {
+    title?: string;
+    description?: string;
+    columnTag?: string;
+    coverFile?: File;
+    onProgress?: (stage: string) => void;
+  } = {}
 ): Promise<VideoShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -398,8 +405,10 @@ export async function shareVideoToCatalog(
     );
   }
 
-  options.onProgress?.("正在生成视频封面…");
-  const coverBlob = await extractVideoCoverJpeg(uploadFile);
+  options.onProgress?.(options.coverFile ? "正在处理自定义封面…" : "正在生成视频封面…");
+  const coverBlob = options.coverFile
+    ? await prepareShareCoverJpeg(options.coverFile)
+    : await extractVideoCoverJpeg(uploadFile);
 
   options.onProgress?.("申请 COS 上传地址…");
   const session = await createVideoUploadSession(uploadFile);
@@ -412,18 +421,22 @@ export async function shareVideoToCatalog(
   await uploadWithCosFallback(session, "cover", coverBlob, "cover.jpg", options.onProgress);
 
   options.onProgress?.("提交分享...");
-  const payload = await apiFetch<VideoShareResponse>("/api/user-video/share", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${auth?.token || ""}`,
+  const payload = await apiFetch<VideoShareResponse>(
+    "/api/user-video/share",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${auth?.token || ""}`,
+      },
+      body: JSON.stringify({
+        sessionId: session.sessionId,
+        title,
+        description,
+        columnTag,
+      }),
     },
-    body: JSON.stringify({
-      sessionId: session.sessionId,
-      title,
-      description,
-      columnTag,
-    }),
-  });
+    { timeoutMs: 150_000 },
+  );
 
   throwIfPendingReview(payload);
 

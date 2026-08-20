@@ -2,40 +2,60 @@ package service
 
 import "testing"
 
-func TestBuildCreditLeaderboardRanksAndProtectsDefaultName(t *testing.T) {
-	credits := AICreditsStore{UnitScale: CreditUnitScale, Balances: map[string]int{
-		"SN-A": CreditsToUnits(120),
-		"SN-B": CreditsToUnits(120),
-		"SN-C": CreditsToUnits(90),
+func TestBuildCreditLeaderboardRanksAndIncludesCurrent(t *testing.T) {
+	credits := AICreditsStore{
+		UnitScale: CreditUnitScale,
+		Balances: map[string]int{
+			"SN-A": CreditsToUnits(120),
+			"SN-B": CreditsToUnits(110),
+			"SN-C": CreditsToUnits(110),
+		},
+	}
+	profiles := UserProfilesStore{Profiles: map[string]string{
+		"SN-A": "阿甲",
+		"SN-B": "阿乙",
+		"SN-C": "阿丙",
+		"SN-D": "当前用户",
 	}}
-	profiles := UserProfilesStore{
-		Profiles: map[string]string{"SN-A": "小橙"},
-		Avatars:  map[string]string{"SN-B": "avatars/b.webp"},
+
+	result := BuildCreditLeaderboard(credits, profiles, map[string]string{"SN-A": "往复循环"}, "SN-D", 3)
+	if result.TotalUsers != 4 || len(result.Entries) != 3 {
+		t.Fatalf("unexpected sizes: total=%d entries=%d", result.TotalUsers, len(result.Entries))
 	}
-	creatorNames := map[string]string{
-		"SN-A": "往复循环",
-		"SN-C": "素材作者",
+	if result.Entries[0].Rank != 1 || result.Entries[1].Rank != 2 || result.Entries[2].Rank != 2 {
+		t.Fatalf("unexpected shared ranks: %#v", result.Entries)
 	}
-	rows, current, total := BuildCreditLeaderboard(credits, profiles, creatorNames, "SN-C", 50)
-	if total != 3 {
-		t.Fatalf("unexpected total: %d", total)
+	if result.Current.DisplayName != "当前用户" || result.Current.Rank != 4 || !result.Current.IsCurrent {
+		t.Fatalf("unexpected current entry: %#v", result.Current)
 	}
-	if len(rows) != 3 || rows[0].Rank != 1 || rows[1].Rank != 1 || rows[2].Rank != 3 {
-		t.Fatalf("unexpected ranking: %#v", rows)
+}
+
+func TestBuildCreditLeaderboardDoesNotExposeSerial(t *testing.T) {
+	result := BuildCreditLeaderboard(
+		AICreditsStore{UnitScale: CreditUnitScale, Balances: map[string]int{}},
+		UserProfilesStore{Profiles: map[string]string{}},
+		nil,
+		"SECRET-SERIAL-ABCD",
+		50,
+	)
+	if len(result.Entries) != 1 || result.Entries[0].DisplayName == "SECRET-SERIAL-ABCD" {
+		t.Fatalf("serial should be masked: %#v", result.Entries)
 	}
-	foundProtectedName := false
-	for _, row := range rows {
-		if row.AvatarKey == "avatars/b.webp" && row.DisplayName == "佳点用户" {
-			foundProtectedName = true
-		}
-	}
-	if !foundProtectedName {
-		t.Fatalf("default name should not expose serial suffix: %#v", rows)
-	}
-	if current == nil || current.Rank != 3 || !current.IsCurrent {
-		t.Fatalf("unexpected current entry: %#v", current)
-	}
-	if current.CreatorName != "素材作者" {
-		t.Fatalf("creator name should resolve to the material author: %q", current.CreatorName)
+}
+
+func TestBuildCreditLeaderboardReturnsCreatorAndAvatar(t *testing.T) {
+	result := BuildCreditLeaderboard(
+		AICreditsStore{UnitScale: CreditUnitScale, Balances: map[string]int{"SN-A": CreditsToUnits(100)}},
+		UserProfilesStore{
+			Profiles: map[string]string{"SN-A": "该用户违规，已被注销"},
+			Avatars:  map[string]string{"SN-A": "profile-avatars/sn-a/avatar.webp"},
+		},
+		map[string]string{"SN-A": "往复循环"},
+		"SN-A",
+		50,
+	)
+	entry := result.Entries[0]
+	if entry.CreatorName != "往复循环" || entry.AvatarKey == "" {
+		t.Fatalf("unexpected creator entry: %#v", entry)
 	}
 }

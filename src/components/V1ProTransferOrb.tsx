@@ -52,7 +52,7 @@ export function V1ProTransferOrb({
         aria-valuenow={roundedProgress}
       >
         <div
-          className="v1pro-transfer-liquid absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#20a96d] via-[#32c89a] to-[#61d9c6] transition-[height] duration-500 ease-out"
+          className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#20a96d] via-[#32c89a] to-[#61d9c6] transition-[height] duration-500 ease-out"
           style={{ height: `${displayedProgress}%` }}
         >
           <span className="v1pro-transfer-wave v1pro-transfer-wave-front" />

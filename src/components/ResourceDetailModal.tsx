@@ -15,6 +15,8 @@ import {
   type ResourceMediaMetrics,
   type VideoFpsOption,
 } from "../utils/resourceCapacity";
+import { defaultTransferFitMode } from "../utils/transferFitMode";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 interface ResourceDetailModalProps {
   resource: ResourceItem;
@@ -67,8 +69,13 @@ export function ResourceDetailModal({
   onTransfer,
   onWebUsbTransfer,
 }: ResourceDetailModalProps) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
+  const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
   const [fps, setFps] = useState<VideoFpsOption>(20);
-  const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>("fill");
+  const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
+    defaultTransferFitMode(transferMediaKind),
+  );
   const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(0);
   const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>("normal");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -81,6 +88,10 @@ export function ResourceDetailModal({
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [commentError, setCommentError] = useState("");
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
+
+  useEffect(() => {
+    setFitMode(defaultTransferFitMode(transferMediaKind));
+  }, [resource.id, transferMediaKind]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -312,12 +323,13 @@ export function ResourceDetailModal({
           ) : null}
 
           <div className="mt-auto grid grid-cols-2 gap-2.5 pt-2">
-            <button type="button" disabled={transferring} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:opacity-50">
-              {transferring ? "传输中…" : "传输"}
+            <button type="button" disabled={transferring || !featureEnabled} title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"} onClick={() => onTransfer(resource)} className="rounded-[10px] bg-[#32b879] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.28)] transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:opacity-100">
+              {transferring ? "传输中…" : featureEnabled ? "传输" : "未激活"}
             </button>
             <button
               type="button"
               disabled={webUsbTransferring || !canDirectTransfer}
+              title="网页直传"
               onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
               className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50"
             >

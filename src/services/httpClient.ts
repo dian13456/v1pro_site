@@ -557,6 +557,17 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     return { success: true, message: "素材已删除" };
   }
 
+  if (path.startsWith("/api/profile/uploads/title")) {
+    if (!auth.startsWith("Bearer dev-token-")) {
+      return { success: false, message: "token 无效" };
+    }
+    const title = String(body.title || "").trim();
+    if (!title) {
+      return { success: false, message: "素材标题不能为空" };
+    }
+    return { success: true, message: "标题已修改", title };
+  }
+
   if (path.startsWith("/api/profile/uploads")) {
     if (!auth.startsWith("Bearer dev-token-")) {
       return { success: false, message: "token 无效" };
@@ -802,26 +813,52 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
 }
 
 const API_MAX_INFLIGHT = 4;
+const API_REQUEST_TIMEOUT_MS = 15_000;
+const API_QUEUE_TIMEOUT_MS = 20_000;
 let apiInflight = 0;
-const apiWaitQueue: Array<() => void> = [];
+type ApiWaiter = {
+  active: boolean;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: number;
+};
+const apiWaitQueue: ApiWaiter[] = [];
 
 async function acquireApiSlot(): Promise<void> {
   if (apiInflight < API_MAX_INFLIGHT) {
     apiInflight += 1;
     return;
   }
-  await new Promise<void>((resolve) => {
-    apiWaitQueue.push(() => resolve());
+  await new Promise<void>((resolve, reject) => {
+    const waiter: ApiWaiter = {
+      active: true,
+      resolve,
+      reject,
+      timer: 0,
+    };
+    waiter.timer = window.setTimeout(() => {
+      if (!waiter.active) return;
+      waiter.active = false;
+      const index = apiWaitQueue.indexOf(waiter);
+      if (index >= 0) apiWaitQueue.splice(index, 1);
+      waiter.reject(new Error("请求排队超时，请稍后重试"));
+    }, API_QUEUE_TIMEOUT_MS);
+    apiWaitQueue.push(waiter);
   });
-  apiInflight += 1;
 }
 
 function releaseApiSlot(): void {
-  apiInflight = Math.max(0, apiInflight - 1);
-  const next = apiWaitQueue.shift();
-  if (next) {
-    next();
+  let next = apiWaitQueue.shift();
+  while (next && !next.active) {
+    next = apiWaitQueue.shift();
   }
+  if (next) {
+    next.active = false;
+    window.clearTimeout(next.timer);
+    next.resolve();
+    return;
+  }
+  apiInflight = Math.max(0, apiInflight - 1);
 }
 
 function isApiSignatureError(message: string, status: number): boolean {
@@ -833,8 +870,25 @@ async function performApiFetch<T>(
   path: string,
   init: RequestInit,
   allowSignRetry: boolean,
+  timeoutMs: number,
 ): Promise<T> {
   let response: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    init.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, Math.max(1_000, timeoutMs));
+  const cleanup = () => {
+    window.clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  };
   try {
     const signedInit = await withApiSignature(path, init);
     const headers = new Headers(signedInit.headers || init.headers);
@@ -844,49 +898,60 @@ async function performApiFetch<T>(
     response = await fetch(`${API_BASE}${path}`, {
       ...signedInit,
       headers,
+      signal: controller.signal,
     });
   } catch (err) {
+    cleanup();
     if (import.meta.env.DEV && path.startsWith("/api")) {
       const mocked = createDevMockResponse(path, init);
       if (mocked) return mocked as T;
+    }
+    if (timedOut) {
+      throw new Error("请求超时，请检查网络后重试");
     }
     throw new Error(formatClientError(err, "接口不可达，请确认鉴权服务已启动"));
   }
 
-  let payload: JsonValue | null = null;
   try {
-    payload = (await response.json()) as JsonValue;
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    const message =
-      (payload?.message as string) || (payload?.error as string) || `请求失败（HTTP ${response.status})`;
-    if (allowSignRetry && isApiSignatureError(message, response.status)) {
-      return performApiFetch(path, init, false);
+    let payload: JsonValue | null = null;
+    try {
+      payload = (await response.json()) as JsonValue;
+    } catch {
+      if (timedOut) throw new Error("请求超时，请检查网络后重试");
+      payload = null;
     }
-    if (import.meta.env.DEV && path.startsWith("/api")) {
-      const mocked = createDevMockResponse(path, init);
-      if (mocked) return mocked as T;
-    }
-    throw new Error(formatClientError(new Error(message), message));
-  }
 
-  return (payload || {}) as T;
+    if (!response.ok) {
+      const message =
+        (payload?.message as string) || (payload?.error as string) || `请求失败（HTTP ${response.status})`;
+      if (allowSignRetry && isApiSignatureError(message, response.status)) {
+        return performApiFetch(path, init, false, timeoutMs);
+      }
+      if (import.meta.env.DEV && path.startsWith("/api")) {
+        const mocked = createDevMockResponse(path, init);
+        if (mocked) return mocked as T;
+      }
+      throw new Error(formatClientError(new Error(message), message));
+    }
+
+    return (payload || {}) as T;
+  } finally {
+    cleanup();
+  }
 }
 
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
-  options: { priority?: boolean } = {},
+  options: { priority?: boolean; timeoutMs?: number } = {},
 ): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? API_REQUEST_TIMEOUT_MS;
   if (options.priority) {
-    return performApiFetch<T>(path, init, true);
+    return performApiFetch<T>(path, init, true, timeoutMs);
   }
   await acquireApiSlot();
   try {
-    return performApiFetch<T>(path, init, true);
+    return performApiFetch<T>(path, init, true, timeoutMs);
   } finally {
     releaseApiSlot();
   }

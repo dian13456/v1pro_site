@@ -5,6 +5,7 @@ import { DevicePreviewFrame } from "./DevicePreviewFrame";
 import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 import { canWebUsbDirectTransfer } from "../services/v1proWebResourceTransferService";
+import { useDeviceFeatureAccess } from "../services/featureAccessService";
 
 function looksLikeFilename(text: string): boolean {
   const value = text.trim();
@@ -52,7 +53,7 @@ interface ResourceCardProps {
   showWeeklyDownloadCount?: boolean;
 }
 
-function MediaResourceCardComponent({
+function MediaResourceCard({
   resource,
   onTransfer,
   onTransferPrepare,
@@ -77,6 +78,8 @@ function MediaResourceCardComponent({
   weeklyDownloadCount,
   showWeeklyDownloadCount = false,
 }: ResourceCardProps) {
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
   const materialLabel =
     resource.materialType === "image"
       ? "图片素材"
@@ -103,7 +106,7 @@ function MediaResourceCardComponent({
   const hasPlay = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    if (!showTransfer || !onTransferPrepare || transferPrefetchedRef.current) return;
+    if (!featureEnabled || !showTransfer || !onTransferPrepare || transferPrefetchedRef.current) return;
     const node = cardRef.current;
     if (!node) return;
 
@@ -119,7 +122,7 @@ function MediaResourceCardComponent({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [resource, showTransfer, onTransferPrepare]);
+  }, [featureEnabled, resource, showTransfer, onTransferPrepare]);
 
   useEffect(() => {
     if (!showWebUsbTransfer || !onWebUsbTransferPrepare || webUsbPrefetchedRef.current) return;
@@ -244,7 +247,9 @@ function MediaResourceCardComponent({
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-              {previewFailed ? "预览暂时不可用" : "图片加载中..."}
+              {previewFailed
+                ? "预览暂时不可用"
+                : "预览加载中..."}
             </div>
           )}
       </DevicePreviewFrame>
@@ -294,7 +299,8 @@ function MediaResourceCardComponent({
         {showTransfer ? (
           <button
             type="button"
-            disabled={actionBusy}
+            disabled={actionBusy || !featureEnabled}
+            title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#32b879] px-1 text-sm font-medium text-white transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-60"
@@ -322,6 +328,7 @@ function MediaResourceCardComponent({
         <button
           type="button"
           disabled={actionBusy}
+          title="网页直传"
           onPointerDown={() => onWebUsbTransferPrepare?.(resource, { urgent: true })}
           onClick={() => void onWebUsbTransfer?.(resource)}
           className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-violet-600 px-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -334,25 +341,28 @@ function MediaResourceCardComponent({
 }
 
 function ResourceCardComponent(props: ResourceCardProps) {
-  const { resource, onDownload, downloading } = props;
-  if (resource.category === "software") {
-    return (
-      <article className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
-        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{resource.title}</div>
-        {onDownload ? (
-          <button
-            type="button"
-            disabled={downloading}
-            onClick={() => onDownload(resource)}
-            className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-          >
-            {downloading ? "生成下载链接..." : "下载"}
-          </button>
-        ) : null}
-      </article>
-    );
+  const { access } = useDeviceFeatureAccess();
+  const featureEnabled = access?.enabled === true;
+  if (props.resource.category !== "software") {
+    return <MediaResourceCard {...props} />;
   }
-  return <MediaResourceCardComponent {...props} />;
+  const { resource, onDownload, downloading } = props;
+  return (
+    <article className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+      <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{resource.title}</div>
+      {onDownload ? (
+        <button
+          type="button"
+          disabled={downloading || !featureEnabled}
+          title={featureEnabled ? "下载" : "请先到个人中心输入激活码"}
+          onClick={() => onDownload(resource)}
+          className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+        >
+          {downloading ? "生成下载链接..." : featureEnabled ? "下载" : "未激活"}
+        </button>
+      ) : null}
+    </article>
+  );
 }
 
 export const ResourceCard = memo(ResourceCardComponent);

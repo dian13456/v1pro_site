@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Low-level WebUSB helpers for V1PRO START + GFM1 transfer.
  */
 import {
@@ -856,8 +856,8 @@ function validateStreamSize(totalBytes, maxPayloadBytes) {
 
 /**
  * Start a sized erase without entering GFM1 receive state. New firmware erases
- * in parallel with download/encode; old firmware safely ignores the 7-byte
- * command and performs its normal erase when START arrives later.
+ * in parallel with download/encode; old firmware safely ignores this command
+ * and performs its normal erase when START arrives later.
  */
 export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;

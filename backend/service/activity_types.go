@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net"
 	"strings"
 	"time"
 )
@@ -23,6 +24,7 @@ const (
 
 	JoinErrorSNNotFound         = "SN不存在"
 	JoinErrorAlreadyJoined      = "该设备已经参与"
+	JoinErrorIPAlreadyJoined    = "同一公网 IP 每天仅能报名一次"
 	JoinErrorSNFormat           = "SN格式错误"
 	JoinErrorActivityEnded      = "活动已结束"
 	JoinErrorActivityNotYet     = "活动尚未开始"
@@ -98,9 +100,10 @@ type WinnerInfoPlain struct {
 }
 
 type DeviceRegistryEntry struct {
-	Serial    string `json:"serial"`
-	Source    string `json:"source,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	Serial      string `json:"serial"`
+	Source      string `json:"source,omitempty"`
+	CreatedAt   int64  `json:"createdAt"`
+	ActivatedAt int64  `json:"activatedAt,omitempty"`
 }
 
 type ActivityDataStore struct {
@@ -183,6 +186,21 @@ func NormalizeSN(raw string) string {
 	return string(out)
 }
 
+func NormalizeActivityIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	raw = strings.Trim(raw, "[]")
+	if ip := net.ParseIP(raw); ip != nil {
+		return ip.String()
+	}
+	return raw
+}
+
 func ValidateSNFormat(sn string) bool {
 	sn = NormalizeSN(sn)
 	if len(sn) < 6 || len(sn) > 64 {
@@ -239,12 +257,12 @@ func DefaultActivity() Activity {
 		ID:               "lottery-default",
 		Title:            "设备用户专属抽奖活动",
 		Description:      "购买设备即可使用 SN 码参与",
-		Rule:             "每天 0:00 起开放报名，原报名信息清零；每天晚上 7:00 自动开奖。每个 SN 每天仅能报名一次；一个 SN 只能获得一次中奖资格。",
+		Rule:             "每天 0:00 起开放报名，原报名信息清零；每天晚上 7:00 自动开奖。每个 SN、同一公网 IP 每天仅能报名一次；一个 SN 只能获得一次中奖资格。",
 		StartTime:        now.Add(-24 * time.Hour).UnixMilli(),
 		EndTime:          now.Add(365 * 24 * time.Hour).UnixMilli(),
 		Status:           ActivityStatusActive,
-		PrizeTitle:       "V1PRO 限定周边礼包",
-		PrizeDescription: "含定制壳子、贴纸与品牌周边，具体以活动页展示为准。",
+		PrizeTitle:       "打印喵喵V1.0板子",
+		PrizeDescription: "本期奖品为打印喵喵V1.0板子，具体以实际发货为准。",
 		DrawHour:         19,
 		DrawMinute:       0,
 		WinnersPerDraw:   1,

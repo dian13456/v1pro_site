@@ -19,6 +19,7 @@ type ResourceRecord = Partial<ResourceItem> & {
 };
 
 const COS_MANIFEST_URL = import.meta.env.VITE_COS_RESOURCE_MANIFEST_URL || "";
+let resourceCatalogPromise: Promise<ResourceItem[]> | null = null;
 
 /** 将 COS 公网 URL 转为对象键；已是相对路径则原样返回。 */
 export function stripPublicObjectUrl(raw: string): string {
@@ -67,7 +68,10 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
     description: sanitized.description,
     author: (sanitized.author || "").trim() || undefined,
     uploaderSerial: (sanitized.uploaderSerial || "").trim() || undefined,
-    uploaderBlockable: Boolean(sanitized.uploaderBlockable || sanitized.uploaderSerial),
+    // The public catalog intentionally strips the real uploader SN. User-uploaded
+    // resources still carry an author, which hiddenResourceService can use as the
+    // privacy-safe local blocking key.
+    uploaderBlockable: Boolean(sanitized.uploaderBlockable || sanitized.uploaderSerial || sanitized.author?.trim()),
     columnTag: columnTag || undefined,
     size: sanitized.size || "未知",
     image: imageRaw,
@@ -121,7 +125,7 @@ async function fetchFromRuntimeApi(): Promise<ResourceItem[]> {
   return parseResourcePayload(payload);
 }
 
-export async function fetchResources(): Promise<ResourceItem[]> {
+async function loadResources(): Promise<ResourceItem[]> {
   try {
     const dynamic = await fetchFromRuntimeApi();
     if (dynamic.length > 0) {
@@ -144,4 +148,19 @@ export async function fetchResources(): Promise<ResourceItem[]> {
     return sortByUpdatedAtDesc(parseResourcePayload(bundledResources));
   }
   return [];
+}
+
+export function fetchResources(): Promise<ResourceItem[]> {
+  if (!resourceCatalogPromise) {
+    resourceCatalogPromise = loadResources()
+      .then((resources) => {
+        if (resources.length === 0) resourceCatalogPromise = null;
+        return resources;
+      })
+      .catch((error) => {
+        resourceCatalogPromise = null;
+        throw error;
+      });
+  }
+  return resourceCatalogPromise;
 }

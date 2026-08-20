@@ -1,7 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
-import App from "./App";
+import App from "./App.tsx";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { applyThemeToDocument, getInitialTheme } from "./hooks/useThemeMode";
 import "./index.css";
 import "./styles/theme.css";
@@ -13,7 +14,9 @@ document.body.style.removeProperty("overflow");
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <HashRouter>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </HashRouter>
   </React.StrictMode>
 );

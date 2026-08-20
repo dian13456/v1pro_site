@@ -4,6 +4,7 @@ import { recordLocalDeviceDownload } from "./downloadStatsService";
 import { isStaticMode } from "./runtimeMode";
 import { parseDownloadStats } from "../types/downloadStats";
 import type { SignedDownloadResult } from "../types/downloadStats";
+import { requireDeviceFeatureAccess } from "./featureAccessService";
 
 interface GinResourceResponse {
   url?: string;
@@ -65,6 +66,7 @@ export async function createDownloadUrl(
   }
 
   if (forDownload) {
+    await requireDeviceFeatureAccess();
     const valid = await verifyTokenRemote();
     if (!valid) {
       throw new Error("认证已失效，请重新验证设备");

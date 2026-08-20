@@ -71,6 +71,19 @@ func (m *mysqlStore) migrate(ctx context.Context) error {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
 		return fmt.Errorf("migrate user avatars failed: %w", err)
 	}
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS user_profile_avatars (
+		serial VARCHAR(191) NOT NULL PRIMARY KEY,
+		object_key VARCHAR(512) NOT NULL,
+		updated_at BIGINT NOT NULL DEFAULT 0,
+		KEY idx_profile_avatar_updated (updated_at DESC)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate profile avatars failed: %w", err)
+	}
+	if _, err := m.db.ExecContext(ctx, `
+		INSERT IGNORE INTO user_profile_avatars (serial, object_key, updated_at)
+		SELECT serial, avatar_key, 0 FROM user_avatars WHERE avatar_key <> ''`); err != nil {
+		return fmt.Errorf("migrate legacy profile avatars failed: %w", err)
+	}
 	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS blocked_uploaders (
 		viewer_serial VARCHAR(191) NOT NULL,
 		blocked_serial VARCHAR(191) NOT NULL,
@@ -527,6 +540,40 @@ func (m *mysqlStore) saveDownloads(ctx context.Context, store DownloadsStore) er
 	return tx.Commit()
 }
 
+func (m *mysqlStore) recordResourceInteraction(ctx context.Context, serial, resourceID, action string, now time.Time) error {
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO resource_interactions (serial, resource_id, action, action_count, last_at)
+		 VALUES (?, ?, ?, 1, ?)
+		 ON DUPLICATE KEY UPDATE action_count = LEAST(action_count + 1, 1000000), last_at = VALUES(last_at)`,
+		serial, resourceID, action, now.Unix(),
+	)
+	return err
+}
+
+func (m *mysqlStore) listResourceInteractions(ctx context.Context, serial string, limit int) ([]ResourceInteraction, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT resource_id, action, action_count, last_at
+		 FROM resource_interactions WHERE serial = ? ORDER BY last_at DESC LIMIT ?`,
+		serial, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]ResourceInteraction, 0)
+	for rows.Next() {
+		var interaction ResourceInteraction
+		if err := rows.Scan(&interaction.ResourceID, &interaction.Action, &interaction.ActionCount, &interaction.LastAt); err != nil {
+			return nil, err
+		}
+		result = append(result, interaction)
+	}
+	return result, rows.Err()
+}
+
 func (m *mysqlStore) loadMessages(ctx context.Context) (MessagesStore, error) {
 	store := NewEmptyMessagesStore()
 	rows, err := m.db.QueryContext(ctx,
@@ -584,17 +631,22 @@ func (m *mysqlStore) loadUserProfiles(ctx context.Context) (UserProfilesStore, e
 	if err := rows.Err(); err != nil {
 		return store, err
 	}
-	avatarRows, err := m.db.QueryContext(ctx, `SELECT serial, avatar_key FROM user_avatars`)
+	if err := rows.Close(); err != nil {
+		return store, err
+	}
+	avatarRows, err := m.db.QueryContext(ctx, `SELECT serial, object_key FROM user_profile_avatars`)
 	if err != nil {
 		return store, err
 	}
 	defer avatarRows.Close()
 	for avatarRows.Next() {
-		var serial, avatarKey string
-		if err := avatarRows.Scan(&serial, &avatarKey); err != nil {
+		var serial, objectKey string
+		if err := avatarRows.Scan(&serial, &objectKey); err != nil {
 			return store, err
 		}
-		store.Avatars[serial] = avatarKey
+		if strings.TrimSpace(objectKey) != "" {
+			store.Avatars[serial] = objectKey
+		}
 	}
 	return store, avatarRows.Err()
 }
@@ -609,9 +661,6 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 	if _, err := tx.ExecContext(ctx, `DELETE FROM user_profiles`); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM user_avatars`); err != nil {
-		return err
-	}
 	for serial, displayName := range store.Profiles {
 		if strings.TrimSpace(displayName) == "" {
 			continue
@@ -623,13 +672,16 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 			return err
 		}
 	}
-	for serial, avatarKey := range store.Avatars {
-		if strings.TrimSpace(avatarKey) == "" {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_profile_avatars`); err != nil {
+		return err
+	}
+	for serial, objectKey := range store.Avatars {
+		if strings.TrimSpace(objectKey) == "" {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO user_avatars (serial, avatar_key) VALUES (?, ?)`,
-			serial, avatarKey,
+			`INSERT INTO user_profile_avatars (serial, object_key, updated_at) VALUES (?, ?, ?)`,
+			serial, objectKey, time.Now().UnixMilli(),
 		); err != nil {
 			return err
 		}

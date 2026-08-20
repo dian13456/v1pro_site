@@ -109,6 +109,59 @@ export async function submitPromoApplication(input: {
   return { message: payload.message || "提交成功", submission: payload.submission };
 }
 
+export type PromoApplicationInput = {
+  campaignId: PromoCampaignId;
+  orderNo: string;
+  orderScreenshotUrl: string;
+  injectionColorNote?: string;
+  shippingAddress?: string;
+  videoLink?: string;
+  paymentQrUrl?: string;
+};
+
+export async function fetchMyPromoSubmission(): Promise<PromoSubmissionRecord> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  const payload = await apiFetch<{
+    success: boolean;
+    message?: string;
+    submission: PromoSubmissionRecord;
+  }>("/api/activity/promo/submission", {
+    method: "GET",
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (!payload.success || !payload.submission) {
+    throw new Error(payload.message || "加载报名资料失败");
+  }
+  return payload.submission;
+}
+
+export async function updatePromoApplication(
+  input: PromoApplicationInput,
+): Promise<{ message: string; submission: PromoSubmissionRecord }> {
+  if (!hasValidLocalAuth()) {
+    throw new Error("认证状态无效，请重新验证设备");
+  }
+  const payload = await apiFetch<{
+    success: boolean;
+    message?: string;
+    submission: PromoSubmissionRecord;
+  }>("/api/activity/promo/submission/update", {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!payload.success || !payload.submission) {
+    throw new Error(payload.message || "修改报名资料失败");
+  }
+  return {
+    message: payload.message || "资料已更新，已重新进入待审核",
+    submission: payload.submission,
+  };
+}
+
 export async function uploadPromoImage(file: File): Promise<string> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");

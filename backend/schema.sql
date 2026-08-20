@@ -71,6 +71,17 @@ CREATE TABLE IF NOT EXISTS device_download_windows (
   day_count INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS resource_interactions (
+  serial VARCHAR(191) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  action VARCHAR(20) NOT NULL,
+  action_count INT NOT NULL DEFAULT 1,
+  last_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (serial, resource_id, action),
+  KEY idx_resource_interactions_serial_last (serial, last_at DESC),
+  KEY idx_resource_interactions_resource_action (resource_id, action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS messages (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   resource_id VARCHAR(64) NOT NULL DEFAULT '',
@@ -87,9 +98,11 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   display_name VARCHAR(128) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS user_avatars (
+CREATE TABLE IF NOT EXISTS user_profile_avatars (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
-  avatar_key VARCHAR(512) NOT NULL
+  object_key VARCHAR(512) NOT NULL,
+  updated_at BIGINT NOT NULL DEFAULT 0,
+  KEY idx_profile_avatar_updated (updated_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS user_prompt_prefs (
@@ -186,6 +199,7 @@ CREATE TABLE IF NOT EXISTS activity_join (
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   KEY idx_join_activity_period (activity_id, draw_period),
   KEY idx_join_sn_period (activity_id, sn, draw_period),
+  KEY idx_join_ip_period (activity_id, user_ip, draw_period),
   KEY idx_join_time (join_time DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -223,6 +237,11 @@ CREATE TABLE IF NOT EXISTS device_registry (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
   source VARCHAR(64) NOT NULL DEFAULT '',
   created_at BIGINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS device_feature_access (
+  serial VARCHAR(191) NOT NULL PRIMARY KEY,
+  activated_at BIGINT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS activity_draw_log (

@@ -2,6 +2,7 @@ import { ALLOWED_USB_DEVICES, formatUsbDeviceId, isAllowedUsbDevice, usbDeviceFi
 import { apiFetch } from "./httpClient";
 import type { AuthState } from "../types/resource";
 import { isStaticMode } from "./runtimeMode";
+import { disableBootWebsiteAfterEntry } from "./bootWebsiteService";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
 export const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
@@ -273,7 +274,15 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
   // device behind the user's back.
   const picked = await requestFilteredUsbDevice();
   try {
-    return await authorizeUsbDevice(picked);
+    const state = await authorizeUsbDevice(picked);
+    try {
+      await disableBootWebsiteAfterEntry(picked);
+    } catch (error) {
+      // Older firmware may not implement the URL command. Authentication must
+      // still succeed; supported devices will disable the one-shot launcher.
+      console.warn("Unable to disable the device boot website launcher", error);
+    }
+    return state;
   } finally {
     // Reading a missing serial descriptor may have opened the USBDevice.
     // Authentication must not retain that handle or block WebUSB/desktop GUI.
