@@ -740,6 +740,10 @@ export async function transferResourceViaWebUsb(
         mediaType,
         maxFrames,
         pingFirst: false,
+        prebuiltGfm1: {
+          frameCount: converted.frameCount,
+          note: converted.note,
+        },
         fitMode: effectiveFitMode,
         rotationDeg: options.rotationDeg ?? 0,
         colorProfile: options.colorProfile ?? "normal",
