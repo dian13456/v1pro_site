@@ -2,7 +2,11 @@ import { apiFetch } from "./client";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
 const TARGET_VID = 0x0483;
-const TARGET_PID = 0x66aa;
+const TARGET_PIDS = new Set([0x66aa, 0x66ab]);
+
+function isTargetDevice(vendorId, productId) {
+  return vendorId === TARGET_VID && TARGET_PIDS.has(productId);
+}
 
 export function getAuthState() {
   const raw = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -17,7 +21,7 @@ export function getAuthState() {
 
 export function hasValidLocalAuth() {
   const auth = getAuthState();
-  return Boolean(auth?.token && auth?.serial && auth?.vendorId === TARGET_VID && auth?.productId === TARGET_PID);
+  return Boolean(auth?.token && auth?.serial && isTargetDevice(auth?.vendorId, auth?.productId));
 }
 
 export function clearAuthState() {
@@ -94,7 +98,7 @@ export async function requestUsbAndAuthorize() {
   }
 
   const { vendorId, productId, serialNumber } = device;
-  if (vendorId !== TARGET_VID || productId !== TARGET_PID || !serialNumber) {
+  if (!isTargetDevice(vendorId, productId) || !serialNumber) {
     throw new Error("未检测到授权设备");
   }
 

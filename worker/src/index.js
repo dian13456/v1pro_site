@@ -130,7 +130,11 @@ export default {
         return json({ success: false, message: "参数不完整" }, 400);
       }
 
-      if (vid.toUpperCase() !== env.ALLOWED_VID || pid.toUpperCase() !== env.ALLOWED_PID) {
+      const allowedPids = String(env.ALLOWED_PIDS || env.ALLOWED_PID || "")
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean);
+      if (vid.toUpperCase() !== env.ALLOWED_VID || !allowedPids.includes(pid.toUpperCase())) {
         return json({ success: false, message: "设备 VID/PID 不匹配" }, 401);
       }
 

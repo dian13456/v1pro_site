@@ -5,28 +5,33 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 type UserDataPaths struct {
-	LikesPath            string
-	FavoritesPath        string
-	DownloadsPath        string
-	MessagesPath         string
-	ProfilesPath         string
-	PromptPrefsPath      string
-	CreditsPath          string
-	SharesPath           string
-	SharesUnlimitedPath  string
-	LedgerPath           string
-	LikeGrantsPath       string
-	DailyRewardsPath     string
+	LikesPath             string
+	FavoritesPath         string
+	BlockedUploadersPath  string
+	FollowedUploadersPath string
+	DownloadsPath         string
+	MessagesPath          string
+	ProfilesPath          string
+	PromptPrefsPath       string
+	CreditsPath           string
+	SharesPath            string
+	SharesUnlimitedPath   string
+	LedgerPath            string
+	LikeGrantsPath        string
+	DailyRewardsPath      string
 }
 
 type UserDataRepo struct {
-	backend string
-	paths   UserDataPaths
-	mysql   *mysqlStore
+	backend    string
+	paths      UserDataPaths
+	mysql      *mysqlStore
+	blockedMu  sync.Mutex
+	followedMu sync.Mutex
 }
 
 func NewUserDataRepo(paths UserDataPaths) (*UserDataRepo, error) {
@@ -112,6 +117,106 @@ func (r *UserDataRepo) SaveFavorites(store FavoritesStore) error {
 		return r.mysql.saveFavorites(ctx, store)
 	}
 	return saveFavoritesJSON(r.paths.FavoritesPath, store)
+}
+
+func (r *UserDataRepo) ListBlockedUploaders(serial string) ([]string, error) {
+	serial = strings.TrimSpace(serial)
+	if serial == "" {
+		return []string{}, fmt.Errorf("serial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.listBlockedUploaders(ctx, serial)
+	}
+	r.blockedMu.Lock()
+	defer r.blockedMu.Unlock()
+	store, err := loadBlockedUploadersJSON(r.paths.BlockedUploadersPath)
+	if err != nil {
+		return nil, err
+	}
+	return BlockedUploaderSerialsForDevice(store, serial), nil
+}
+
+func (r *UserDataRepo) SetUploaderBlocked(serial, uploaderSerial string, blocked bool) ([]string, error) {
+	serial = strings.TrimSpace(serial)
+	uploaderSerial = strings.ToUpper(strings.TrimSpace(uploaderSerial))
+	if serial == "" || uploaderSerial == "" {
+		return nil, fmt.Errorf("serial or uploaderSerial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.setUploaderBlocked(ctx, serial, uploaderSerial, blocked)
+	}
+	r.blockedMu.Lock()
+	defer r.blockedMu.Unlock()
+	store, err := loadBlockedUploadersJSON(r.paths.BlockedUploadersPath)
+	if err != nil {
+		return nil, err
+	}
+	if store.DeviceBlocked[serial] == nil {
+		store.DeviceBlocked[serial] = map[string]int64{}
+	}
+	if blocked {
+		store.DeviceBlocked[serial][uploaderSerial] = time.Now().Unix()
+	} else {
+		delete(store.DeviceBlocked[serial], uploaderSerial)
+	}
+	if err := saveBlockedUploadersJSON(r.paths.BlockedUploadersPath, store); err != nil {
+		return nil, err
+	}
+	return BlockedUploaderSerialsForDevice(store, serial), nil
+}
+
+func (r *UserDataRepo) ListFollowedUploaders(serial string) ([]string, error) {
+	serial = strings.ToUpper(strings.TrimSpace(serial))
+	if serial == "" {
+		return []string{}, fmt.Errorf("serial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.listFollowedUploaders(ctx, serial)
+	}
+	r.followedMu.Lock()
+	defer r.followedMu.Unlock()
+	store, err := loadFollowedUploadersJSON(r.paths.FollowedUploadersPath)
+	if err != nil {
+		return nil, err
+	}
+	return FollowedUploaderSerialsForDevice(store, serial), nil
+}
+
+func (r *UserDataRepo) SetUploaderFollowed(serial, uploaderSerial string, followed bool) ([]string, error) {
+	serial = strings.ToUpper(strings.TrimSpace(serial))
+	uploaderSerial = strings.ToUpper(strings.TrimSpace(uploaderSerial))
+	if serial == "" || uploaderSerial == "" {
+		return nil, fmt.Errorf("serial or uploaderSerial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.setUploaderFollowed(ctx, serial, uploaderSerial, followed)
+	}
+	r.followedMu.Lock()
+	defer r.followedMu.Unlock()
+	store, err := loadFollowedUploadersJSON(r.paths.FollowedUploadersPath)
+	if err != nil {
+		return nil, err
+	}
+	if store.DeviceFollowed[serial] == nil {
+		store.DeviceFollowed[serial] = map[string]int64{}
+	}
+	if followed {
+		store.DeviceFollowed[serial][uploaderSerial] = time.Now().Unix()
+	} else {
+		delete(store.DeviceFollowed[serial], uploaderSerial)
+	}
+	if err := saveFollowedUploadersJSON(r.paths.FollowedUploadersPath, store); err != nil {
+		return nil, err
+	}
+	return FollowedUploaderSerialsForDevice(store, serial), nil
 }
 
 func (r *UserDataRepo) LoadDownloads() (DownloadsStore, error) {

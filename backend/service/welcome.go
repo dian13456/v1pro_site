@@ -79,20 +79,30 @@ func NormalizeDisplayName(serial, requested string) string {
 }
 
 func ClientIP(remoteAddr string, forwardedFor string, realIP string) string {
-	if realIP = strings.TrimSpace(realIP); realIP != "" {
-		return realIP
+	remote := strings.TrimSpace(remoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		remote = host
 	}
-	if forwardedFor = strings.TrimSpace(forwardedFor); forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
+	remoteIP := net.ParseIP(strings.Trim(remote, "[]"))
+	if remoteIP == nil {
+		return remote
+	}
+
+	// Forwarded headers are attacker-controlled unless the direct peer is the
+	// local reverse proxy. Production nginx connects from loopback.
+	if !remoteIP.IsLoopback() {
+		return remoteIP.String()
+	}
+	if parsed := net.ParseIP(strings.TrimSpace(realIP)); parsed != nil {
+		return parsed.String()
+	}
+	parts := strings.Split(forwardedFor, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parsed := net.ParseIP(strings.TrimSpace(parts[i])); parsed != nil {
+			return parsed.String()
 		}
 	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
-	if err == nil && host != "" {
-		return host
-	}
-	return strings.TrimSpace(remoteAddr)
+	return remoteIP.String()
 }
 
 func isPrivateIP(ip string) bool {
@@ -338,11 +348,11 @@ func (client *DeepSeekClient) GenerateWelcomeMessage(ctx context.Context, wctx W
 func GenerateWelcome(ctx context.Context, deepseek *DeepSeekClient, serial, displayName, clientIP string) WelcomeResult {
 	username := NormalizeDisplayName(serial, displayName)
 	geo := ipWhoResponse{
-		City:     "",
-		Region:   "",
-		Country:  "中国",
-		Timezone: "Asia/Shanghai",
-		Latitude: 22.5431,
+		City:      "",
+		Region:    "",
+		Country:   "中国",
+		Timezone:  "Asia/Shanghai",
+		Latitude:  22.5431,
 		Longitude: 114.0579,
 	}
 

@@ -36,9 +36,9 @@ type mallProductUpsertRequest struct {
 	ImageURL    string   `json:"imageUrl"`
 	ImageURLs   []string `json:"imageUrls"`
 	PriceCents  int64    `json:"priceCents"`
-	Stock       int    `json:"stock"`
+	Stock       int      `json:"stock"`
 	Status      string   `json:"status"`
-	SortOrder   int    `json:"sortOrder"`
+	SortOrder   int      `json:"sortOrder"`
 }
 
 type mallOrderStatusRequest struct {
@@ -262,6 +262,10 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 		}
 		if len(data) == 0 || len(data) > 5*1024*1024 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片大小需在 5MB 以内"})
+			return
+		}
+		if !imagePayloadMatchesContentType(data, contentType) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片内容与文件类型不匹配"})
 			return
 		}
 		buf := make([]byte, 8)

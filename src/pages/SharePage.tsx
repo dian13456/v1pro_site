@@ -25,6 +25,7 @@ import {
   listAuthorizedV1ProDevices,
 } from "../services/v1proWebTransferClient";
 import {
+  convertBrowserRasterWithFfmpeg,
   convertBrowserVideoWithFfmpeg,
   MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES,
   planBrowserFfmpegVideo,
@@ -36,9 +37,9 @@ type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
 
 const VIDEO_PREVIEW_FILTER: Record<VideoColorProfile, string> = {
-  normal: "none",
-  vivid: "saturate(1.10) contrast(1.03) brightness(1.005)",
-  professional: "saturate(1.0) contrast(1.025) brightness(1.005) sepia(.015)",
+  normal: "saturate(1.08) contrast(1.05) brightness(1.002)",
+  vivid: "saturate(1.18) contrast(1.07) brightness(1.003)",
+  professional: "saturate(1.04) contrast(1.05) brightness(1.002) sepia(.015)",
 };
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
@@ -360,13 +361,25 @@ export default function SharePage() {
           });
         }
       } else {
-        result = await client.transferFile(selectedFile, {
+        const converted = await convertBrowserRasterWithFfmpeg(selectedFile, {
           fileName: selectedFile.name,
           mediaType: mediaKind,
           maxFrames: detectedFrames,
           fitMode,
           rotationDeg,
+          colorProfile: videoColorProfile,
+          onStatus: setProgress,
+          onProgress: (ratio) => setProgress(`FFmpeg 本地转换 ${Math.round(ratio * 100)}%`),
+        });
+        result = await client.transferFile(converted.blob, {
+          fileName: selectedFile.name,
+          mediaType: mediaKind,
+          maxFrames: detectedFrames,
           pingFirst: false,
+          prebuiltGfm1: {
+            frameCount: converted.frameCount,
+            note: converted.note,
+          },
           onProgress: transferProgress,
         });
       }
@@ -420,7 +433,7 @@ export default function SharePage() {
                   mediaKind === "video" ? (
                     <video src={previewUrl} muted playsInline className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }} />
                   ) : (
-                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" />
+                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }} />
                   )
                 ) : <span className="mb-1.5 text-[28px]">📁</span>}
                 <span>点击选择文件，或拖拽到此处</span>
@@ -501,7 +514,7 @@ export default function SharePage() {
             </div>
 
             <div>
-              <label className={fieldLabelClass}>视频色彩</label>
+              <label className={fieldLabelClass}>素材色彩</label>
               <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 pt-1 text-[13px] text-[#4a5270]">
                 {([ ["normal", "普通"], ["vivid", "鲜艳"], ["professional", "专业"] ] as const).map(([value, label]) => (
                   <label key={value} className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="videoColor" checked={videoColorProfile === value} onChange={() => setVideoColorProfile(value)} /> {label}</label>

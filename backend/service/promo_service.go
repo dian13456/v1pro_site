@@ -12,6 +12,26 @@ type PromoService struct {
 	jwtSecret string
 }
 
+const (
+	maxPromoOrderNoRunes   = 128
+	maxPromoURLRunes       = 2048
+	maxPromoColorNoteRunes = 200
+	maxPromoAddressRunes   = 500
+	maxPromoAdminNoteRunes = 1000
+)
+
+func validatePromoHTTPURL(raw string) bool {
+	if len([]rune(raw)) > maxPromoURLRunes {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme == "https" || scheme == "http"
+}
+
 func NewPromoService(repo *PromoRepo, jwtSecret string) *PromoService {
 	return &PromoService{repo: repo, jwtSecret: jwtSecret}
 }
@@ -87,8 +107,14 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 	if orderScreenshot == "" {
 		return PromoUserSubmissionView{}, errors.New("请上传订单截图")
 	}
+	if !validatePromoHTTPURL(orderScreenshot) {
+		return PromoUserSubmissionView{}, errors.New("订单截图地址无效")
+	}
 	if orderNo == "" && campaign.ID != PromoCampaignCNCRrepurchase {
 		return PromoUserSubmissionView{}, errors.New("请填写订单号")
+	}
+	if len([]rune(orderNo)) > maxPromoOrderNoRunes {
+		return PromoUserSubmissionView{}, errors.New("订单号过长")
 	}
 
 	item := PromoSubmission{
@@ -107,8 +133,14 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 		if colorNote == "" {
 			return PromoUserSubmissionView{}, errors.New("请填写注塑 V1PRO 颜色备注")
 		}
+		if len([]rune(colorNote)) > maxPromoColorNoteRunes {
+			return PromoUserSubmissionView{}, errors.New("颜色备注过长")
+		}
 		if address == "" {
 			return PromoUserSubmissionView{}, errors.New("请填写收货地址")
+		}
+		if len([]rune(address)) > maxPromoAddressRunes {
+			return PromoUserSubmissionView{}, errors.New("收货地址过长")
 		}
 		addressEnc, err := EncryptActivityField(s.jwtSecret, address)
 		if err != nil {
@@ -122,11 +154,14 @@ func (s *PromoService) Submit(userSerial string, input PromoSubmissionInput) (Pr
 		if videoLink == "" {
 			return PromoUserSubmissionView{}, errors.New("请填写视频链接")
 		}
-		if _, err := url.ParseRequestURI(videoLink); err != nil {
+		if !validatePromoHTTPURL(videoLink) {
 			return PromoUserSubmissionView{}, errors.New("视频链接格式不正确")
 		}
 		if paymentQr == "" {
 			return PromoUserSubmissionView{}, errors.New("请上传收款码")
+		}
+		if !validatePromoHTTPURL(paymentQr) {
+			return PromoUserSubmissionView{}, errors.New("收款码地址无效")
 		}
 		qrEnc, err := EncryptActivityField(s.jwtSecret, paymentQr)
 		if err != nil {
@@ -177,6 +212,10 @@ func (s *PromoService) GetAdminSubmission(id string) (PromoSubmissionPlain, erro
 
 func (s *PromoService) ReviewSubmission(id, status, adminNote string) (PromoSubmissionPlain, error) {
 	status = strings.TrimSpace(status)
+	adminNote = strings.TrimSpace(adminNote)
+	if len([]rune(adminNote)) > maxPromoAdminNoteRunes {
+		return PromoSubmissionPlain{}, errors.New("管理员备注过长")
+	}
 	switch status {
 	case PromoStatusApproved, PromoStatusRejected, PromoStatusPending:
 	default:

@@ -42,10 +42,11 @@ func TestIPRateLimiter(t *testing.T) {
 func TestSanitizePublicResourceCatalog(t *testing.T) {
 	items := []map[string]any{
 		{
-			"id":       1,
-			"title":    "demo",
-			"image":    "https://bucket.cos.ap-guangzhou.myqcloud.com/foo.jpg",
-			"download": "https://bucket.cos.ap-guangzhou.myqcloud.com/foo.jpg",
+			"id":             1,
+			"title":          "demo",
+			"image":          "https://bucket.cos.ap-guangzhou.myqcloud.com/foo.jpg",
+			"download":       "https://bucket.cos.ap-guangzhou.myqcloud.com/foo.jpg",
+			"uploaderSerial": "SN-001",
 		},
 	}
 	out := SanitizePublicResourceCatalog(items)
@@ -54,5 +55,11 @@ func TestSanitizePublicResourceCatalog(t *testing.T) {
 	}
 	if out[0]["image"] != "foo.jpg" {
 		t.Fatalf("expected object key foo.jpg, got %#v", out[0]["image"])
+	}
+	if out[0]["uploaderBlockable"] != true {
+		t.Fatalf("expected uploader to be blockable")
+	}
+	if _, ok := out[0]["uploaderSerial"]; ok {
+		t.Fatalf("uploader serial should remain private")
 	}
 }

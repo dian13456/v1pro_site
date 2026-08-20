@@ -12,7 +12,10 @@ import {
   WEBUSB_TRANSFER_VERSION,
 } from "./v1proWebTransferClient";
 import { guessTransferFileName } from "./v1proTransferService";
-import { convertBrowserVideoWithFfmpeg } from "./browserFfmpegVideoService";
+import {
+  convertBrowserRasterWithFfmpeg,
+  convertBrowserVideoWithFfmpeg,
+} from "./browserFfmpegVideoService";
 
 export { WEBUSB_TRANSFER_VERSION };
 
@@ -419,7 +422,7 @@ export async function transferAlbumResourcesViaWebUsb(
         throw new Error(`当前延时和动画共需 ${requiredFrames} 帧，超过当前设备的 ${frameLimit} 帧容量，请缩短延时、关闭动画或减少图片`);
       }
 
-      const { decodeBlobToFrames, buildGfm1Blob } = await loadBrowserGfm1Module();
+      const { buildGfm1Blob } = await loadBrowserGfm1Module();
       const sourceFrames: Uint8Array[] = [];
 
       for (let index = 0; index < resources.length; index += 1) {
@@ -442,17 +445,19 @@ export async function transferAlbumResourcesViaWebUsb(
         await validateTransferBlob(resource, blob);
 
         callbacks.onStatus?.(`正在转换相册素材 ${index + 1}/${resources.length}…`);
-        const decoded = await decodeBlobToFrames(blob, {
+        const decoded = await convertBrowserRasterWithFfmpeg(blob, {
           fileName: guessTransferFileName(resource),
           mediaType: "image",
-          maxFrames: remainingFrames,
+          maxFrames: 1,
           fitMode: "contain",
-          onFrameEncoded: (frameIndex, frameCount) => {
-            const encodeRatio = frameCount > 0 ? Math.min(1, frameIndex / frameCount) : 0;
-            reportProgress(5 + ((index + 0.4 + encodeRatio * 0.6) / resources.length) * 65);
+          colorProfile: "normal",
+          includeFrames: true,
+          onStatus: callbacks.onStatus,
+          onProgress: (ratio) => {
+            reportProgress(5 + ((index + 0.4 + ratio * 0.6) / resources.length) * 65);
           },
         });
-        if (decoded.frames.length === 0) {
+        if (!decoded.frames?.length) {
           throw new Error(`素材“${resource.title || resource.description}”没有可写入的画面`);
         }
         sourceFrames.push(decoded.frames[0]);
@@ -712,15 +717,30 @@ export async function transferResourceViaWebUsb(
 
       callbacks.onStatus?.("正在编码并传输…");
       reportProgress(38);
-      const result = await client.transferFile(blob, {
+      const maxFrames = client.deviceCapacity?.maxFrames;
+      if (!maxFrames) {
+        throw new Error("无法读取设备容量，请重新连接设备后重试");
+      }
+      const mediaType = resource.materialType === "gif" ? "gif" : "image";
+      const converted = await convertBrowserRasterWithFfmpeg(blob, {
         fileName,
-        mediaType:
-          resource.materialType === "video"
-            ? "video"
-            : resource.materialType === "gif"
-              ? "gif"
-              : "image",
+        mediaType,
+        maxFrames,
+        fitMode: options.fitMode ?? "fill",
+        rotationDeg: options.rotationDeg ?? 0,
+        colorProfile: options.colorProfile ?? "normal",
+        onStatus: callbacks.onStatus,
+        onProgress: (ratio) => reportProgress(38 + ratio * 17),
+      });
+      const result = await client.transferFile(converted.blob, {
+        fileName,
+        mediaType,
+        maxFrames,
         pingFirst: false,
+        prebuiltGfm1: {
+          frameCount: converted.frameCount,
+          note: converted.note,
+        },
         onProgress: (info) => {
           if (info.note && info.sent === 0) {
             callbacks.onStatus?.(info.note);

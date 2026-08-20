@@ -47,6 +47,14 @@ type FavoritesStore struct {
 	DeviceFavorites map[string]map[string]int64 `json:"deviceFavorites"`
 }
 
+type BlockedUploadersStore struct {
+	DeviceBlocked map[string]map[string]int64 `json:"deviceBlocked"`
+}
+
+type FollowedUploadersStore struct {
+	DeviceFollowed map[string]map[string]int64 `json:"deviceFollowed"`
+}
+
 type DeviceDownloadWindow struct {
 	HourKey   string `json:"hourKey"`
 	DayKey    string `json:"dayKey"`
@@ -62,11 +70,13 @@ type DownloadsStore struct {
 }
 
 type MessageEntry struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Content   string `json:"content"`
-	CreatedAt int64  `json:"createdAt"`
-	Serial    string `json:"serial,omitempty"`
+	ID         string `json:"id"`
+	ResourceID string `json:"resourceId,omitempty"`
+	Username   string `json:"username"`
+	Content    string `json:"content"`
+	CreatedAt  int64  `json:"createdAt"`
+	Serial     string `json:"serial,omitempty"`
+	AvatarURL  string `json:"avatarUrl,omitempty"`
 }
 
 type MessagesStore struct {
@@ -111,6 +121,62 @@ func FavoriteResourceIDsForSerial(store FavoritesStore, serial string) []string 
 	ids := make([]string, 0, len(pairs))
 	for _, pair := range pairs {
 		ids = append(ids, pair.id)
+	}
+	return ids
+}
+
+func BlockedUploaderSerialsForDevice(store BlockedUploadersStore, serial string) []string {
+	deviceMap := store.DeviceBlocked[serial]
+	if len(deviceMap) == 0 {
+		return []string{}
+	}
+	type blockedPair struct {
+		id string
+		ts int64
+	}
+	pairs := make([]blockedPair, 0, len(deviceMap))
+	for id, ts := range deviceMap {
+		if strings.TrimSpace(id) != "" {
+			pairs = append(pairs, blockedPair{id: id, ts: ts})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].ts == pairs[j].ts {
+			return pairs[i].id > pairs[j].id
+		}
+		return pairs[i].ts > pairs[j].ts
+	})
+	ids := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		ids = append(ids, pair.id)
+	}
+	return ids
+}
+
+func FollowedUploaderSerialsForDevice(store FollowedUploadersStore, serial string) []string {
+	deviceMap := store.DeviceFollowed[serial]
+	if len(deviceMap) == 0 {
+		return []string{}
+	}
+	type followedPair struct {
+		serial string
+		ts     int64
+	}
+	pairs := make([]followedPair, 0, len(deviceMap))
+	for uploaderSerial, ts := range deviceMap {
+		if strings.TrimSpace(uploaderSerial) != "" {
+			pairs = append(pairs, followedPair{serial: uploaderSerial, ts: ts})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].ts == pairs[j].ts {
+			return pairs[i].serial > pairs[j].serial
+		}
+		return pairs[i].ts > pairs[j].ts
+	})
+	ids := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		ids = append(ids, pair.serial)
 	}
 	return ids
 }
@@ -382,6 +448,14 @@ func NewEmptyFavoritesStore() FavoritesStore {
 		Counts:          map[string]int{},
 		DeviceFavorites: map[string]map[string]int64{},
 	}
+}
+
+func NewEmptyBlockedUploadersStore() BlockedUploadersStore {
+	return BlockedUploadersStore{DeviceBlocked: map[string]map[string]int64{}}
+}
+
+func NewEmptyFollowedUploadersStore() FollowedUploadersStore {
+	return FollowedUploadersStore{DeviceFollowed: map[string]map[string]int64{}}
 }
 
 func NewEmptyDownloadsStore(now time.Time) DownloadsStore {

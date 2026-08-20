@@ -63,6 +63,45 @@ func (m *mysqlStore) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate failed: %w\nSQL: %s", err, stmt)
 		}
 	}
+	// Keep this additive migration in the binary as production deployments only
+	// replace jiadian-api and intentionally leave the server schema file intact.
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS user_avatars (
+		serial VARCHAR(191) NOT NULL PRIMARY KEY,
+		avatar_key VARCHAR(512) NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate user avatars failed: %w", err)
+	}
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS blocked_uploaders (
+		viewer_serial VARCHAR(191) NOT NULL,
+		blocked_serial VARCHAR(191) NOT NULL,
+		created_at BIGINT NOT NULL DEFAULT 0,
+		PRIMARY KEY (viewer_serial, blocked_serial),
+		KEY idx_blocked_viewer_created (viewer_serial, created_at DESC)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate blocked uploaders failed: %w", err)
+	}
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS followed_uploaders (
+		viewer_serial VARCHAR(191) NOT NULL,
+		followed_serial VARCHAR(191) NOT NULL,
+		created_at BIGINT NOT NULL DEFAULT 0,
+		PRIMARY KEY (viewer_serial, followed_serial),
+		KEY idx_followed_viewer_created (viewer_serial, created_at DESC)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate followed uploaders failed: %w", err)
+	}
+	var resourceIDColumnCount int
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND COLUMN_NAME = 'resource_id'
+	`).Scan(&resourceIDColumnCount); err != nil {
+		return fmt.Errorf("check messages resource_id column failed: %w", err)
+	}
+	if resourceIDColumnCount == 0 {
+		if _, err := m.db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN resource_id VARCHAR(64) NOT NULL DEFAULT '' AFTER id`); err != nil {
+			return fmt.Errorf("migrate messages resource_id failed: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -287,6 +326,84 @@ func (m *mysqlStore) saveFavorites(ctx context.Context, store FavoritesStore) er
 	return tx.Commit()
 }
 
+func (m *mysqlStore) listBlockedUploaders(ctx context.Context, serial string) ([]string, error) {
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT blocked_serial FROM blocked_uploaders WHERE viewer_serial = ? ORDER BY created_at DESC, blocked_serial DESC`,
+		serial,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var blockedSerial string
+		if err := rows.Scan(&blockedSerial); err != nil {
+			return nil, err
+		}
+		ids = append(ids, blockedSerial)
+	}
+	return ids, rows.Err()
+}
+
+func (m *mysqlStore) setUploaderBlocked(ctx context.Context, serial, uploaderSerial string, blocked bool) ([]string, error) {
+	if blocked {
+		_, err := m.db.ExecContext(ctx,
+			`INSERT INTO blocked_uploaders (viewer_serial, blocked_serial, created_at) VALUES (?, ?, ?)
+			 ON DUPLICATE KEY UPDATE created_at = VALUES(created_at)`,
+			serial, uploaderSerial, time.Now().Unix(),
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if _, err := m.db.ExecContext(ctx,
+		`DELETE FROM blocked_uploaders WHERE viewer_serial = ? AND blocked_serial = ?`,
+		serial, uploaderSerial,
+	); err != nil {
+		return nil, err
+	}
+	return m.listBlockedUploaders(ctx, serial)
+}
+
+func (m *mysqlStore) listFollowedUploaders(ctx context.Context, serial string) ([]string, error) {
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT followed_serial FROM followed_uploaders WHERE viewer_serial = ? ORDER BY created_at DESC, followed_serial DESC`,
+		serial,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var followedSerial string
+		if err := rows.Scan(&followedSerial); err != nil {
+			return nil, err
+		}
+		ids = append(ids, followedSerial)
+	}
+	return ids, rows.Err()
+}
+
+func (m *mysqlStore) setUploaderFollowed(ctx context.Context, serial, uploaderSerial string, followed bool) ([]string, error) {
+	if followed {
+		_, err := m.db.ExecContext(ctx,
+			`INSERT INTO followed_uploaders (viewer_serial, followed_serial, created_at) VALUES (?, ?, ?)
+			 ON DUPLICATE KEY UPDATE created_at = VALUES(created_at)`,
+			serial, uploaderSerial, time.Now().Unix(),
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if _, err := m.db.ExecContext(ctx,
+		`DELETE FROM followed_uploaders WHERE viewer_serial = ? AND followed_serial = ?`,
+		serial, uploaderSerial,
+	); err != nil {
+		return nil, err
+	}
+	return m.listFollowedUploaders(ctx, serial)
+}
+
 func (m *mysqlStore) loadDownloads(ctx context.Context) (DownloadsStore, error) {
 	store := NewEmptyDownloadsStore(time.Now())
 	var weekKey string
@@ -413,7 +530,7 @@ func (m *mysqlStore) saveDownloads(ctx context.Context, store DownloadsStore) er
 func (m *mysqlStore) loadMessages(ctx context.Context) (MessagesStore, error) {
 	store := NewEmptyMessagesStore()
 	rows, err := m.db.QueryContext(ctx,
-		`SELECT id, serial, username, content, created_at FROM messages ORDER BY created_at ASC`,
+		`SELECT id, resource_id, serial, username, content, created_at FROM messages ORDER BY created_at ASC`,
 	)
 	if err != nil {
 		return store, err
@@ -421,7 +538,7 @@ func (m *mysqlStore) loadMessages(ctx context.Context) (MessagesStore, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var entry MessageEntry
-		if err := rows.Scan(&entry.ID, &entry.Serial, &entry.Username, &entry.Content, &entry.CreatedAt); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.ResourceID, &entry.Serial, &entry.Username, &entry.Content, &entry.CreatedAt); err != nil {
 			return store, err
 		}
 		store.Messages = append(store.Messages, entry)
@@ -441,8 +558,8 @@ func (m *mysqlStore) saveMessages(ctx context.Context, store MessagesStore) erro
 	}
 	for _, entry := range store.Messages {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO messages (id, serial, username, content, created_at) VALUES (?, ?, ?, ?, ?)`,
-			entry.ID, entry.Serial, entry.Username, entry.Content, entry.CreatedAt,
+			`INSERT INTO messages (id, resource_id, serial, username, content, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			entry.ID, entry.ResourceID, entry.Serial, entry.Username, entry.Content, entry.CreatedAt,
 		); err != nil {
 			return err
 		}
@@ -451,7 +568,7 @@ func (m *mysqlStore) saveMessages(ctx context.Context, store MessagesStore) erro
 }
 
 func (m *mysqlStore) loadUserProfiles(ctx context.Context) (UserProfilesStore, error) {
-	store := UserProfilesStore{Profiles: map[string]string{}}
+	store := UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}
 	rows, err := m.db.QueryContext(ctx, `SELECT serial, display_name FROM user_profiles`)
 	if err != nil {
 		return store, err
@@ -464,7 +581,22 @@ func (m *mysqlStore) loadUserProfiles(ctx context.Context) (UserProfilesStore, e
 		}
 		store.Profiles[serial] = displayName
 	}
-	return store, rows.Err()
+	if err := rows.Err(); err != nil {
+		return store, err
+	}
+	avatarRows, err := m.db.QueryContext(ctx, `SELECT serial, avatar_key FROM user_avatars`)
+	if err != nil {
+		return store, err
+	}
+	defer avatarRows.Close()
+	for avatarRows.Next() {
+		var serial, avatarKey string
+		if err := avatarRows.Scan(&serial, &avatarKey); err != nil {
+			return store, err
+		}
+		store.Avatars[serial] = avatarKey
+	}
+	return store, avatarRows.Err()
 }
 
 func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesStore) error {
@@ -477,6 +609,9 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 	if _, err := tx.ExecContext(ctx, `DELETE FROM user_profiles`); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_avatars`); err != nil {
+		return err
+	}
 	for serial, displayName := range store.Profiles {
 		if strings.TrimSpace(displayName) == "" {
 			continue
@@ -484,6 +619,17 @@ func (m *mysqlStore) saveUserProfiles(ctx context.Context, store UserProfilesSto
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO user_profiles (serial, display_name) VALUES (?, ?)`,
 			serial, displayName,
+		); err != nil {
+			return err
+		}
+	}
+	for serial, avatarKey := range store.Avatars {
+		if strings.TrimSpace(avatarKey) == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO user_avatars (serial, avatar_key) VALUES (?, ?)`,
+			serial, avatarKey,
 		); err != nil {
 			return err
 		}

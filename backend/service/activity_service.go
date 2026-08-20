@@ -464,6 +464,7 @@ func (s *ActivityService) GetPrizeInfoStatus(userSerial string) (map[string]any,
 		"activityTitle":  activity.Title,
 		"contactStatus":  winner.ContactStatus,
 		"shippingStatus": winner.ShippingStatus,
+		"trackingNo":     winner.TrackingNo,
 		"hasSubmitted":   hasInfo,
 		"shippingDays":   activity.ShippingDays,
 	}, nil
@@ -608,8 +609,8 @@ func (s *ActivityService) ListPublicWinners(activityID string) (PublicWinnersVie
 	}, nil
 }
 
-func (s *ActivityService) RepoUpdateWinnerShipping(winnerID, status string) error {
-	return s.repo.UpdateWinnerShipping(winnerID, status)
+func (s *ActivityService) RepoUpdateWinnerShipping(winnerID, status, trackingNo string) error {
+	return s.repo.UpdateWinnerShipping(winnerID, status, trackingNo)
 }
 
 func (s *ActivityService) RepoListDevices(limit int) ([]DeviceRegistryEntry, error) {
@@ -663,4 +664,3 @@ func (s *ActivityService) AdminUpsertActivity(req ActivityAdminUpsertInput) (Act
 	}
 	return activity, nil
 }
-

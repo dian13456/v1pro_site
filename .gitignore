@@ -7,7 +7,15 @@ dist
 backend/.env
 backend/.api_sign_secret.local
 backend/*.exe
+backend/jiadian-api*
+backend/jiadian-hub-backend
+backend/smoke_ims
+jiadian-api.exe
 tools/
 github-上传与保密说明.md
 __pycache__/
 *.pyc
+.codex-tmp/
+.local-run/
+.sdk-tmp/
+*.code-workspace

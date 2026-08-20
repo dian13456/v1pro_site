@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.23";
+} from "./v1pro-constants.js?v=1.2.28";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -211,16 +211,18 @@ export function sourceToRgb565(
     ? fillLcdImageData(renderSource, renderW, renderH)
     : fitToLcdImageData(renderSource, renderW, renderH)).data;
   const profiles = {
+    // Keep these values in sync with browserFfmpegVideoService.colorFilters.
+    // Moderate gains avoid crushed highlights after RGB565 quantisation.
     normal: {
-      saturation: 1, contrast: 1, brightness: 0, gamma: 1,
+      saturation: 1.08, contrast: 1.05, brightness: 0.002, gamma: 1.01,
       red: 1, green: 1, blue: 1,
     },
     vivid: {
-      saturation: 1.10, contrast: 1.03, brightness: 0.002, gamma: 1.01,
+      saturation: 1.18, contrast: 1.07, brightness: 0.003, gamma: 1.012,
       red: 1.005, green: 1, blue: 0.995,
     },
     professional: {
-      saturation: 1, contrast: 1.025, brightness: 0.002, gamma: 1.01,
+      saturation: 1.04, contrast: 1.05, brightness: 0.002, gamma: 1.01,
       red: 1.01, green: 1, blue: 0.99,
     },
   };
@@ -631,6 +633,7 @@ export async function planGfm1Encode(blob, opts = {}) {
             bitmap.height,
             opts.fitMode,
             opts.rotationDeg,
+            opts.colorProfile,
           );
           onFrameEncoded?.(1, 1);
           yield rgb;
@@ -648,6 +651,7 @@ export async function planGfm1Encode(blob, opts = {}) {
       onFrameEncoded,
       opts.fitMode,
       opts.rotationDeg,
+      opts.colorProfile,
     );
   } catch (err) {
     console.warn("[V1PRO] gifuct GIF failed:", err);
@@ -661,6 +665,7 @@ export async function planGfm1Encode(blob, opts = {}) {
         onFrameEncoded,
         opts.fitMode,
         opts.rotationDeg,
+        opts.colorProfile,
       );
     } catch (err) {
       console.warn("[V1PRO] ImageDecoder GIF failed:", err);
@@ -684,6 +689,7 @@ export async function planGfm1Encode(blob, opts = {}) {
           bitmap.height,
           opts.fitMode,
           opts.rotationDeg,
+          opts.colorProfile,
         );
         onFrameEncoded?.(1, 1);
         yield rgb;
@@ -745,8 +751,8 @@ function loadHtmlImage(url) {
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
-  const gifuct = await import("./gifuct-bundle.js?v=1.2.23");
+async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg, colorProfile) {
+  const gifuct = await import("./gifuct-bundle.js?v=1.2.27");
   const parseGIF = gifuct.parseGIF || gifuct.default?.parseGIF;
   const decompressFrames = gifuct.decompressFrames || gifuct.default?.decompressFrames;
   if (typeof parseGIF !== "function" || typeof decompressFrames !== "function") {
@@ -793,7 +799,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotat
         patchData.data.set(frame.patch);
         pCtx.putImageData(patchData, 0, 0);
         gCtx.drawImage(pCanvas, frame.dims.left, frame.dims.top);
-        const rgb = sourceToRgb565(gifCanvas, gifW, gifH, fitMode, rotationDeg);
+        const rgb = sourceToRgb565(gifCanvas, gifW, gifH, fitMode, rotationDeg, colorProfile);
         onFrameEncoded?.(i + 1, frameCount);
         yield rgb;
         if (frame.disposalType === 2) {
@@ -812,7 +818,7 @@ async function planGifWithGifuct(blob, maxFrames, onFrameEncoded, fitMode, rotat
  * @param {number} maxFrames
  * @param {(index: number, total: number) => void | null} onFrameEncoded
  */
-async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg) {
+async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode, rotationDeg, colorProfile) {
   const buffer = await blob.arrayBuffer();
   const decoder = new ImageDecoder({ data: buffer, type: "image/gif" });
 
@@ -871,6 +877,7 @@ async function planGifWithImageDecoder(blob, maxFrames, onFrameEncoded, fitMode,
               bitmap.displayHeight,
               fitMode,
               rotationDeg,
+              colorProfile,
             );
             onFrameEncoded?.(i + 1, frameCount);
             yield rgb;

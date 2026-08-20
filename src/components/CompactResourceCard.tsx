@@ -36,6 +36,9 @@ export function CompactResourceCard({
   hidden = false,
   hiding = false,
   onHiddenChange,
+  followed = false,
+  following = false,
+  onFollow,
   selectionMode = false,
   selected = false,
   onToggleSelection,
@@ -53,6 +56,9 @@ export function CompactResourceCard({
   hidden?: boolean;
   hiding?: boolean;
   onHiddenChange?: (resource: ResourceItem, hidden: boolean) => void;
+  followed?: boolean;
+  following?: boolean;
+  onFollow?: (resource: ResourceItem, followed: boolean) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelection?: (resource: ResourceItem) => void;
@@ -179,21 +185,42 @@ export function CompactResourceCard({
           </div>
         </div>
         {resource.author ? (
-          <Link
-            to={`/creator/${encodeURIComponent(resource.author)}`}
-            onClick={(event) => event.stopPropagation()}
-            className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2.5 text-xs text-slate-500 transition hover:text-indigo-600 dark:border-slate-800 dark:text-slate-400 dark:hover:text-indigo-300"
-            title={`查看 ${resource.author} 的全部素材`}
-          >
-            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-xs font-semibold text-white shadow-sm">
-              {creatorAvatarUrl ? (
-                <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
-              ) : (
-                resource.author.trim().slice(0, 1).toUpperCase() || "👤"
-              )}
-            </span>
-            <span className="min-w-0 truncate font-medium">{resource.author}</span>
-          </Link>
+          <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+            <Link
+              to={`/creator/${encodeURIComponent(resource.author)}`}
+              onClick={(event) => event.stopPropagation()}
+              className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500 transition hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300"
+              title={`查看 ${resource.author} 的全部素材`}
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-xs font-semibold text-white shadow-sm">
+                {creatorAvatarUrl ? (
+                  <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  resource.author.trim().slice(0, 1).toUpperCase() || "👤"
+                )}
+              </span>
+              <span className="min-w-0 truncate font-medium">{resource.author}</span>
+            </Link>
+            {onFollow ? (
+              <button
+                type="button"
+                aria-label={followed ? `取消关注 ${resource.author}` : `关注 ${resource.author}`}
+                aria-pressed={followed}
+                disabled={following}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onFollow(resource, !followed);
+                }}
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  followed
+                    ? "border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-300"
+                    : "border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                }`}
+              >
+                {following ? "…" : followed ? "已关注" : "+ 关注"}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </article>

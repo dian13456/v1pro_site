@@ -13,6 +13,20 @@ type MallService struct {
 	secret string
 }
 
+const (
+	maxMallOrderItems         = 20
+	maxMallItemQuantity       = 100
+	maxMallNameRunes          = 64
+	maxMallContactRunes       = 64
+	maxMallRegionRunes        = 64
+	maxMallAddressRunes       = 500
+	maxMallRemarkRunes        = 500
+	maxMallProductTitle       = 200
+	maxMallProductDescription = 5000
+	maxMallProductImages      = 10
+	maxMallImageURLRunes      = 2048
+)
+
 func NewMallService(repo *MallRepo, secret string) *MallService {
 	return &MallService{repo: repo, secret: secret}
 }
@@ -69,11 +83,14 @@ func (s *MallService) UpsertProduct(input MallProduct) (MallProduct, error) {
 	if input.Title == "" {
 		return MallProduct{}, errors.New("商品标题不能为空")
 	}
-	if input.PriceCents < 0 {
-		return MallProduct{}, errors.New("价格不能为负数")
+	if len([]rune(input.Title)) > maxMallProductTitle || len([]rune(input.Description)) > maxMallProductDescription {
+		return MallProduct{}, errors.New("商品标题或描述过长")
 	}
-	if input.Stock < 0 {
-		return MallProduct{}, errors.New("库存不能为负数")
+	if input.PriceCents < 0 || input.PriceCents > 100000000 {
+		return MallProduct{}, errors.New("商品价格超出允许范围")
+	}
+	if input.Stock < 0 || input.Stock > 1000000 {
+		return MallProduct{}, errors.New("商品库存超出允许范围")
 	}
 	if input.Status == "" {
 		input.Status = MallProductOnSale
@@ -82,6 +99,14 @@ func (s *MallService) UpsertProduct(input MallProduct) (MallProduct, error) {
 		return MallProduct{}, errors.New("商品状态无效")
 	}
 	NormalizeMallProductImages(&input)
+	if len(input.ImageURLs) > maxMallProductImages {
+		return MallProduct{}, errors.New("商品图片不能超过 10 张")
+	}
+	for _, imageURL := range input.ImageURLs {
+		if len([]rune(imageURL)) > maxMallImageURLRunes {
+			return MallProduct{}, errors.New("商品图片地址过长")
+		}
+	}
 	product, err := s.repo.UpsertProduct(input)
 	if err != nil {
 		return MallProduct{}, err
@@ -129,6 +154,9 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	if len(input.Items) == 0 {
 		return MallOrderPublic{}, errors.New("请至少选择一件商品")
 	}
+	if len(input.Items) > maxMallOrderItems {
+		return MallOrderPublic{}, errors.New("单次订单商品种类过多")
+	}
 	name := strings.TrimSpace(input.Shipping.Name)
 	phone := strings.TrimSpace(input.Shipping.Phone)
 	qq := strings.TrimSpace(input.Shipping.QQ)
@@ -144,13 +172,21 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	if !ValidateQQNumber(qq) {
 		return MallOrderPublic{}, errors.New("QQ 号格式不正确")
 	}
+	if len([]rune(name)) > maxMallNameRunes || len([]rune(input.Shipping.Wechat)) > maxMallContactRunes ||
+		len([]rune(province)) > maxMallRegionRunes || len([]rune(city)) > maxMallRegionRunes ||
+		len([]rune(address)) > maxMallAddressRunes || len([]rune(input.Remark)) > maxMallRemarkRunes {
+		return MallOrderPublic{}, errors.New("收货信息或备注过长")
+	}
 
 	merged := map[string]int{}
 	for _, item := range input.Items {
 		pid := strings.TrimSpace(item.ProductID)
 		qty := item.Quantity
-		if pid == "" || qty <= 0 {
+		if pid == "" || len(pid) > 64 || qty <= 0 || qty > maxMallItemQuantity {
 			return MallOrderPublic{}, errors.New("商品数量无效")
+		}
+		if merged[pid] > maxMallItemQuantity-qty {
+			return MallOrderPublic{}, errors.New("单件商品数量过多")
 		}
 		merged[pid] += qty
 	}

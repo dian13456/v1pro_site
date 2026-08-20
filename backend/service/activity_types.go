@@ -18,14 +18,14 @@ const (
 	ContactStatusPending = "pending"
 	ContactStatusFilled  = "filled"
 
-	ShippingStatusPending  = "pending"
-	ShippingStatusShipped  = "shipped"
+	ShippingStatusPending = "pending"
+	ShippingStatusShipped = "shipped"
 
-	JoinErrorSNNotFound     = "SN不存在"
-	JoinErrorAlreadyJoined  = "该设备已经参与"
-	JoinErrorSNFormat       = "SN格式错误"
-	JoinErrorActivityEnded  = "活动已结束"
-	JoinErrorActivityNotYet = "活动尚未开始"
+	JoinErrorSNNotFound         = "SN不存在"
+	JoinErrorAlreadyJoined      = "该设备已经参与"
+	JoinErrorSNFormat           = "SN格式错误"
+	JoinErrorActivityEnded      = "活动已结束"
+	JoinErrorActivityNotYet     = "活动尚未开始"
 	JoinErrorRegistrationClosed = "今日报名已截止，请明日 0:00 后再参与"
 )
 
@@ -70,6 +70,7 @@ type Winner struct {
 	SeedHash       string `json:"seedHash"`
 	ContactStatus  string `json:"contactStatus"`
 	ShippingStatus string `json:"shippingStatus"`
+	TrackingNo     string `json:"trackingNo,omitempty"`
 	DrawPeriod     string `json:"drawPeriod"`
 }
 
@@ -144,10 +145,10 @@ type ActivityPublicView struct {
 	RegistrationOpen    bool   `json:"registrationOpen"`
 	RegistrationMessage string `json:"registrationMessage,omitempty"`
 	HasJoined           bool   `json:"hasJoined,omitempty"`
-	JoinedSN       string `json:"joinedSn,omitempty"`
-	IsWinner       bool  `json:"isWinner,omitempty"`
-	WinnerID       string `json:"winnerId,omitempty"`
-	ContactStatus  string `json:"contactStatus,omitempty"`
+	JoinedSN            string `json:"joinedSn,omitempty"`
+	IsWinner            bool   `json:"isWinner,omitempty"`
+	WinnerID            string `json:"winnerId,omitempty"`
+	ContactStatus       string `json:"contactStatus,omitempty"`
 }
 
 type WinnerPublicRecord struct {

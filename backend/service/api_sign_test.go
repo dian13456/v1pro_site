@@ -76,6 +76,39 @@ func TestAPISignMiddlewareAcceptsValidSignature(t *testing.T) {
 	}
 }
 
+func TestAPISignMiddlewareDoesNotCacheInvalidSignatureNonce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)
+	r := gin.New()
+	r.Use(verifier.Middleware())
+	r.GET("/api/resources", func(c *gin.Context) {
+		c.Status(204)
+	})
+
+	unixTS := strconv.FormatInt(time.Now().Unix(), 10)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("GET", "/api/resources", nil)
+		req.Header.Set(HeaderAPITimestamp, unixTS)
+		req.Header.Set(HeaderAPINonce, "same-invalid-signature-nonce")
+		req.Header.Set(HeaderAPISignature, strings.Repeat("0", 64))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != 401 || !strings.Contains(rec.Body.String(), "签名无效") {
+			t.Fatalf("attempt %d: expected invalid signature, got %d body=%s", i+1, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestAPINonceCacheIsBounded(t *testing.T) {
+	cache := newAPINonceCache(time.Minute, 2)
+	if !cache.Use("nonce-1", time.Now()) || !cache.Use("nonce-2", time.Now()) {
+		t.Fatal("expected initial nonces to be accepted")
+	}
+	if cache.Use("nonce-3", time.Now()) {
+		t.Fatal("expected cache capacity to reject additional nonce")
+	}
+}
+
 func TestAPISignMiddlewareSkipsMallImageData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	verifier := NewAPISignVerifier("sign-secret", time.Minute, true)

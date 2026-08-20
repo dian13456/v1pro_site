@@ -32,7 +32,29 @@ func openActivityMySQLStore(dsn string) (*activityMySQLStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &activityMySQLStore{db: db}, nil
+	store := &activityMySQLStore{db: db}
+	if err := store.ensureTrackingNoColumn(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func (m *activityMySQLStore) ensureTrackingNoColumn(ctx context.Context) error {
+	var count int
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'winner' AND COLUMN_NAME = 'tracking_no'`).Scan(&count); err != nil {
+		return fmt.Errorf("check winner tracking_no column: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := m.db.ExecContext(ctx, `ALTER TABLE winner ADD COLUMN tracking_no VARCHAR(128) NOT NULL DEFAULT '' AFTER shipping_status`); err != nil {
+		return fmt.Errorf("add winner tracking_no column: %w", err)
+	}
+	return nil
 }
 
 func (m *activityMySQLStore) Close() error {
@@ -242,10 +264,10 @@ func (m *activityMySQLStore) hasWinnerSN(ctx context.Context, activityID, sn str
 
 func (m *activityMySQLStore) addWinner(ctx context.Context, winner Winner) error {
 	_, err := m.db.ExecContext(ctx, `
-		INSERT INTO winner (id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, draw_period)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO winner (id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, tracking_no, draw_period)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		winner.ID, winner.ActivityID, winner.JoinID, winner.SN, winner.UserSerial, winner.WinnerTime, winner.SeedHash,
-		winner.ContactStatus, winner.ShippingStatus, winner.DrawPeriod,
+		winner.ContactStatus, winner.ShippingStatus, winner.TrackingNo, winner.DrawPeriod,
 	)
 	return err
 }
@@ -296,14 +318,14 @@ func (m *activityMySQLStore) addDrawLog(ctx context.Context, entry DrawLogEntry)
 
 func (m *activityMySQLStore) getWinnerByUser(ctx context.Context, activityID, userSerial string) (Winner, bool, error) {
 	row := m.db.QueryRowContext(ctx, `
-		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, draw_period
+		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, tracking_no, draw_period
 		FROM winner WHERE activity_id = ? AND user_serial = ? ORDER BY winner_time DESC LIMIT 1`, activityID, userSerial)
 	return scanWinnerRow(row)
 }
 
 func (m *activityMySQLStore) getWinner(ctx context.Context, id string) (Winner, bool, error) {
 	row := m.db.QueryRowContext(ctx, `
-		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, draw_period
+		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, tracking_no, draw_period
 		FROM winner WHERE id = ?`, id)
 	return scanWinnerRow(row)
 }
@@ -311,7 +333,7 @@ func (m *activityMySQLStore) getWinner(ctx context.Context, id string) (Winner, 
 func scanWinnerRow(row *sql.Row) (Winner, bool, error) {
 	var winner Winner
 	err := row.Scan(&winner.ID, &winner.ActivityID, &winner.JoinID, &winner.SN, &winner.UserSerial, &winner.WinnerTime,
-		&winner.SeedHash, &winner.ContactStatus, &winner.ShippingStatus, &winner.DrawPeriod)
+		&winner.SeedHash, &winner.ContactStatus, &winner.ShippingStatus, &winner.TrackingNo, &winner.DrawPeriod)
 	if err == sql.ErrNoRows {
 		return Winner{}, false, nil
 	}
@@ -323,7 +345,7 @@ func scanWinnerRow(row *sql.Row) (Winner, bool, error) {
 
 func (m *activityMySQLStore) listWinners(ctx context.Context, activityID string) ([]Winner, error) {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, draw_period
+		SELECT id, activity_id, join_id, sn, user_serial, winner_time, seed_hash, contact_status, shipping_status, tracking_no, draw_period
 		FROM winner WHERE activity_id = ? ORDER BY winner_time DESC`, activityID)
 	if err != nil {
 		return nil, err
@@ -333,7 +355,7 @@ func (m *activityMySQLStore) listWinners(ctx context.Context, activityID string)
 	for rows.Next() {
 		var winner Winner
 		if err := rows.Scan(&winner.ID, &winner.ActivityID, &winner.JoinID, &winner.SN, &winner.UserSerial, &winner.WinnerTime,
-			&winner.SeedHash, &winner.ContactStatus, &winner.ShippingStatus, &winner.DrawPeriod); err != nil {
+			&winner.SeedHash, &winner.ContactStatus, &winner.ShippingStatus, &winner.TrackingNo, &winner.DrawPeriod); err != nil {
 			return nil, err
 		}
 		out = append(out, winner)
@@ -341,8 +363,12 @@ func (m *activityMySQLStore) listWinners(ctx context.Context, activityID string)
 	return out, rows.Err()
 }
 
-func (m *activityMySQLStore) updateWinnerShipping(ctx context.Context, id, shippingStatus string) error {
-	_, err := m.db.ExecContext(ctx, `UPDATE winner SET shipping_status = ? WHERE id = ?`, shippingStatus, id)
+func (m *activityMySQLStore) updateWinnerShipping(ctx context.Context, id, shippingStatus, trackingNo string) error {
+	if strings.TrimSpace(trackingNo) == "" {
+		_, err := m.db.ExecContext(ctx, `UPDATE winner SET shipping_status = ? WHERE id = ?`, shippingStatus, id)
+		return err
+	}
+	_, err := m.db.ExecContext(ctx, `UPDATE winner SET shipping_status = ?, tracking_no = ? WHERE id = ?`, shippingStatus, trackingNo, id)
 	return err
 }
 

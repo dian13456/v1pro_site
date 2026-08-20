@@ -90,6 +90,44 @@ func saveFavoritesJSON(path string, store FavoritesStore) error {
 	return saveJSONFile(path, store)
 }
 
+func loadBlockedUploadersJSON(path string) (BlockedUploadersStore, error) {
+	var store BlockedUploadersStore
+	err := loadJSONFile(path, &store, func() any { return NewEmptyBlockedUploadersStore() })
+	if err != nil {
+		return BlockedUploadersStore{}, err
+	}
+	if store.DeviceBlocked == nil {
+		store.DeviceBlocked = map[string]map[string]int64{}
+	}
+	return store, nil
+}
+
+func saveBlockedUploadersJSON(path string, store BlockedUploadersStore) error {
+	if store.DeviceBlocked == nil {
+		store.DeviceBlocked = map[string]map[string]int64{}
+	}
+	return saveJSONFile(path, store)
+}
+
+func loadFollowedUploadersJSON(path string) (FollowedUploadersStore, error) {
+	var store FollowedUploadersStore
+	err := loadJSONFile(path, &store, func() any { return NewEmptyFollowedUploadersStore() })
+	if err != nil {
+		return FollowedUploadersStore{}, err
+	}
+	if store.DeviceFollowed == nil {
+		store.DeviceFollowed = map[string]map[string]int64{}
+	}
+	return store, nil
+}
+
+func saveFollowedUploadersJSON(path string, store FollowedUploadersStore) error {
+	if store.DeviceFollowed == nil {
+		store.DeviceFollowed = map[string]map[string]int64{}
+	}
+	return saveJSONFile(path, store)
+}
+
 func loadDownloadsJSON(path string) (DownloadsStore, error) {
 	var store DownloadsStore
 	err := loadJSONFile(path, &store, func() any { return NewEmptyDownloadsStore(time.Now()) })

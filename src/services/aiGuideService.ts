@@ -1,5 +1,5 @@
 import type { ResourceItem } from "../types/resource";
-import type { AiGuideResponse } from "../types/aiGuide";
+import type { AiGuideResponse, AiGuideResult } from "../types/aiGuide";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
@@ -47,7 +47,7 @@ function scoreResource(resource: ResourceItem, tokens: string[]): number {
   return score;
 }
 
-function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGuideResponse {
+function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGuideResult {
   const tokens = tokenizeQuestion(question);
   const ranked = resources
     .map((resource) => ({ resource, score: scoreResource(resource, tokens) }))
@@ -73,7 +73,7 @@ function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGu
   };
 }
 
-export async function askAiGuide(question: string): Promise<AiGuideResponse> {
+export async function askAiGuide(question: string): Promise<AiGuideResult> {
   const trimmed = question.trim();
   if (!trimmed) {
     throw new Error("请输入你想找的内容");

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -17,10 +18,11 @@ import (
 )
 
 const (
-	HeaderAPITimestamp = "X-Api-Timestamp"
-	HeaderAPINonce     = "X-Api-Nonce"
-	HeaderAPISignature = "X-Api-Signature"
-	apiSignClientSalt  = "jiadian-api-sign-v1"
+	HeaderAPITimestamp          = "X-Api-Timestamp"
+	HeaderAPINonce              = "X-Api-Nonce"
+	HeaderAPISignature          = "X-Api-Signature"
+	apiSignClientSalt           = "jiadian-api-sign-v1"
+	defaultNonceCacheMaxEntries = 100000
 )
 
 // APISignVerifier validates HMAC request signatures on /api routes.
@@ -68,8 +70,20 @@ func NewAPISignVerifier(secret string, maxSkew time.Duration, required bool) *AP
 		secret:   []byte(secret),
 		maxSkew:  maxSkew,
 		required: required,
-		nonces:   newAPINonceCache(maxSkew * 2),
+		nonces:   newAPINonceCache(maxSkew*2, apiNonceCacheMaxEntries()),
 	}
+}
+
+func apiNonceCacheMaxEntries() int {
+	raw := strings.TrimSpace(os.Getenv("API_SIGN_NONCE_CACHE_MAX"))
+	if raw == "" {
+		return defaultNonceCacheMaxEntries
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1000 || value > 1000000 {
+		return defaultNonceCacheMaxEntries
+	}
+	return value
 }
 
 func sha256Hex(data []byte) string {
@@ -176,6 +190,11 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 
 		bodyBytes, err := io.ReadAll(c.Request.Body)
 		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "请求内容过大"})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法读取请求体"})
 			return
 		}
@@ -204,11 +223,6 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API nonce 无效"})
 			return
 		}
-		if !v.nonces.Use(nonce, time.Unix(ts, 0)) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API 签名重复提交"})
-			return
-		}
-
 		bodyHash := sha256Hex(bodyBytes)
 		expected := SignAPIRequest(
 			string(v.secret),
@@ -223,6 +237,10 @@ func (v *APISignVerifier) Middleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API 签名无效"})
 			return
 		}
+		if !v.nonces.Use(nonce, time.Unix(ts, 0)) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "API 签名重复或请求过于频繁"})
+			return
+		}
 
 		c.Next()
 	}
@@ -233,18 +251,23 @@ type apiNonceEntry struct {
 }
 
 type apiNonceCache struct {
-	ttl  time.Duration
-	mu   sync.Mutex
-	data map[string]apiNonceEntry
+	ttl        time.Duration
+	maxEntries int
+	mu         sync.Mutex
+	data       map[string]apiNonceEntry
 }
 
-func newAPINonceCache(ttl time.Duration) *apiNonceCache {
+func newAPINonceCache(ttl time.Duration, maxEntries int) *apiNonceCache {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
+	if maxEntries <= 0 {
+		maxEntries = defaultNonceCacheMaxEntries
+	}
 	cache := &apiNonceCache{
-		ttl:  ttl,
-		data: map[string]apiNonceEntry{},
+		ttl:        ttl,
+		maxEntries: maxEntries,
+		data:       map[string]apiNonceEntry{},
 	}
 	go cache.cleanupLoop()
 	return cache
@@ -262,6 +285,10 @@ func (c *apiNonceCache) cleanup() {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.cleanupLocked(now)
+}
+
+func (c *apiNonceCache) cleanupLocked(now time.Time) {
 	for key, entry := range c.data {
 		if now.After(entry.expiresAt) {
 			delete(c.data, key)
@@ -275,6 +302,12 @@ func (c *apiNonceCache) Use(nonce string, issuedAt time.Time) bool {
 	defer c.mu.Unlock()
 	if entry, ok := c.data[nonce]; ok && now.Before(entry.expiresAt) {
 		return false
+	}
+	if len(c.data) >= c.maxEntries {
+		c.cleanupLocked(now)
+		if len(c.data) >= c.maxEntries {
+			return false
+		}
 	}
 	c.data[nonce] = apiNonceEntry{expiresAt: now.Add(c.ttl)}
 	_ = issuedAt

@@ -52,9 +52,8 @@ interface ResourceCardProps {
   showWeeklyDownloadCount?: boolean;
 }
 
-function ResourceCardComponent({
+function MediaResourceCardComponent({
   resource,
-  onDownload,
   onTransfer,
   onTransferPrepare,
   onWebUsbTransfer,
@@ -64,7 +63,6 @@ function ResourceCardComponent({
   onStopPlay,
   onLike,
   onFavorite,
-  downloading,
   transferring = false,
   webUsbTransferring = false,
   playing,
@@ -79,24 +77,6 @@ function ResourceCardComponent({
   weeklyDownloadCount,
   showWeeklyDownloadCount = false,
 }: ResourceCardProps) {
-  if (resource.category === "software") {
-    return (
-      <article className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
-        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{resource.title}</div>
-        {onDownload ? (
-          <button
-            type="button"
-            disabled={downloading}
-            onClick={() => onDownload(resource)}
-            className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-          >
-            {downloading ? "生成下载链接..." : "下载"}
-          </button>
-        ) : null}
-      </article>
-    );
-  }
-
   const materialLabel =
     resource.materialType === "image"
       ? "图片素材"
@@ -264,11 +244,7 @@ function ResourceCardComponent({
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-              {previewFailed
-                ? "预览暂时不可用"
-                : resource.materialType === "video"
-                  ? "视频预览加载中..."
-                  : "图片加载中..."}
+              {previewFailed ? "预览暂时不可用" : "图片加载中..."}
             </div>
           )}
       </DevicePreviewFrame>
@@ -355,6 +331,28 @@ function ResourceCardComponent({
       ) : null}
     </article>
   );
+}
+
+function ResourceCardComponent(props: ResourceCardProps) {
+  const { resource, onDownload, downloading } = props;
+  if (resource.category === "software") {
+    return (
+      <article className="rounded-2xl border border-white/25 bg-white/55 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-900/45">
+        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{resource.title}</div>
+        {onDownload ? (
+          <button
+            type="button"
+            disabled={downloading}
+            onClick={() => onDownload(resource)}
+            className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+          >
+            {downloading ? "生成下载链接..." : "下载"}
+          </button>
+        ) : null}
+      </article>
+    );
+  }
+  return <MediaResourceCardComponent {...props} />;
 }
 
 export const ResourceCard = memo(ResourceCardComponent);

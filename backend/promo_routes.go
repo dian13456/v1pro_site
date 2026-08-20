@@ -30,12 +30,12 @@ type promoReviewRequest struct {
 }
 
 type promoRouteDeps struct {
-	promoService    *service.PromoService
+	promoService     *service.PromoService
 	reviewAdminToken string
-	jwtSecret       string
-	tokenTTL        time.Duration
-	imageSigner     *service.COSSigner
-	imagePublicBase string
+	jwtSecret        string
+	tokenTTL         time.Duration
+	imageSigner      *service.COSSigner
+	imagePublicBase  string
 }
 
 func registerPromoRoutes(router *gin.Engine, deps promoRouteDeps) {
@@ -128,6 +128,10 @@ func registerPromoRoutes(router *gin.Engine, deps promoRouteDeps) {
 		}
 		if len(data) == 0 || len(data) > 5*1024*1024 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片大小需在 5MB 以内"})
+			return
+		}
+		if !imagePayloadMatchesContentType(data, contentType) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "图片内容与文件类型不匹配"})
 			return
 		}
 		buf := make([]byte, 8)

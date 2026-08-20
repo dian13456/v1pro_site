@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -47,6 +50,16 @@ type favoriteRequest struct {
 	Action     string `json:"action"`
 }
 
+type hiddenResourceRequest struct {
+	ResourceID string `json:"resourceId"`
+	Hidden     bool   `json:"hidden"`
+}
+
+type followResourceRequest struct {
+	ResourceID string `json:"resourceId"`
+	Followed   bool   `json:"followed"`
+}
+
 type downloadRequest struct {
 	ResourceID string `json:"resourceId"`
 }
@@ -58,6 +71,20 @@ const (
 
 type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
+}
+
+type profileAvatarUploadRequest struct {
+	ContentType string `json:"contentType"`
+	FileSize    int64  `json:"fileSize"`
+}
+
+type profileAvatarCompleteRequest struct {
+	ObjectKey string `json:"objectKey"`
+}
+
+type profileAvatarDataRequest struct {
+	ImageBase64 string `json:"imageBase64"`
+	ContentType string `json:"contentType"`
 }
 
 type softwarePromptDismissRequest struct {
@@ -73,6 +100,7 @@ type profileUploadDeleteRequest struct {
 type messagePostRequest struct {
 	Content     string `json:"content"`
 	DisplayName string `json:"displayName"`
+	ResourceID  string `json:"resourceId"`
 }
 
 type aiGuideRequest struct {
@@ -488,7 +516,9 @@ func ensureReviewAdmin(c *gin.Context, reviewAdminToken string) bool {
 		return false
 	}
 	token := strings.TrimSpace(c.GetHeader("X-Review-Admin-Token"))
-	if token == "" || token != reviewAdminToken {
+	expectedHash := sha256.Sum256([]byte(reviewAdminToken))
+	actualHash := sha256.Sum256([]byte(token))
+	if token == "" || subtle.ConstantTimeCompare(actualHash[:], expectedHash[:]) != 1 {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "复核管理员 token 无效"})
 		return false
 	}
@@ -522,24 +552,27 @@ func corsOriginAllowed(origin string, allowed []string) bool {
 
 func corsMiddleware(allowOrigin string) gin.HandlerFunc {
 	allowed := parseCorsAllowOrigins(allowOrigin)
-	wildcard := strings.TrimSpace(allowOrigin) == "" || strings.TrimSpace(allowOrigin) == "*"
+	wildcard := strings.TrimSpace(allowOrigin) == "*"
 	return func(c *gin.Context) {
 		origin := strings.TrimSpace(c.GetHeader("Origin"))
-		switch {
-		case origin != "" && wildcard:
-			c.Header("Access-Control-Allow-Origin", origin)
+		if origin != "" {
 			c.Header("Vary", "Origin")
-		case origin != "" && len(allowed) > 1 && corsOriginAllowed(origin, allowed):
-			c.Header("Access-Control-Allow-Origin", origin)
-			c.Header("Vary", "Origin")
-		case len(allowed) == 1:
-			c.Header("Access-Control-Allow-Origin", allowed[0])
-		case origin == "" && wildcard:
+			switch {
+			case wildcard:
+				c.Header("Access-Control-Allow-Origin", "*")
+			case corsOriginAllowed(origin, allowed):
+				c.Header("Access-Control-Allow-Origin", origin)
+			default:
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "来源站点不允许访问 API"})
+				return
+			}
+		} else if wildcard {
 			c.Header("Access-Control-Allow-Origin", "*")
 		}
 		c.Header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Review-Admin-Token, X-Api-Timestamp, X-Api-Nonce, X-Api-Signature")
 		c.Header("Access-Control-Allow-Credentials", "false")
+		c.Header("Access-Control-Max-Age", "600")
 		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 
 		if c.Request.Method == http.MethodOptions {
@@ -673,6 +706,7 @@ func main() {
 	likeIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("LIKE_RATE_LIMIT_IP_PER_MIN"), 60), time.Minute)
 	activityTokenRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("ACTIVITY_RATE_LIMIT_TOKEN_PER_MIN"), 8), time.Minute)
 	activityIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("ACTIVITY_RATE_LIMIT_IP_PER_MIN"), 20), time.Minute)
+	adminIPRateLimiter := service.NewIPRateLimiter(endpointRateLimitPerMin(os.Getenv("ADMIN_RATE_LIMIT_IP_PER_MIN"), 120), time.Minute)
 	abuseGuard := service.NewAbuseGuard(service.AbuseGuardConfigFromEnv())
 	allowedDevicesRaw := os.Getenv("ALLOWED_DEVICES")
 	if allowedDevicesRaw == "" {
@@ -685,15 +719,18 @@ func main() {
 		if legacyPID == "" {
 			legacyPID = "66AA"
 		}
-		allowedDevicesRaw = legacyVID + ":" + legacyPID + ",2E3C:5753"
+		allowedDevicesRaw = legacyVID + ":" + legacyPID + ",0483:66AB,2E3C:5753"
 	}
 	allowedDevices := loadAllowedDevices(allowedDevicesRaw)
 	if len(allowedDevices) == 0 {
 		log.Fatal("ALLOWED_DEVICES is empty or invalid")
 	}
-	corsAllowOrigin := os.Getenv("CORS_ALLOW_ORIGIN")
+	corsAllowOrigin := strings.TrimSpace(os.Getenv("CORS_ALLOW_ORIGIN"))
 	if corsAllowOrigin == "" {
-		corsAllowOrigin = "*"
+		corsAllowOrigin = "http://localhost:5173,http://127.0.0.1:5173"
+		log.Printf("warn: CORS_ALLOW_ORIGIN not set; only local development origins are allowed")
+	} else if corsAllowOrigin == "*" {
+		log.Printf("warn: CORS_ALLOW_ORIGIN=* permits every website to call the API")
 	}
 
 	resourceMapPath := os.Getenv("RESOURCE_MAP_PATH")
@@ -711,6 +748,14 @@ func main() {
 	resourceFavoritesPath := os.Getenv("RESOURCE_FAVORITES_PATH")
 	if resourceFavoritesPath == "" {
 		resourceFavoritesPath = filepath.Join("config", "resource_favorites.json")
+	}
+	blockedUploadersPath := os.Getenv("BLOCKED_UPLOADERS_PATH")
+	if blockedUploadersPath == "" {
+		blockedUploadersPath = filepath.Join("config", "blocked_uploaders.json")
+	}
+	followedUploadersPath := os.Getenv("FOLLOWED_UPLOADERS_PATH")
+	if followedUploadersPath == "" {
+		followedUploadersPath = filepath.Join("config", "followed_uploaders.json")
 	}
 	resourceDownloadsPath := os.Getenv("RESOURCE_DOWNLOADS_PATH")
 	if resourceDownloadsPath == "" {
@@ -883,18 +928,20 @@ func main() {
 		log.Fatalf("load image map failed: %v", err)
 	}
 	userDataRepo, err := service.NewUserDataRepo(service.UserDataPaths{
-		LikesPath:           resourceLikesPath,
-		FavoritesPath:       resourceFavoritesPath,
-		DownloadsPath:       resourceDownloadsPath,
-		MessagesPath:        messageBoardPath,
-		ProfilesPath:        userProfilesPath,
-		PromptPrefsPath:     userPromptPrefsPath,
-		CreditsPath:         aiImageCreditsPath,
-		SharesPath:          aiImageSharesPath,
-		SharesUnlimitedPath: aiImageSharesUnlimitedPath,
-		LedgerPath:          aiCreditLedgerPath,
-		LikeGrantsPath:      creditLikeGrantsPath,
-		DailyRewardsPath:    creditDailyRewardsPath,
+		LikesPath:             resourceLikesPath,
+		FavoritesPath:         resourceFavoritesPath,
+		BlockedUploadersPath:  blockedUploadersPath,
+		FollowedUploadersPath: followedUploadersPath,
+		DownloadsPath:         resourceDownloadsPath,
+		MessagesPath:          messageBoardPath,
+		ProfilesPath:          userProfilesPath,
+		PromptPrefsPath:       userPromptPrefsPath,
+		CreditsPath:           aiImageCreditsPath,
+		SharesPath:            aiImageSharesPath,
+		SharesUnlimitedPath:   aiImageSharesUnlimitedPath,
+		LedgerPath:            aiCreditLedgerPath,
+		LikeGrantsPath:        creditLikeGrantsPath,
+		DailyRewardsPath:      creditDailyRewardsPath,
 	})
 	if err != nil {
 		log.Fatalf("init user data storage failed: %v", err)
@@ -1004,58 +1051,91 @@ func main() {
 	videoUploadSessionStore := service.NewVideoUploadSessionStore()
 	reviewAdminToken := strings.TrimSpace(os.Getenv("REVIEW_ADMIN_TOKEN"))
 
-	signer, err := service.NewCOSSigner(cosBucket, cosRegion, cosSecretID, cosSecretKey)
+	signer, err := service.NewCOSSignerWithPrefix(
+		cosBucket,
+		cosRegion,
+		cosSecretID,
+		cosSecretKey,
+		os.Getenv("RESOURCE_COS_PREFIX"),
+	)
 	if err != nil {
 		log.Fatalf("init cos signer failed: %v", err)
 	}
-	imageSigner, err := service.NewCOSSigner(imageCOSBucket, imageCOSRegion, imageCOSSecretID, imageCOSSecretKey)
+	imageSigner, err := service.NewCOSSignerWithPrefix(
+		imageCOSBucket,
+		imageCOSRegion,
+		imageCOSSecretID,
+		imageCOSSecretKey,
+		os.Getenv("IMAGE_COS_PREFIX"),
+	)
 	if err != nil {
 		log.Fatalf("init image cos signer failed: %v", err)
 	}
-	softwareSigner, err := service.NewCOSSigner(
+	softwareSigner, err := service.NewCOSSignerWithPrefix(
 		softwareCOSBucket,
 		softwareCOSRegion,
 		softwareCOSSecretID,
 		softwareCOSSecretKey,
+		os.Getenv("SOFTWARE_COS_PREFIX"),
 	)
 	if err != nil {
 		log.Fatalf("init software cos signer failed: %v", err)
 	}
-	videoSigner, err := service.NewCOSSigner(
+	videoSigner, err := service.NewCOSSignerWithPrefix(
 		videoCOSBucket,
 		videoCOSRegion,
 		videoCOSSecretID,
 		videoCOSSecretKey,
+		os.Getenv("VIDEO_COS_PREFIX"),
 	)
 	if err != nil {
 		log.Fatalf("init video cos signer failed: %v", err)
 	}
-	gifSigner, err := service.NewCOSSigner(
+	gifSigner, err := service.NewCOSSignerWithPrefix(
 		gifCOSBucket,
 		gifCOSRegion,
 		gifCOSSecretID,
 		gifCOSSecretKey,
+		os.Getenv("GIF_COS_PREFIX"),
 	)
 	if err != nil {
 		log.Fatalf("init gif cos signer failed: %v", err)
 	}
-	videoCoverSigner, err := service.NewCOSSigner(
+	videoCoverSigner, err := service.NewCOSSignerWithPrefix(
 		videoCoverCOSBucket,
 		videoCoverCOSRegion,
 		videoCoverCOSSecretID,
 		videoCoverCOSSecretKey,
+		os.Getenv("VIDEO_COVER_COS_PREFIX"),
 	)
 	if err != nil {
 		log.Fatalf("init video cover cos signer failed: %v", err)
 	}
-	gifCoverSigner, err := service.NewCOSSigner(
+	gifCoverSigner, err := service.NewCOSSignerWithPrefix(
 		gifCoverCOSBucket,
 		gifCoverCOSRegion,
 		gifCoverCOSSecretID,
 		gifCoverCOSSecretKey,
+		os.Getenv("GIF_COVER_COS_PREFIX"),
 	)
 	if err != nil {
 		log.Fatalf("init gif cover cos signer failed: %v", err)
+	}
+	materialCDNBaseURL := strings.TrimSpace(os.Getenv("MATERIAL_CDN_BASE_URL"))
+	materialCDNAuthKey := strings.TrimSpace(os.Getenv("MATERIAL_CDN_AUTH_KEY"))
+	materialCDNSignParam := strings.TrimSpace(os.Getenv("MATERIAL_CDN_SIGN_PARAM"))
+	for name, materialSigner := range map[string]*service.COSSigner{
+		"resource":    signer,
+		"image":       imageSigner,
+		"software":    softwareSigner,
+		"video":       videoSigner,
+		"gif":         gifSigner,
+		"video-cover": videoCoverSigner,
+		"gif-cover":   gifCoverSigner,
+	} {
+		if err := materialSigner.ConfigureReadCDN(materialCDNBaseURL, materialCDNAuthKey, materialCDNSignParam); err != nil {
+			log.Fatalf("configure %s CDN signer failed: %v", name, err)
+		}
 	}
 	imageURLCache := map[string]signedURLCacheEntry{}
 	var imageURLCacheMu sync.RWMutex
@@ -1117,8 +1197,11 @@ func main() {
 	}
 
 	router := gin.Default()
-	router.MaxMultipartMemory = 20 << 20
+	router.MaxMultipartMemory = 8 << 20
+	router.Use(securityHeadersMiddleware())
 	router.Use(corsMiddleware(corsAllowOrigin))
+	router.Use(requestBodyLimitMiddleware())
+	router.Use(adminRateLimitMiddleware(adminIPRateLimiter))
 	router.Use(apiSignVerifier.Middleware())
 	router.Use(abuseGuard.Middleware())
 
@@ -1234,7 +1317,16 @@ func main() {
 
 		profilesMu.RLock()
 		displayName := service.ResolveStoredDisplayName(userProfiles, serial, "")
+		avatarKey := service.ResolveStoredAvatar(userProfiles, serial)
 		profilesMu.RUnlock()
+		avatarURL := ""
+		if avatarKey != "" {
+			if signedURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), avatarKey, imageSignTTL); signErr == nil {
+				avatarURL = signedURL
+			} else {
+				log.Printf("warn: sign profile avatar failed: %v", signErr)
+			}
+		}
 
 		promptPrefsMu.RLock()
 		softwarePromptDismissedID := service.GetSoftwarePromptDismissedID(userPromptPrefs, serial)
@@ -1256,6 +1348,7 @@ func main() {
 			"success":                   true,
 			"serial":                    serial,
 			"displayName":               displayName,
+			"avatarUrl":                 avatarURL,
 			"credits":                   credits,
 			"creditsDefault":            service.DefaultAICredits,
 			"creditCost":                service.AICreditCostPerGeneration,
@@ -1267,6 +1360,253 @@ func main() {
 			"downloadDailyCapCredits":   service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
 			"softwarePromptDismissedId": softwarePromptDismissedID,
 			"creditLedger":              creditLedger,
+		})
+	})
+
+	router.POST("/api/profile/avatar/upload-url", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req profileAvatarUploadRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像上传参数错误"})
+			return
+		}
+		contentType, _, typeErr := service.NormalizeProfileAvatarContentType(req.ContentType)
+		if typeErr != nil || req.FileSize <= 0 || req.FileSize > service.MaxProfileAvatarBytes {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像仅支持 JPG、PNG、WebP，且不能超过 512KB"})
+			return
+		}
+		objectKey, keyErr := service.NewProfileAvatarObjectKey(serial, contentType, time.Now())
+		if keyErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像路径生成失败"})
+			return
+		}
+		uploadURL, signErr := imageSigner.GeneratePutURL(c.Request.Context(), objectKey, contentType, 10*time.Minute)
+		if signErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像上传地址生成失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"uploadUrl":   uploadURL,
+			"objectKey":   objectKey,
+			"contentType": contentType,
+			"maxBytes":    service.MaxProfileAvatarBytes,
+		})
+	})
+
+	router.POST("/api/profile/avatar/upload", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req profileAvatarDataRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像上传参数错误"})
+			return
+		}
+		contentType, _, typeErr := service.NormalizeProfileAvatarContentType(req.ContentType)
+		raw, decodeErr := service.DecodeAIImageBytes(req.ImageBase64)
+		if typeErr != nil || decodeErr != nil || int64(len(raw)) <= 0 || int64(len(raw)) > service.MaxProfileAvatarBytes {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像仅支持 JPG、PNG、WebP，且不能超过 512KB"})
+			return
+		}
+		objectKey, keyErr := service.NewProfileAvatarObjectKey(serial, contentType, time.Now())
+		if keyErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像路径生成失败"})
+			return
+		}
+		if uploadErr := imageSigner.UploadObject(c.Request.Context(), objectKey, contentType, raw); uploadErr != nil {
+			log.Printf("warn: upload profile avatar to COS failed: %v", uploadErr)
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "头像上传 COS 失败"})
+			return
+		}
+		profilesMu.Lock()
+		oldKey := service.ResolveStoredAvatar(userProfiles, serial)
+		service.SetStoredAvatar(&userProfiles, serial, objectKey)
+		saveErr := userDataRepo.SaveUserProfiles(userProfiles)
+		if saveErr != nil {
+			service.SetStoredAvatar(&userProfiles, serial, oldKey)
+		}
+		profilesMu.Unlock()
+		if saveErr != nil {
+			_ = imageSigner.DeleteObject(c.Request.Context(), objectKey)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像保存失败"})
+			return
+		}
+		if oldKey != "" && oldKey != objectKey {
+			if deleteErr := imageSigner.DeleteObject(c.Request.Context(), oldKey); deleteErr != nil {
+				log.Printf("warn: delete replaced profile avatar failed: %v", deleteErr)
+			}
+		}
+		avatarURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), objectKey, imageSignTTL)
+		if signErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像地址生成失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "avatarUrl": avatarURL})
+	})
+
+	router.POST("/api/profile/avatar/complete", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		var req profileAvatarCompleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil || !service.IsProfileAvatarObjectKeyOwnedBy(serial, req.ObjectKey) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "头像对象路径无效"})
+			return
+		}
+		head, headErr := imageSigner.HeadObject(c.Request.Context(), req.ObjectKey)
+		_, _, typeErr := service.NormalizeProfileAvatarContentType(head.ContentType)
+		if headErr != nil || typeErr != nil || head.ContentLength <= 0 || head.ContentLength > service.MaxProfileAvatarBytes {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "COS 中的头像文件无效"})
+			return
+		}
+		profilesMu.Lock()
+		oldKey := service.ResolveStoredAvatar(userProfiles, serial)
+		service.SetStoredAvatar(&userProfiles, serial, req.ObjectKey)
+		saveErr := userDataRepo.SaveUserProfiles(userProfiles)
+		if saveErr != nil {
+			service.SetStoredAvatar(&userProfiles, serial, oldKey)
+		}
+		profilesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像保存失败"})
+			return
+		}
+		if oldKey != "" && oldKey != req.ObjectKey {
+			if deleteErr := imageSigner.DeleteObject(c.Request.Context(), oldKey); deleteErr != nil {
+				log.Printf("warn: delete replaced profile avatar failed: %v", deleteErr)
+			}
+		}
+		avatarURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), req.ObjectKey, imageSignTTL)
+		if signErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像地址生成失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "avatarUrl": avatarURL})
+	})
+
+	router.DELETE("/api/profile/avatar", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		profilesMu.Lock()
+		oldKey := service.ResolveStoredAvatar(userProfiles, serial)
+		service.SetStoredAvatar(&userProfiles, serial, "")
+		saveErr := userDataRepo.SaveUserProfiles(userProfiles)
+		if saveErr != nil {
+			service.SetStoredAvatar(&userProfiles, serial, oldKey)
+		}
+		profilesMu.Unlock()
+		if saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "头像删除失败"})
+			return
+		}
+		if oldKey != "" {
+			if deleteErr := imageSigner.DeleteObject(c.Request.Context(), oldKey); deleteErr != nil {
+				log.Printf("warn: delete profile avatar object failed: %v", deleteErr)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "avatarUrl": ""})
+	})
+
+	router.GET("/api/creator-profile", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if !verifyToken(token, jwtSecret, tokenTTL) {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		displayName := strings.TrimSpace(c.Query("displayName"))
+		profilesMu.RLock()
+		avatarKey := service.ResolveAvatarByDisplayName(userProfiles, displayName)
+		profilesMu.RUnlock()
+		avatarURL := ""
+		if avatarKey != "" {
+			if signedURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), avatarKey, imageSignTTL); signErr == nil {
+				avatarURL = signedURL
+			} else {
+				log.Printf("warn: sign creator avatar failed: %v", signErr)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "displayName": displayName, "avatarUrl": avatarURL})
+	})
+
+	router.GET("/api/leaderboard/credits", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+
+		aiCreditsMu.Lock()
+		reloadAICreditsLocked()
+		creditsSnapshot := service.AICreditsStore{UnitScale: aiCredits.UnitScale, Balances: map[string]int{}}
+		for owner, balance := range aiCredits.Balances {
+			creditsSnapshot.Balances[owner] = balance
+		}
+		aiCreditsMu.Unlock()
+
+		profilesMu.RLock()
+		profilesSnapshot := service.UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}
+		for owner, displayName := range userProfiles.Profiles {
+			profilesSnapshot.Profiles[owner] = displayName
+		}
+		for owner, avatarKey := range userProfiles.Avatars {
+			profilesSnapshot.Avatars[owner] = avatarKey
+		}
+		profilesMu.RUnlock()
+
+		catalogItems, catalogErr := loadResourceCatalog(resourcesPath)
+		if catalogErr != nil {
+			log.Printf("warn: load catalog creator names for leaderboard failed: %v", catalogErr)
+			catalogItems = []map[string]any{}
+		}
+		creatorNames := service.PrimaryCatalogAuthorsByUploaderSerial(catalogItems)
+		entries, current, totalUsers := service.BuildCreditLeaderboard(creditsSnapshot, profilesSnapshot, creatorNames, serial, 50)
+		toView := func(entry service.CreditLeaderboardEntry) gin.H {
+			avatarURL := ""
+			if entry.AvatarKey != "" {
+				if signedURL, signErr := imageSigner.GenerateReadURL(c.Request.Context(), entry.AvatarKey, imageSignTTL); signErr == nil {
+					avatarURL = signedURL
+				}
+			}
+			return gin.H{
+				"rank":        entry.Rank,
+				"displayName": entry.DisplayName,
+				"creatorName": entry.CreatorName,
+				"credits":     entry.Credits,
+				"avatarUrl":   avatarURL,
+				"isCurrent":   entry.IsCurrent,
+			}
+		}
+		views := make([]gin.H, 0, len(entries))
+		for _, entry := range entries {
+			views = append(views, toView(entry))
+		}
+		var currentView any
+		if current != nil {
+			currentView = toView(*current)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"entries":    views,
+			"current":    currentView,
+			"totalUsers": totalUsers,
+			"updatedAt":  time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 
@@ -3104,6 +3444,140 @@ func main() {
 		})
 	})
 
+	router.GET("/api/resource-hidden", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		blockedSerials, err := userDataRepo.ListBlockedUploaders(serial)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "屏蔽列表加载失败"})
+			return
+		}
+		catalogItems, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":              true,
+			"hiddenResourceIds":    service.ResourceIDsByUploaderSerials(catalogItems, blockedSerials),
+			"blockedUploaderCount": len(blockedSerials),
+		})
+	})
+
+	router.POST("/api/resource-hidden", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, likeTokenRateLimiter, likeIPRateLimiter, serial, "屏蔽操作过于频繁，请稍后再试") {
+			return
+		}
+		var req hiddenResourceRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 不能为空"})
+			return
+		}
+		catalogItems, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		uploaderSerial := service.FindUploaderSerial(catalogItems, req.ResourceID)
+		if uploaderSerial == "" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到该素材的上传设备"})
+			return
+		}
+		if strings.EqualFold(serial, uploaderSerial) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "不能屏蔽当前设备自己上传的素材"})
+			return
+		}
+		blockedSerials, err := userDataRepo.SetUploaderBlocked(serial, uploaderSerial, req.Hidden)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "屏蔽设置保存失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":              true,
+			"hidden":               req.Hidden,
+			"hiddenResourceIds":    service.ResourceIDsByUploaderSerials(catalogItems, blockedSerials),
+			"blockedUploaderCount": len(blockedSerials),
+		})
+	})
+
+	router.GET("/api/resource-follows", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		followedSerials, err := userDataRepo.ListFollowedUploaders(serial)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "关注列表加载失败"})
+			return
+		}
+		catalogItems, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":               true,
+			"followedResourceIds":   service.ResourceIDsByUploaderSerials(catalogItems, followedSerials),
+			"followedUploaderCount": len(followedSerials),
+			"ownResourceIds":        service.ResourceIDsByUploaderSerials(catalogItems, []string{serial}),
+		})
+	})
+
+	router.POST("/api/resource-follow", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if rateLimitRejected(c, likeTokenRateLimiter, likeIPRateLimiter, serial, "关注操作过于频繁，请稍后再试") {
+			return
+		}
+		var req followResourceRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ResourceID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 不能为空"})
+			return
+		}
+		catalogItems, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "素材目录加载失败"})
+			return
+		}
+		uploaderSerial := service.FindUploaderSerial(catalogItems, req.ResourceID)
+		if uploaderSerial == "" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到该素材的上传者"})
+			return
+		}
+		if strings.EqualFold(serial, uploaderSerial) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "不能关注自己"})
+			return
+		}
+		followedSerials, err := userDataRepo.SetUploaderFollowed(serial, uploaderSerial, req.Followed)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "关注设置保存失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":               true,
+			"followed":              req.Followed,
+			"followedResourceIds":   service.ResourceIDsByUploaderSerials(catalogItems, followedSerials),
+			"followedUploaderCount": len(followedSerials),
+			"ownResourceIds":        service.ResourceIDsByUploaderSerials(catalogItems, []string{serial}),
+		})
+	})
+
 	router.GET("/api/resource-downloads", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		if !verifyToken(token, jwtSecret, tokenTTL) {
@@ -3400,10 +3874,11 @@ func main() {
 			return
 		}
 
+		forceRefresh := c.Query("refresh") == "1"
 		imageURLCacheMu.RLock()
 		cached, hasCached := imageURLCache[cacheKey]
 		imageURLCacheMu.RUnlock()
-		if hasCached && cached.expiresAt.After(now) {
+		if !forceRefresh && hasCached && cached.expiresAt.After(now) {
 			if forDownload {
 				c.JSON(http.StatusOK, gin.H{
 					"url": cached.url,
@@ -3462,6 +3937,27 @@ func main() {
 	router.GET("/api/image/", func(c *gin.Context) {
 		handleImage(c, c.Query("id"), c.Query("download") == "1")
 	})
+	resolveMessageProfiles := func(ctx context.Context, entries []service.MessageEntry) {
+		for i := range entries {
+			serial := strings.TrimSpace(entries[i].Serial)
+			if serial == "" {
+				continue
+			}
+			profilesMu.RLock()
+			entries[i].Username = service.ResolveStoredDisplayName(userProfiles, serial, "")
+			avatarKey := userProfiles.Avatars[serial]
+			profilesMu.RUnlock()
+			if strings.TrimSpace(avatarKey) == "" {
+				continue
+			}
+			avatarURL, err := imageSigner.GenerateReadURL(ctx, avatarKey, 24*time.Hour)
+			if err != nil {
+				log.Printf("warn: sign message avatar failed for %s: %v", serial, err)
+				continue
+			}
+			entries[i].AvatarURL = avatarURL
+		}
+	}
 
 	router.GET("/api/messages", func(c *gin.Context) {
 		token := parseBearerToken(c)
@@ -3480,27 +3976,33 @@ func main() {
 			}
 		}
 
+		resourceID := strings.TrimSpace(c.Query("resourceId"))
+		if len(resourceID) > 64 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 无效"})
+			return
+		}
+
 		messagesMu.RLock()
-		total := len(messages.Messages)
+		filtered := make([]service.MessageEntry, 0)
+		for _, entry := range messages.Messages {
+			if strings.TrimSpace(entry.ResourceID) == resourceID {
+				filtered = append(filtered, entry)
+			}
+		}
+		messagesMu.RUnlock()
+		total := len(filtered)
 		start := total - limit
 		if start < 0 {
 			start = 0
 		}
-		slice := make([]service.MessageEntry, len(messages.Messages[start:]))
-		copy(slice, messages.Messages[start:])
-		messagesMu.RUnlock()
+		slice := make([]service.MessageEntry, len(filtered[start:]))
+		copy(slice, filtered[start:])
 
 		for i, j := 0, len(slice)-1; i < j; i, j = i+1, j-1 {
 			slice[i], slice[j] = slice[j], slice[i]
 		}
 
-		profilesMu.RLock()
-		for i := range slice {
-			if strings.TrimSpace(slice[i].Serial) != "" {
-				slice[i].Username = service.ResolveStoredDisplayName(userProfiles, slice[i].Serial, "")
-			}
-		}
-		profilesMu.RUnlock()
+		resolveMessageProfiles(c.Request.Context(), slice)
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":  true,
@@ -3534,10 +4036,24 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": fmt.Sprintf("留言最多%d字", maxMessageLength)})
 			return
 		}
+		resourceID := strings.TrimSpace(req.ResourceID)
+		if len(resourceID) > 64 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "resourceId 无效"})
+			return
+		}
+		if resourceID != "" {
+			_, hasResource := resourceMapStore.get(resourceID)
+			_, hasImage := imageMapStore.get(resourceID)
+			if !hasResource && !hasImage {
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在或已下架"})
+				return
+			}
+		}
 
 		entry := service.MessageEntry{
-			ID:     newMessageID(),
-			Serial: serial,
+			ID:         newMessageID(),
+			ResourceID: resourceID,
+			Serial:     serial,
 			Username: func() string {
 				profilesMu.RLock()
 				defer profilesMu.RUnlock()
@@ -3555,10 +4071,12 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "留言保存失败"})
 			return
 		}
+		responseEntries := []service.MessageEntry{entry}
+		resolveMessageProfiles(c.Request.Context(), responseEntries)
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"message": entry,
+			"message": responseEntries[0],
 		})
 	})
 
@@ -3590,7 +4108,7 @@ func main() {
 		imagePublicBase:  imagePublicBase,
 	})
 
-	if err := router.Run(":" + port); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := runAPIHTTPServer(newAPIHTTPServer(":"+port, router)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server run failed: %v", err)
 	}
 }

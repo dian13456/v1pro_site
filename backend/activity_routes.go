@@ -49,6 +49,7 @@ type activityAdminDeviceRequest struct {
 
 type activityAdminShippingRequest struct {
 	ShippingStatus string `json:"shippingStatus"`
+	TrackingNo     string `json:"trackingNo"`
 }
 
 type activityAdminDrawRequest struct {
@@ -57,12 +58,12 @@ type activityAdminDrawRequest struct {
 }
 
 type activityRouteDeps struct {
-	activityService        *service.ActivityService
-	reviewAdminToken       string
-	jwtSecret              string
-	tokenTTL               time.Duration
-	activityTokenLimiter   *service.IPRateLimiter
-	activityIPLimiter      *service.IPRateLimiter
+	activityService      *service.ActivityService
+	reviewAdminToken     string
+	jwtSecret            string
+	tokenTTL             time.Duration
+	activityTokenLimiter *service.IPRateLimiter
+	activityIPLimiter    *service.IPRateLimiter
 }
 
 func registerActivityRoutes(router *gin.Engine, deps activityRouteDeps) {
@@ -269,7 +270,16 @@ func registerActivityRoutes(router *gin.Engine, deps activityRouteDeps) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "shippingStatus 无效"})
 			return
 		}
-		if err := deps.activityService.RepoUpdateWinnerShipping(c.Param("id"), status); err != nil {
+		trackingNo := strings.TrimSpace(req.TrackingNo)
+		if len(trackingNo) > 128 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "trackingNo 过长"})
+			return
+		}
+		if status == service.ShippingStatusShipped && trackingNo == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "标记已发货时必须填写快递单号"})
+			return
+		}
+		if err := deps.activityService.RepoUpdateWinnerShipping(c.Param("id"), status, trackingNo); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 			return
 		}

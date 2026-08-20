@@ -20,7 +20,10 @@ function createDevMockResponse(path, options) {
     if (!body?.serial || !body?.vid || !body?.pid) {
       return { success: false, message: "参数不完整" };
     }
-    if (String(body.vid).toUpperCase() !== "0483" || String(body.pid).toUpperCase() !== "66AA") {
+    if (
+      String(body.vid).toUpperCase() !== "0483" ||
+      !["66AA", "66AB"].includes(String(body.pid).toUpperCase())
+    ) {
       return { success: false, message: "设备 VID/PID 不匹配" };
     }
     return {

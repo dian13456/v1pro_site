@@ -224,6 +224,8 @@ interface DevBoardMessage {
   content: string;
   createdAt: number;
   serial?: string;
+  resourceId?: string;
+  avatarUrl?: string;
 }
 
 function resolveDevDisplayName(messageSerial: string): string {
@@ -660,6 +662,7 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
         username: String(body.displayName || "").trim() || displayUsernameFromSerial(serial),
         content,
         createdAt: Date.now(),
+        resourceId: String(body.resourceId || "").trim() || undefined,
       };
       const messages = readDevMessages();
       messages.push(entry);
@@ -668,7 +671,9 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     }
 
     const limit = parseDevMessageLimit(path);
-    const all = withResolvedDevUsernames(readDevMessages());
+    const resourceId = parseQuery(path).get("resourceId") || "";
+    const all = withResolvedDevUsernames(readDevMessages())
+      .filter((item) => (item.resourceId || "") === resourceId);
     const messages = [...all].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
     return { success: true, messages, total: all.length };
   }
@@ -824,7 +829,7 @@ function isApiSignatureError(message: string, status: number): boolean {
   return /API 签名|签名已过期|签名无效|签名重复|缺少 API 签名/.test(message);
 }
 
-async function performApiFetch<T extends JsonValue>(
+async function performApiFetch<T>(
   path: string,
   init: RequestInit,
   allowSignRetry: boolean,
@@ -871,7 +876,7 @@ async function performApiFetch<T extends JsonValue>(
   return (payload || {}) as T;
 }
 
-export async function apiFetch<T extends JsonValue>(
+export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
   options: { priority?: boolean } = {},

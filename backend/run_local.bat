@@ -13,7 +13,7 @@ if exist .env (
 )
 
 set PORT=18080
-if not defined JWT_SECRET set JWT_SECRET=jiadian_local_dev_secret_2026
+if not defined JWT_SECRET set JWT_SECRET=local-development-only-change-me
 if not defined ALLOWED_DEVICES set ALLOWED_DEVICES=0483:66AA,2E3C:5753
 if not defined CORS_ALLOW_ORIGIN set CORS_ALLOW_ORIGIN=http://localhost:5173
 

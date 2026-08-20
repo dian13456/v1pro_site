@@ -205,7 +205,7 @@ export async function generateAiImages(prompt: string): Promise<GenerateAiImages
   }
 
   const images = (payload.images || [])
-    .map((item, index) => {
+    .map<GeneratedAiImage | null>((item, index) => {
       const dataUrl = normalizeBase64Image(item);
       if (!dataUrl) return null;
       return {

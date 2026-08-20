@@ -57,8 +57,9 @@ interface ResourceLibrarySidebarProps {
   onMaterialType: (value: MaterialTypeFilter) => void;
   capacity: "all" | DeviceFrameCapacity;
   onCapacity: (value: "all" | DeviceFrameCapacity) => void;
-  sortMode: ResourceSortMode | "random";
-  onSortMode: (value: ResourceSortMode | "random") => void;
+  sortMode: ResourceSortMode | "random" | "following";
+  onSortMode: (value: ResourceSortMode | "random" | "following") => void;
+  followedUploaderCount?: number;
   columnTag: string;
   onColumnTag: (value: string) => void;
   columnOptions: Array<{ value: string; label: string }>;
@@ -95,6 +96,7 @@ export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
         value={props.sortMode}
         onChange={props.onSortMode}
         options={[
+          { value: "following", label: "关注上传", count: props.followedUploaderCount || undefined, icon: "🔔" },
           { value: "hot", label: "热门排行", icon: "🔥" },
           { value: "random", label: "随机推荐", icon: "🎲" },
           { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },

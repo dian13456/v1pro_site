@@ -29,6 +29,81 @@ func FindUploaderSerial(items []map[string]any, resourceID string) string {
 	return ""
 }
 
+// ResourceIDsByUploaderSerials returns every catalog resource owned by a
+// blocked uploader without exposing uploader serials in the public catalog.
+func ResourceIDsByUploaderSerials(items []map[string]any, uploaderSerials []string) []string {
+	blocked := make(map[string]struct{}, len(uploaderSerials))
+	for _, serial := range uploaderSerials {
+		if normalized := normalizeUploaderSerial(serial); normalized != "" {
+			blocked[normalized] = struct{}{}
+		}
+	}
+	if len(blocked) == 0 {
+		return []string{}
+	}
+	ids := make([]string, 0)
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		uploader := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		if _, ok := blocked[uploader]; !ok {
+			continue
+		}
+		if id := stringifyCatalogID(item["id"]); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// PrimaryCatalogAuthorsByUploaderSerial resolves the public author name that
+// represents each uploader most consistently. Historical profile names can be
+// changed or replaced while published catalog records retain their original
+// author. Choosing the most frequent public author keeps leaderboard links
+// pointed at the creator page that contains the uploader's actual works.
+func PrimaryCatalogAuthorsByUploaderSerial(items []map[string]any) map[string]string {
+	type authorStats struct {
+		count     int
+		lastIndex int
+	}
+
+	counts := make(map[string]map[string]authorStats)
+	for index, item := range items {
+		if item == nil {
+			continue
+		}
+		serial := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		author := strings.TrimSpace(stringifyCatalogValue(item["author"]))
+		if serial == "" || author == "" {
+			continue
+		}
+		if counts[serial] == nil {
+			counts[serial] = make(map[string]authorStats)
+		}
+		stats := counts[serial][author]
+		stats.count++
+		stats.lastIndex = index
+		counts[serial][author] = stats
+	}
+
+	primary := make(map[string]string, len(counts))
+	for serial, authors := range counts {
+		bestName := ""
+		best := authorStats{lastIndex: -1}
+		for author, stats := range authors {
+			if stats.count > best.count || (stats.count == best.count && stats.lastIndex > best.lastIndex) {
+				bestName = author
+				best = stats
+			}
+		}
+		if bestName != "" {
+			primary[serial] = bestName
+		}
+	}
+	return primary
+}
+
 // LoadUploaderSerialFromCatalogFile reads resources.json and finds uploader SN by resource id.
 func LoadUploaderSerialFromCatalogFile(path, resourceID string) (string, error) {
 	raw, err := os.ReadFile(path)

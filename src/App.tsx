@@ -1,6 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { LatestSoftwareModal } from "./components/LatestSoftwareModal";
 import { SiteLoadingScreen } from "./components/SiteUi";
 import { useAuthGuard } from "./hooks/useAuthGuard";
 
@@ -46,11 +45,9 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   const location = useLocation();
-  const showFirstVisitPrompts = location.pathname !== "/auth" && location.pathname !== "/terms";
 
   return (
     <>
-      {showFirstVisitPrompts ? <LatestSoftwareModal /> : null}
       <Suspense fallback={<SiteLoadingScreen message="正在加载页面…" />}>
         <Routes location={location}>
           <Route path="/terms" element={<TermsPage />} />

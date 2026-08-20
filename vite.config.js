@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 
 const DEFAULT_FFMPEG_ASSET_BASE =
   "https://v1pro-1311844229.cos.ap-guangzhou.myqcloud.com/ffmpeg/0.12.10-v1pro-1";
+const PROJECT_ROOT = fileURLToPath(new URL(".", import.meta.url));
 
 function httpOrigin(value) {
   try {
@@ -20,7 +21,13 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
     transformIndexHtml(html, ctx) {
       if (ctx.server) return html;
 
-      const connectSrc = ["'self'", "https://*.myqcloud.com"];
+      const connectSrc = [
+        "'self'",
+        "https://*.myqcloud.com",
+        "https://media.jadot.club",
+        "http://127.0.0.1:8765",
+        "http://localhost:8765",
+      ];
       const scriptSrc = ["'self'", "'wasm-unsafe-eval'"];
       const trimmedApi = apiBase.trim().replace(/\/$/, "");
       if (trimmedApi) connectSrc.unshift(trimmedApi);
@@ -31,8 +38,8 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
         "default-src 'self'",
         `script-src ${scriptSrc.join(" ")}`,
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https://*.myqcloud.com",
-        "media-src 'self' blob: https://*.myqcloud.com",
+        "img-src 'self' data: blob: https://*.myqcloud.com https://media.jadot.club",
+        "media-src 'self' blob: https://*.myqcloud.com https://media.jadot.club",
         `connect-src ${connectSrc.join(" ")} blob:`,
         "font-src 'self'",
         "worker-src 'self' blob:",
@@ -59,11 +66,12 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const env = loadEnv(mode, PROJECT_ROOT, "");
   const apiDevUrl = env.VITE_DEV_API_URL || env.VITE_GIN_API_URL || "http://127.0.0.1:18080";
   const isProd = mode === "production";
 
   return {
+    root: PROJECT_ROOT,
     plugins: [
       react(),
       injectProductionSecurity(
@@ -73,6 +81,7 @@ export default defineConfig(({ mode }) => {
     ],
     base: env.VITE_BASE_PATH || "/",
     resolve: {
+      preserveSymlinks: true,
       alias: {
         "@v1pro-webusb": fileURLToPath(new URL("./public/webusb", import.meta.url)),
       },

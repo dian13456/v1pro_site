@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.27";
+} from "./v1pro-constants.js?v=1.2.28";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.27";
+} from "./v1pro-gfm1.js?v=1.2.28";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -23,7 +23,7 @@ import {
   requestAndOpenDevice,
   sendGfm1PayloadStream,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.27";
+} from "./v1pro-usb.js?v=1.2.28";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -358,7 +358,9 @@ export class V1ProWebTransfer {
 
       await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
         maxPayloadBytes,
-        startAlreadySent: preparedTotalBytes != null,
+        /* beginPreparedVideoTransfer performs only sized erase. START must be
+         * sent now, immediately before the already prepared payload. */
+        startAlreadySent: false,
         prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
         onProgress: (sent, total) => {
           if (!onProgress) return;

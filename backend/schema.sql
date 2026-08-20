@@ -27,6 +27,22 @@ CREATE TABLE IF NOT EXISTS resource_favorite_counts (
   favorite_count INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS blocked_uploaders (
+  viewer_serial VARCHAR(191) NOT NULL,
+  blocked_serial VARCHAR(191) NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (viewer_serial, blocked_serial),
+  KEY idx_blocked_viewer_created (viewer_serial, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS followed_uploaders (
+  viewer_serial VARCHAR(191) NOT NULL,
+  followed_serial VARCHAR(191) NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (viewer_serial, followed_serial),
+  KEY idx_followed_viewer_created (viewer_serial, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS download_meta (
   id TINYINT NOT NULL PRIMARY KEY,
   week_key VARCHAR(16) NOT NULL
@@ -57,16 +73,23 @@ CREATE TABLE IF NOT EXISTS device_download_windows (
 
 CREATE TABLE IF NOT EXISTS messages (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
+  resource_id VARCHAR(64) NOT NULL DEFAULT '',
   serial VARCHAR(191) NOT NULL DEFAULT '',
   username VARCHAR(128) NOT NULL DEFAULT '',
   content TEXT NOT NULL,
   created_at BIGINT NOT NULL,
-  KEY idx_messages_created (created_at DESC)
+  KEY idx_messages_created (created_at DESC),
+  KEY idx_messages_resource_created (resource_id, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS user_profiles (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
   display_name VARCHAR(128) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_avatars (
+  serial VARCHAR(191) NOT NULL PRIMARY KEY,
+  avatar_key VARCHAR(512) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS user_prompt_prefs (
@@ -176,6 +199,7 @@ CREATE TABLE IF NOT EXISTS winner (
   seed_hash VARCHAR(128) NOT NULL DEFAULT '',
   contact_status VARCHAR(32) NOT NULL DEFAULT 'pending',
   shipping_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  tracking_no VARCHAR(128) NOT NULL DEFAULT '',
   draw_period VARCHAR(16) NOT NULL DEFAULT '',
   KEY idx_winner_activity (activity_id, winner_time DESC),
   KEY idx_winner_sn (activity_id, sn),

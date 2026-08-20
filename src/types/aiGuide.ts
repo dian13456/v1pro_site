@@ -12,3 +12,7 @@ export interface AiGuideResponse {
   mode?: "deepseek" | "fallback";
   message?: string;
 }
+
+export interface AiGuideResult extends Omit<AiGuideResponse, "resourceIds"> {
+  resourceIds?: number[];
+}

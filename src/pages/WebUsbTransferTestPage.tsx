@@ -10,8 +10,12 @@ import {
   loadV1ProWebTransferSdk,
   WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
+import { convertBrowserRasterWithFfmpeg } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
-import type { V1ProTransferResult, V1ProWebTransferClient } from "../types/v1proWebTransfer";
+import type {
+  V1ProTransferResult,
+  V1ProWebTransferClient,
+} from "../types/v1proWebTransfer";
 
 type StatusKind = "idle" | "ok" | "error";
 
@@ -48,6 +52,14 @@ function formatError(err: unknown): string {
     return String(err.message);
   }
   return message;
+}
+
+function rasterMediaType(file: File): "image" | "gif" | null {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  if (type === "image/gif" || name.endsWith(".gif")) return "gif";
+  if (type.startsWith("image/")) return "image";
+  return null;
 }
 
 export default function WebUsbTransferTestPage() {
@@ -250,7 +262,45 @@ export default function WebUsbTransferTestPage() {
         setStatusText("正在编码并传输…");
         refreshConnectionState();
 
-        const result = await client.transferFile(file, {
+        const selectedRasterType = rasterMediaType(file);
+        let transferSource: Blob = file;
+        let preparedRaster: {
+          mediaType: "image" | "gif";
+          maxFrames: number;
+          frameCount: number;
+          note: string;
+        } | null = null;
+        if (selectedRasterType) {
+          const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
+          if (!capacity?.maxFrames) {
+            throw new Error("无法读取设备容量，请重新连接设备后重试");
+          }
+          const converted = await convertBrowserRasterWithFfmpeg(file, {
+            fileName: file.name,
+            mediaType: selectedRasterType,
+            maxFrames: capacity.maxFrames,
+            fitMode: "contain",
+            colorProfile: "normal",
+            onStatus: setStatusText,
+            onProgress: (ratio) => setProgress(Math.round(ratio * 25)),
+          });
+          transferSource = converted.blob;
+          preparedRaster = {
+            mediaType: selectedRasterType,
+            maxFrames: capacity.maxFrames,
+            frameCount: converted.frameCount,
+            note: converted.note,
+          };
+        }
+
+        const result = await client.transferFile(transferSource, {
+          fileName: file.name,
+          mediaType: preparedRaster?.mediaType,
+          maxFrames: preparedRaster?.maxFrames,
+          prebuiltGfm1: preparedRaster ? {
+            frameCount: preparedRaster.frameCount,
+            note: preparedRaster.note,
+          } : undefined,
           pingFirst: !client.connected || !client.deviceCapacity,
           onProgress: (info) => {
             if (info.note && info.sent === 0) {
@@ -262,7 +312,9 @@ export default function WebUsbTransferTestPage() {
               setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));
               return;
             }
-            const ratio = 0.12 + info.ratio * 0.88;
+            const ratio = preparedRaster
+              ? 0.25 + info.ratio * 0.75
+              : 0.12 + info.ratio * 0.88;
             setStatusText(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
             setProgress(Math.round(ratio * 100));
           },

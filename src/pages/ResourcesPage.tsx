@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { CategoryTabs } from "../components/CategoryTabs";
 import { ResourceCard } from "../components/ResourceCard";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
+import { V1ProTransferOrb } from "../components/V1ProTransferOrb";
 import { SearchBar } from "../components/SearchBar";
 import { SitePageLayout } from "../components/SitePageLayout";
 import { SitePageShell } from "../components/SitePageShell";
@@ -11,7 +12,7 @@ import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
-import { ResourceDetailModal } from "../components/ResourceDetailModal";
+import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
 import { SiteFilterChip, SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useThemeMode } from "../hooks/useThemeMode";
@@ -24,13 +25,18 @@ import { createImageUrl } from "../services/imageService";
 import { fetchResourceLikes, likeResource } from "../services/likeService";
 import { fetchResourceFavorites, toggleResourceFavorite } from "../services/favoriteService";
 import { fetchHiddenResourceState, setUploaderHidden } from "../services/hiddenResourceService";
+import { fetchUploaderFollows, setUploaderFollowed } from "../services/followService";
+import {
+  fetchResourceRecommendations,
+  recordResourceInteraction,
+  type ResourceRecommendation,
+} from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
 import type { ResourceItem } from "../types/resource";
 import {
   requiredFramesForResource,
   resourceMetricsFromCatalog,
   type DeviceFrameCapacity,
-  type VideoFpsOption,
 } from "../utils/resourceCapacity";
 import { pickRandomItems } from "../utils/randomPick";
 import {
@@ -70,6 +76,11 @@ export default function ResourcesPage() {
   const [blockedUploaderCount, setBlockedUploaderCount] = useState(0);
   const [hidingId, setHidingId] = useState<number | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [followedIds, setFollowedIds] = useState<number[]>([]);
+  const [ownResourceIds, setOwnResourceIds] = useState<number[]>([]);
+  const [followedUploaderCount, setFollowedUploaderCount] = useState(0);
+  const [followingId, setFollowingId] = useState<number | null>(null);
+  const [followingOnly, setFollowingOnly] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [totalDownloadCounts, setTotalDownloadCounts] = useState<Record<number, number>>({});
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
@@ -89,6 +100,7 @@ export default function ResourcesPage() {
   const [albumTransition, setAlbumTransition] = useState<AlbumTransition>("fade");
   const [albumTransferring, setAlbumTransferring] = useState(false);
   const [albumTransferStatus, setAlbumTransferStatus] = useState("");
+  const [recommendationItems, setRecommendationItems] = useState<ResourceRecommendation[]>([]);
   const { theme, setTheme } = useThemeMode();
   const {
     resources,
@@ -117,9 +129,15 @@ export default function ResourcesPage() {
   }, [searchParams, setKeyword]);
 
   const hiddenIdSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const followedIdSet = useMemo(() => new Set(followedIds), [followedIds]);
+  const ownResourceIdSet = useMemo(() => new Set(ownResourceIds), [ownResourceIds]);
   const visibilityFilteredResources = useMemo(
-    () => filtered.filter((resource) => showHidden === hiddenIdSet.has(resource.id)),
-    [filtered, hiddenIdSet, showHidden]
+    () => filtered.filter((resource) => {
+      if (showHidden) return hiddenIdSet.has(resource.id);
+      if (hiddenIdSet.has(resource.id)) return false;
+      return !followingOnly || followedIdSet.has(resource.id);
+    }),
+    [filtered, followedIdSet, followingOnly, hiddenIdSet, showHidden]
   );
   const sortedResources = useMemo(() => {
     if (sortMode === "hot") {
@@ -169,7 +187,7 @@ export default function ResourcesPage() {
     setRandomItems([]);
     setAlbumMode(false);
     setAlbumSelectedIds([]);
-  }, [showHidden]);
+  }, [showHidden, followingOnly]);
 
   useEffect(() => {
     if (sortMode === "weeklyTop") {
@@ -201,6 +219,16 @@ export default function ResourcesPage() {
       .map((resourceId) => resourceMap.get(resourceId))
       .filter((resource): resource is ResourceItem => Boolean(resource));
   }, [albumSelectedIds, resources]);
+
+  const recommendedResources = useMemo(() => {
+    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+    return recommendationItems
+      .map((recommendation) => {
+        const resource = resourceMap.get(recommendation.resourceId);
+        return resource ? { resource, reason: recommendation.reason } : null;
+      })
+      .filter((item): item is { resource: ResourceItem; reason: string } => Boolean(item));
+  }, [recommendationItems, resources]);
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -299,6 +327,38 @@ export default function ResourcesPage() {
     };
   }, [resources]);
 
+  useEffect(() => {
+    let active = true;
+    if (resources.length === 0) return () => { active = false; };
+    fetchUploaderFollows(resources)
+      .then((state) => {
+        if (!active) return;
+        setFollowedIds(state.followedResourceIds);
+        setOwnResourceIds(state.ownResourceIds);
+        setFollowedUploaderCount(state.followedUploaderCount);
+      })
+      .catch(() => {
+        if (active) setErrorMessage((current) => current || "关注列表加载失败，刷新页面后可重试");
+      });
+    return () => { active = false; };
+  }, [resources]);
+
+  useEffect(() => {
+    if (loading || resources.length === 0 || !hasValidLocalAuth() || isStaticMode()) return;
+    let active = true;
+    fetchResourceRecommendations(6)
+      .then((result) => {
+        if (!active) return;
+        setRecommendationItems(result.items);
+      })
+      .catch(() => {
+        if (active) setRecommendationItems([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loading, resources]);
+
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
       (resource) =>
@@ -333,6 +393,11 @@ export default function ResourcesPage() {
     if (stats.weekKey) {
       setDownloadWeekKey(stats.weekKey);
     }
+  };
+
+  const handleOpenResource = (resource: ResourceItem) => {
+    setSelectedResource(resource);
+    void recordResourceInteraction(resource.id, "view").catch(() => undefined);
   };
 
   const handleDownload = async (resource: ResourceItem) => {
@@ -372,7 +437,7 @@ export default function ResourcesPage() {
     // Blob 下载走同源 API，无需预取 COS 签名链接。
   };
 
-  const handleWebUsbTransfer = (resource: ResourceItem, videoFps?: VideoFpsOption) => {
+  const handleWebUsbTransfer = (resource: ResourceItem, options: ResourceWebUsbTransferOptions) => {
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -388,7 +453,10 @@ export default function ResourcesPage() {
       onStatus: (message) => setTransferNotice(message),
       onProgress: setWebUsbProgress,
     }, {
-      videoFps: resource.materialType === "video" ? videoFps : undefined,
+      videoFps: resource.materialType === "video" ? options.videoFps : undefined,
+      fitMode: options.fitMode,
+      rotationDeg: options.rotationDeg,
+      colorProfile: options.colorProfile,
     })
       .then((result) => {
         let message = result.predictedFrameCount != null
@@ -398,6 +466,7 @@ export default function ResourcesPage() {
           message += `（${result.note}）`;
         }
         setTransferNotice(message);
+        void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
         setWebUsbProgress(100);
         window.setTimeout(() => {
           setTransferNotice("");
@@ -428,6 +497,7 @@ export default function ResourcesPage() {
         onLaunched: (result) => {
           applyDownloadStats(resource.id, result.stats);
           setTransferNotice(V1PRO_TRANSFER_LAUNCHED_MESSAGE);
+          void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
           window.setTimeout(() => setTransferNotice(""), 5000);
         },
         onError: (message) => {
@@ -538,6 +608,31 @@ export default function ResourcesPage() {
     if (resource.materialType !== "video" && resource.materialType !== "gif") return;
     if (!hasValidLocalAuth()) return;
     prefetchPlayUrl(resource.id, resource.download);
+  };
+
+  const handleFollowChange = async (resource: ResourceItem, followed: boolean) => {
+    if (!hasValidLocalAuth()) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    try {
+      setFollowingId(resource.id);
+      setErrorMessage("");
+      setStatusMessage("");
+      const result = await setUploaderFollowed(resource, followed, resources);
+      setFollowedIds(result.state.followedResourceIds);
+      setOwnResourceIds(result.state.ownResourceIds);
+      setFollowedUploaderCount(result.state.followedUploaderCount);
+      setStatusMessage(result.followed
+        ? `已关注“${resource.author || "该上传者"}”`
+        : `已取消关注“${resource.author || "该上传者"}”`);
+    } catch (err) {
+      const message = (err as Error)?.message || "关注操作失败";
+      setErrorMessage(message);
+      if (message.includes("认证")) navigate("/auth", { replace: true });
+    } finally {
+      setFollowingId(null);
+    }
   };
 
   const handleHiddenChange = async (resource: ResourceItem, hidden: boolean) => {
@@ -652,6 +747,12 @@ export default function ResourcesPage() {
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
+      <V1ProTransferOrb
+        visible={webUsbTransferringId !== null && selectedResource?.id !== webUsbTransferringId}
+        progress={webUsbProgress}
+        transferId={webUsbTransferringId}
+        message={transferNotice}
+      />
       <ResourceLibraryHeader
         keyword={keyword}
         onSearch={(value) => {
@@ -669,14 +770,23 @@ export default function ResourcesPage() {
               onMaterialType={setMaterialType}
               capacity={capacityFilter}
               onCapacity={setCapacityFilter}
-              sortMode={randomMode ? "random" : sortMode}
+              sortMode={followingOnly ? "following" : randomMode ? "random" : sortMode}
               onSortMode={(value) => {
-                if (value === "random") handleRandomRecommend();
+                if (value === "following") {
+                  handleExitRandomMode();
+                  setShowHidden(false);
+                  setFollowingOnly(true);
+                } else if (value === "random") {
+                  setFollowingOnly(false);
+                  handleRandomRecommend();
+                }
                 else {
+                  setFollowingOnly(false);
                   handleExitRandomMode();
                   setSortMode(value);
                 }
               }}
+              followedUploaderCount={followedUploaderCount}
               columnTag={columnTag}
               onColumnTag={setColumnTag}
               columnOptions={columnTagFilterOptions}
@@ -692,14 +802,23 @@ export default function ResourcesPage() {
               onMaterialType={setMaterialType}
               capacity={capacityFilter}
               onCapacity={setCapacityFilter}
-              sortMode={randomMode ? "random" : sortMode}
+              sortMode={followingOnly ? "following" : randomMode ? "random" : sortMode}
               onSortMode={(value) => {
-                if (value === "random") handleRandomRecommend();
+                if (value === "following") {
+                  handleExitRandomMode();
+                  setShowHidden(false);
+                  setFollowingOnly(true);
+                } else if (value === "random") {
+                  setFollowingOnly(false);
+                  handleRandomRecommend();
+                }
                 else {
+                  setFollowingOnly(false);
                   handleExitRandomMode();
                   setSortMode(value);
                 }
               }}
+              followedUploaderCount={followedUploaderCount}
               columnTag={columnTag}
               onColumnTag={setColumnTag}
               columnOptions={columnTagFilterOptions}
@@ -717,7 +836,10 @@ export default function ResourcesPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowHidden((current) => !current)}
+                  onClick={() => {
+                    setFollowingOnly(false);
+                    setShowHidden((current) => !current);
+                  }}
                   aria-pressed={showHidden}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                     showHidden
@@ -743,7 +865,10 @@ export default function ResourcesPage() {
                 </button>
                 <select
                   value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
+                  onChange={(event) => {
+                    setFollowingOnly(false);
+                    setSortMode(event.target.value as typeof sortMode);
+                  }}
                   className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
                   <option value="latest">最新优先</option>
@@ -757,6 +882,36 @@ export default function ResourcesPage() {
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {loading ? <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">正在加载素材…</div> : null}
+            {!loading && !albumMode && !randomMode && !followingOnly && currentPage === 1 && !keyword.trim() && category === "all" && materialType === "all" && columnTag === "all" && recommendedResources.length > 0 ? (
+              <section className="mb-7 rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50/90 via-white to-rose-50/70 p-4 shadow-sm dark:border-orange-400/15 dark:from-slate-900 dark:via-slate-900 dark:to-orange-950/20 sm:p-5">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {recommendedResources.map(({ resource, reason }) => (
+                    <div key={`recommendation-${resource.id}`} className="relative pt-7">
+                      <span className="absolute left-2 top-0 max-w-[calc(100%-1rem)] truncate rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm" title={reason}>
+                        {reason}
+                      </span>
+                      <CompactResourceCard
+                        resource={resource}
+                        downloadCount={displayDownloadCount(totalDownloadCounts[resource.id] || 0)}
+                        likeCount={likeCounts[resource.id] || 0}
+                        liked={likedIds.has(resource.id)}
+                        liking={likingId === resource.id}
+                        favorited={favoriteIds.includes(resource.id)}
+                        favoriting={favoritingId === resource.id}
+                        onOpen={handleOpenResource}
+                        onLike={(item) => void handleLike(item)}
+                        onFavorite={(item) => void handleFavorite(item)}
+                        followed={followedIdSet.has(resource.id)}
+                        following={followingId === resource.id}
+                        onFollow={resource.uploaderBlockable && !ownResourceIdSet.has(resource.id)
+                          ? (item, followed) => void handleFollowChange(item, followed)
+                          : undefined}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {!loading ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {visibleItems.map((resource) => (
@@ -769,9 +924,14 @@ export default function ResourcesPage() {
                     liking={likingId === resource.id}
                     favorited={favoriteIds.includes(resource.id)}
                     favoriting={favoritingId === resource.id}
-                    onOpen={setSelectedResource}
+                    onOpen={handleOpenResource}
                     onLike={(item) => void handleLike(item)}
                     onFavorite={(item) => void handleFavorite(item)}
+                    followed={followedIdSet.has(resource.id)}
+                    following={followingId === resource.id}
+                    onFollow={resource.uploaderBlockable && !ownResourceIdSet.has(resource.id)
+                      ? (item, followed) => void handleFollowChange(item, followed)
+                      : undefined}
                     hidden={hiddenIdSet.has(resource.id)}
                     hiding={hidingId === resource.id}
                     onHiddenChange={resource.uploaderBlockable
@@ -786,7 +946,11 @@ export default function ResourcesPage() {
             ) : null}
             {!loading && visibleItems.length === 0 ? (
               <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
-                {showHidden ? "当前设备没有已屏蔽素材。" : "没有匹配的素材，请调整筛选条件。"}
+                {showHidden
+                  ? "当前设备没有已屏蔽素材。"
+                  : followingOnly
+                    ? "还没有关注上传者，先在喜欢的上传者素材卡片上点击关注。"
+                    : "没有匹配的素材，请调整筛选条件。"}
               </div>
             ) : null}
 

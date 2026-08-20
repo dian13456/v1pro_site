@@ -520,16 +520,19 @@ func (r *ActivityRepo) ListWinners(activityID string) ([]Winner, error) {
 	return out, err
 }
 
-func (r *ActivityRepo) UpdateWinnerShipping(id, shippingStatus string) error {
+func (r *ActivityRepo) UpdateWinnerShipping(id, shippingStatus, trackingNo string) error {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()
 		defer cancel()
-		return r.mysql.updateWinnerShipping(ctx, id, shippingStatus)
+		return r.mysql.updateWinnerShipping(ctx, id, shippingStatus, trackingNo)
 	}
 	return r.withJSON(func(store *ActivityDataStore) error {
 		for i, winner := range store.Winners {
 			if winner.ID == id {
 				store.Winners[i].ShippingStatus = shippingStatus
+				if strings.TrimSpace(trackingNo) != "" {
+					store.Winners[i].TrackingNo = trackingNo
+				}
 				return nil
 			}
 		}

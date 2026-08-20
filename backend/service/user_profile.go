@@ -12,18 +12,19 @@ var ErrDisplayNameTaken = errors.New("display name already taken")
 
 type UserProfilesStore struct {
 	Profiles map[string]string `json:"profiles"`
+	Avatars  map[string]string `json:"avatars,omitempty"`
 }
 
 func LoadUserProfiles(path string) (UserProfilesStore, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return UserProfilesStore{Profiles: map[string]string{}}, nil
+			return UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}, nil
 		}
 		return UserProfilesStore{}, err
 	}
 	if strings.TrimSpace(string(raw)) == "" {
-		return UserProfilesStore{Profiles: map[string]string{}}, nil
+		return UserProfilesStore{Profiles: map[string]string{}, Avatars: map[string]string{}}, nil
 	}
 	var store UserProfilesStore
 	if err := json.Unmarshal(raw, &store); err != nil {
@@ -31,6 +32,9 @@ func LoadUserProfiles(path string) (UserProfilesStore, error) {
 	}
 	if store.Profiles == nil {
 		store.Profiles = map[string]string{}
+	}
+	if store.Avatars == nil {
+		store.Avatars = map[string]string{}
 	}
 	return store, nil
 }
@@ -42,12 +46,45 @@ func SaveUserProfiles(path string, store UserProfilesStore) error {
 	if store.Profiles == nil {
 		store.Profiles = map[string]string{}
 	}
+	if store.Avatars == nil {
+		store.Avatars = map[string]string{}
+	}
 	raw, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
 	}
 	raw = append(raw, '\n')
 	return os.WriteFile(path, raw, 0o644)
+}
+
+func ResolveStoredAvatar(store UserProfilesStore, serial string) string {
+	return strings.TrimSpace(store.Avatars[serial])
+}
+
+func ResolveAvatarByDisplayName(store UserProfilesStore, displayName string) string {
+	target := strings.TrimSpace(displayName)
+	if target == "" {
+		return ""
+	}
+	for serial, avatar := range store.Avatars {
+		if strings.EqualFold(ResolveStoredDisplayName(store, serial, ""), target) {
+			return strings.TrimSpace(avatar)
+		}
+	}
+	return ""
+}
+
+func SetStoredAvatar(store *UserProfilesStore, serial, objectKey string) string {
+	if store.Avatars == nil {
+		store.Avatars = map[string]string{}
+	}
+	trimmed := strings.TrimSpace(objectKey)
+	if trimmed == "" {
+		delete(store.Avatars, serial)
+		return ""
+	}
+	store.Avatars[serial] = trimmed
+	return trimmed
 }
 
 func ResolveStoredDisplayName(store UserProfilesStore, serial, requested string) string {
