@@ -183,6 +183,12 @@ function transferPath(resource: ResourceItem, mode: "direct" | "proxyFallback"):
   });
   if (mode === "direct") {
     params.set("download", "1");
+    // Image previews share a short-lived backend URL cache. WebUSB must request
+    // a fresh signature so a preview/cache entry cannot force a false CORS
+    // failure and unnecessary API proxy fallback.
+    if (resource.materialType === "image") {
+      params.set("refresh", "1");
+    }
   } else {
     params.set("preview", "1");
     params.set("blob", "1");
@@ -306,6 +312,7 @@ async function fetchTransferBlob(
         const directResponse = await fetch(directUrl, {
           method: "GET",
           mode: "cors",
+          cache: "no-store",
           credentials: "omit",
           referrerPolicy: "no-referrer",
           signal: controller.signal,
