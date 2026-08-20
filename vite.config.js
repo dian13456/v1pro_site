@@ -24,6 +24,7 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
       const connectSrc = [
         "'self'",
         "https://*.myqcloud.com",
+        "https://*.tencentcos.cn",
         "https://media.jadot.club",
         "http://127.0.0.1:8765",
         "http://localhost:8765",
@@ -38,8 +39,8 @@ function injectProductionSecurity(apiBase, ffmpegAssetBase) {
         "default-src 'self'",
         `script-src ${scriptSrc.join(" ")}`,
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https://*.myqcloud.com https://media.jadot.club",
-        "media-src 'self' blob: https://*.myqcloud.com https://media.jadot.club",
+        "img-src 'self' data: blob: https://*.myqcloud.com https://*.tencentcos.cn https://media.jadot.club",
+        "media-src 'self' blob: https://*.myqcloud.com https://*.tencentcos.cn https://media.jadot.club",
         `connect-src ${connectSrc.join(" ")} blob:`,
         "font-src 'self'",
         "worker-src 'self' blob:",

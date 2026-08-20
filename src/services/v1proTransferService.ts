@@ -95,7 +95,10 @@ const TRUSTED_TRANSFER_CDN_HOSTS = new Set(["media.jadot.club"]);
 function isTrustedTransferHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
   if (!normalized) return false;
-  return /\.myqcloud\.com$/i.test(normalized) || TRUSTED_TRANSFER_CDN_HOSTS.has(normalized);
+  return (
+    /\.(?:myqcloud\.com|tencentcos\.cn)$/i.test(normalized) ||
+    TRUSTED_TRANSFER_CDN_HOSTS.has(normalized)
+  );
 }
 
 function isBlockedTransferHost(host: string): boolean {
@@ -144,7 +147,7 @@ export function assertCosTransferUrl(url: string): void {
     throw new Error("传输链接格式无效");
   }
   // 后端启用 MATERIAL_CDN_BASE_URL 后会返回 media.jadot.club 的签名 CDN
-  // 地址，而不是 *.myqcloud.com。先精确放行受信任 CDN，再拦截官网/API。
+  // 地址，而不是 COS 默认域名。先精确放行受信任 CDN，再拦截官网/API。
   if (isTrustedTransferHost(parsed.hostname)) {
     return;
   }
