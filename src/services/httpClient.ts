@@ -812,7 +812,10 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
   return null;
 }
 
-const API_MAX_INFLIGHT = 4;
+// The material page resolves one signed preview URL per card. Eight concurrent
+// requests let a 16-card page resolve in two waves without overwhelming mobile
+// browsers or the API with an unrestricted burst.
+const API_MAX_INFLIGHT = 8;
 const API_REQUEST_TIMEOUT_MS = 15_000;
 const API_QUEUE_TIMEOUT_MS = 20_000;
 let apiInflight = 0;
