@@ -39,7 +39,7 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
 let sharedClient: V1ProWebTransferClient | null = null;
 let transferInflight: Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> | null = null;
 let transferInflightResourceId: number | "album" | null = null;
-const TRANSFER_DOWNLOAD_TIMEOUT_MS = 120_000;
+const TRANSFER_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
 const ALBUM_FRAME_WIDTH = 320;
 const ALBUM_FRAME_HEIGHT = 170;
 const ALBUM_TRANSITION_STEPS = 6;
@@ -283,7 +283,20 @@ async function fetchTransferBlob(
   }
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), TRANSFER_DOWNLOAD_TIMEOUT_MS);
+  let downloadTimedOut = false;
+  let timeout = 0;
+  const resetIdleTimeout = () => {
+    window.clearTimeout(timeout);
+    timeout = window.setTimeout(() => {
+      downloadTimedOut = true;
+      controller.abort();
+    }, TRANSFER_DOWNLOAD_IDLE_TIMEOUT_MS);
+  };
+  const reportProgress = (received: number, total: number) => {
+    resetIdleTimeout();
+    onProgress?.(received, total);
+  };
+  resetIdleTimeout();
   try {
     const directUrl =
       preparedDirectUrl || (await fetchDirectTransferUrl(resource, controller.signal));
@@ -294,17 +307,22 @@ async function fetchTransferBlob(
         mode: "cors",
         signal: controller.signal,
       });
-      return await readBlobResponse(directResponse, onProgress);
+      return await readBlobResponse(directResponse, reportProgress);
     } catch (directError) {
       if (controller.signal.aborted) throw directError;
       onFallback?.();
+      resetIdleTimeout();
       const fallbackPath = transferPath(resource, "proxyFallback");
       const fallbackResponse = await authorizedApiResponse(fallbackPath, controller.signal);
-      return await readBlobResponse(fallbackResponse, onProgress);
+      return await readBlobResponse(fallbackResponse, reportProgress);
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("视频下载超时，请检查网络后重试");
+      throw new Error(
+        downloadTimedOut
+          ? "视频下载连续60秒未收到数据，请检查网络后重试"
+          : "视频下载已取消",
+      );
     }
     throw new Error(formatClientError(err, "素材下载失败，请检查网络后重试"));
   } finally {
@@ -312,14 +330,15 @@ async function fetchTransferBlob(
   }
 }
 
-function formatDownloadProgress(received: number, total: number): string {
+function formatDownloadProgress(received: number, total: number, usingProxyFallback = false): string {
   const receivedMb = received / (1024 * 1024);
+  const sourceLabel = usingProxyFallback ? "服务器中转" : "COS 直链";
   if (total > 0) {
     const totalMb = total / (1024 * 1024);
     const percent = Math.min(100, Math.round((received / total) * 100));
-    return `正在下载视频… ${receivedMb.toFixed(1)}/${totalMb.toFixed(1)} MB（${percent}%）`;
+    return `正在从${sourceLabel}下载视频… ${receivedMb.toFixed(1)}/${totalMb.toFixed(1)} MB（${percent}%）`;
   }
-  return `正在下载视频… ${receivedMb.toFixed(1)} MB`;
+  return `正在从${sourceLabel}下载视频… ${receivedMb.toFixed(1)} MB`;
 }
 
 async function validateTransferBlob(resource: ResourceItem, blob: Blob): Promise<void> {
@@ -593,15 +612,19 @@ export async function transferResourceViaWebUsb(
         reportProgress(16);
         await client.beginPreparedVideoTransfer(prediction.totalBytes);
         preEraseStarted = true;
-        callbacks.onStatus?.("设备正在预擦除，同时下载视频…");
+        callbacks.onStatus?.("设备正在预擦除，同时从 COS 直链下载视频…");
         reportProgress(18);
+        let usingProxyFallback = false;
         const blob = await fetchTransferBlob(
           resource,
           (received, total) => {
-            callbacks.onStatus?.(formatDownloadProgress(received, total));
+            callbacks.onStatus?.(formatDownloadProgress(received, total, usingProxyFallback));
             if (total > 0) reportProgress(18 + (received / total) * 22);
           },
-          () => callbacks.onStatus?.("COS 直连不可用，已切换服务器下载…"),
+          () => {
+            usingProxyFallback = true;
+            callbacks.onStatus?.("COS 直连不可用，已切换服务器中转下载…");
+          },
           directUrl,
         );
         await validateTransferBlob(resource, blob);
