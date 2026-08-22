@@ -54,6 +54,60 @@ html[data-theme="doro"] {
   background: #f4f6fb !important;
 }
 
+html.dark .resource-library-shell,
+html[data-theme="dark"] .resource-library-shell {
+  color: #e2e8f0;
+  background: #0b1120 !important;
+}
+
+/* The resource-library layout predates the shared theme surfaces and still
+   contains light palette utility tokens. Keep those pages coherent in dark
+   mode until every legacy surface has moved to the shared components. */
+html.dark .resource-library-shell [class~="bg-white"],
+html[data-theme="dark"] .resource-library-shell [class~="bg-white"] {
+  background-color: #0f172a !important;
+}
+
+html.dark .resource-library-shell [class~="bg-[#f8f9fd]"],
+html.dark .resource-library-shell [class~="bg-[#fafbfe]"],
+html.dark .resource-library-shell [class~="bg-[#f6f7fd]"],
+html[data-theme="dark"] .resource-library-shell [class~="bg-[#f8f9fd]"],
+html[data-theme="dark"] .resource-library-shell [class~="bg-[#fafbfe]"],
+html[data-theme="dark"] .resource-library-shell [class~="bg-[#f6f7fd]"] {
+  background-color: #111c30 !important;
+}
+
+html.dark .resource-library-shell [class~="border-[#e6e9f2]"],
+html.dark .resource-library-shell [class~="border-[#edf0f6]"],
+html.dark .resource-library-shell [class~="border-[#dfe3ee]"],
+html.dark .resource-library-shell [class~="border-[#cfd5ea]"],
+html[data-theme="dark"] .resource-library-shell [class~="border-[#e6e9f2]"],
+html[data-theme="dark"] .resource-library-shell [class~="border-[#edf0f6]"],
+html[data-theme="dark"] .resource-library-shell [class~="border-[#dfe3ee]"],
+html[data-theme="dark"] .resource-library-shell [class~="border-[#cfd5ea]"] {
+  border-color: #263449 !important;
+}
+
+html.dark .resource-library-shell [class~="text-[#2b3245]"],
+html.dark .resource-library-shell [class~="text-[#4a5270]"],
+html.dark .resource-library-shell [class~="text-[#596178]"],
+html.dark .resource-library-shell [class~="text-[#697086]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#2b3245]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#4a5270]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#596178]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#697086]"] {
+  color: #e2e8f0 !important;
+}
+
+html.dark .resource-library-shell [class~="text-[#8a93a8]"],
+html.dark .resource-library-shell [class~="text-[#9aa2b5]"],
+html.dark .resource-library-shell [class~="text-[#c2c8da]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#8a93a8]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#9aa2b5]"],
+html[data-theme="dark"] .resource-library-shell [class~="text-[#c2c8da]"] {
+  color: #94a3b8 !important;
+}
+
 html[data-theme] .resource-library-shell::before {
   display: none;
 }

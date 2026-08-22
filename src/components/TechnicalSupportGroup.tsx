@@ -121,7 +121,7 @@ export function TechnicalSupportGroup({ compact = false }: TechnicalSupportGroup
         onClick={togglePopup}
         className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-full border font-semibold transition ${
           compact
-            ? "border-[#d8e7ff] bg-[#f4f8ff] px-3 py-2 text-[12px] text-[#3974c8] hover:border-[#73a9f2] hover:bg-[#eaf3ff]"
+            ? "border-[#d8e7ff] bg-[#f4f8ff] px-3 py-2 text-[12px] text-[#3974c8] hover:border-[#73a9f2] hover:bg-[#eaf3ff] dark:border-cyan-400/25 dark:bg-cyan-400/10 dark:text-cyan-200 dark:hover:bg-cyan-400/15"
             : "border-cyan-300/50 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-800 shadow-sm hover:border-cyan-400 hover:bg-cyan-100 dark:border-cyan-400/25 dark:bg-cyan-400/10 dark:text-cyan-200 dark:hover:bg-cyan-400/15"
         }`}
         aria-label={`查看技术支持QQ群 ${SUPPORT_QQ_GROUP}`}

@@ -22,8 +22,8 @@ function FilterGroup<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-[14px] border border-[#e6e9f2] bg-white">
-      <h2 className="px-[18px] pb-2.5 pt-[18px] text-xs font-normal tracking-[1px] text-[#8a93a8]">{title}</h2>
+    <section className="overflow-hidden rounded-[14px] border border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-900">
+      <h2 className="px-[18px] pb-2.5 pt-[18px] text-xs font-normal tracking-[1px] text-[#8a93a8] dark:text-slate-400">{title}</h2>
       <div className="pb-3.5">
         {options.map((option) => {
           const active = option.value === value;
@@ -35,14 +35,14 @@ function FilterGroup<T extends string | number>({
               className={`relative flex w-full items-center gap-[9px] px-[18px] py-2 text-left text-[13.5px] transition ${
                 active
                   ? "font-bold text-[#ff8a5c]"
-                  : "text-[#4a5270] hover:bg-[#f6f7fd] hover:text-[#ff8a5c]"
+                  : "text-[#4a5270] hover:bg-[#f6f7fd] hover:text-[#ff8a5c] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-[#ff9b78]"
               }`}
             >
               {active ? <span className="absolute inset-y-0 left-0 w-[3px] rounded-r bg-gradient-to-b from-[#ff8a5c] to-[#7c6cf0]" /> : null}
               <span className="w-5 text-center text-[15px]">{option.icon || "◇"}</span>
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {option.note ? <span className="text-[11px] font-normal text-[#c2c8da]">{option.note}</span> : null}
-              {option.count != null ? <span className="text-[11px] font-normal text-[#c2c8da]">{option.count}</span> : null}
+              {option.note ? <span className="text-[11px] font-normal text-[#c2c8da] dark:text-slate-500">{option.note}</span> : null}
+              {option.count != null ? <span className="text-[11px] font-normal text-[#c2c8da] dark:text-slate-500">{option.count}</span> : null}
             </button>
           );
         })}
