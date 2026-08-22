@@ -8,7 +8,7 @@ const NAV_ITEMS = [
   { to: "/favorites", label: "我的收藏", highlight: false },
   { to: "/activities", label: "活动中心", highlight: false },
   { to: "/downloads", label: "资料中心", highlight: false },
-  { to: "/shop", label: "积分商城", highlight: false },
+  { to: "/shop", label: "积分商城", highlight: true },
   { to: "/mall", label: "实物商城", highlight: false },
   { to: "/profile", label: "个人中心", highlight: false },
   { to: "/webusb-test", label: "网页直传", highlight: false },
