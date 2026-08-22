@@ -8,9 +8,14 @@ import { useThemeMode } from "../hooks/useThemeMode";
 interface ResourceLibraryHeaderProps {
   keyword: string;
   onSearch: (value: string) => void;
+  searchPlaceholder?: string;
 }
 
-export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHeaderProps) {
+export function ResourceLibraryHeader({
+  keyword,
+  onSearch,
+  searchPlaceholder = "搜索素材，如「孤独摇滚」「眨眼」…",
+}: ResourceLibraryHeaderProps) {
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [draft, setDraft] = useState(keyword);
@@ -40,7 +45,7 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className="min-w-0 flex-1 bg-transparent text-[13px] text-[#2b3245] outline-none placeholder:text-[#8a93a8] dark:text-slate-100 dark:placeholder:text-slate-500"
-            placeholder="搜索素材，如「孤独摇滚」「眨眼」…"
+            placeholder={searchPlaceholder}
           />
         </form>
         <Link
