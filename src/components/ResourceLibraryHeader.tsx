@@ -44,10 +44,11 @@ export function ResourceLibraryHeader({ keyword, onSearch }: ResourceLibraryHead
           />
         </form>
         <Link
-          to="/"
-          className="hidden shrink-0 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:inline-flex"
+          to="/shop"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20 sm:px-4"
         >
-          素材主页
+          <span aria-hidden="true">🎁</span>
+          <span className="hidden sm:inline">积分商城</span>
         </Link>
         <Link
           to="/share"
