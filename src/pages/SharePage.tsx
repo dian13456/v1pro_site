@@ -10,7 +10,11 @@ import {
   readLocalImageFile,
   shareAiImageToCatalog,
 } from "../services/aiImageService";
-import { getAuthState, hasValidLocalAuth } from "../services/authService";
+import {
+  getAuthState,
+  hasValidLocalAuth,
+  matchesAuthenticatedUsbDevice,
+} from "../services/authService";
 import { formatClientError } from "../services/httpClient";
 import {
   MAX_GIF_UPLOAD_BYTES,
@@ -316,7 +320,7 @@ export default function SharePage() {
     try {
       client = await createV1ProWebTransferClient();
       const devices = await listAuthorizedV1ProDevices();
-      const device = devices.find((item) => item.serialNumber?.trim() === serial);
+      const device = devices.find((item) => matchesAuthenticatedUsbDevice(item, serial));
       if (!device) {
         throw new Error(`未找到当前认证的 V1PRO（SN ${serial}），请重新认证`);
       }

@@ -5,6 +5,7 @@ import { isStaticMode } from "./runtimeMode";
 import { disableBootWebsiteAfterEntry } from "./bootWebsiteService";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
+const BRAVE_STABLE_SERIAL_KEY_PREFIX = "jiadian_hub_brave_stable_usb_serial";
 export const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 const USB_OPEN_TIMEOUT_MS = 8000;
 
@@ -33,6 +34,56 @@ interface AuthApiResponse {
 
 interface VerifyApiResponse {
   success: boolean;
+}
+
+interface BraveNavigator extends Navigator {
+  brave?: {
+    isBrave?: () => Promise<boolean>;
+  };
+}
+
+function braveStableSerialKey(vendorId: number, productId: number): string {
+  return `${BRAVE_STABLE_SERIAL_KEY_PREFIX}_${vendorId.toString(16)}_${productId.toString(16)}`;
+}
+
+async function isBraveBrowser(): Promise<boolean> {
+  const brave = (navigator as BraveNavigator).brave;
+  if (typeof brave?.isBrave !== "function") return false;
+  try {
+    return Boolean(await brave.isBrave());
+  } catch {
+    return false;
+  }
+}
+
+async function resolveStableDeviceSerial(
+  device: USBDevice,
+  reportedSerial: string,
+  previous: AuthState | null,
+): Promise<string> {
+  const normalized = reportedSerial.trim();
+  if (!(await isBraveBrowser())) return normalized;
+
+  const storageKey = braveStableSerialKey(device.vendorId, device.productId);
+  const stored = localStorage.getItem(storageKey)?.trim();
+  if (stored) return stored;
+
+  // Migrate an existing Brave login before trusting a newly randomized value.
+  const stableSerial =
+    previous?.vendorId === device.vendorId &&
+    previous.productId === device.productId &&
+    previous.serial?.trim()
+      ? previous.serial.trim()
+      : normalized;
+  localStorage.setItem(storageKey, stableSerial);
+  return stableSerial;
+}
+
+export function matchesAuthenticatedUsbDevice(device: USBDevice, authenticatedSerial: string): boolean {
+  const expected = authenticatedSerial.trim();
+  if (!expected || !isAllowedUsbDevice(device.vendorId, device.productId)) return false;
+  if (device.serialNumber?.trim() === expected) return true;
+  return localStorage.getItem(braveStableSerialKey(device.vendorId, device.productId))?.trim() === expected;
 }
 
 function mapAuthMessage(message?: string): string {
@@ -90,8 +141,11 @@ async function findBestGrantedUsbDevice(): Promise<USBDevice | null> {
   if (preferredSerial) {
     for (const device of matched) {
       try {
+        if (matchesAuthenticatedUsbDevice(device, preferredSerial)) {
+          return device;
+        }
         const serial = device.serialNumber || (await ensureDeviceSerial(device));
-        if (serial === preferredSerial) {
+        if (serial.trim() === preferredSerial) {
           return device;
         }
       } catch {
@@ -201,10 +255,11 @@ export async function authorizeUsbDevice(device: USBDevice): Promise<AuthState> 
   if (!isAllowedUsbDevice(vendorId, productId)) {
     throw new Error(DEVICE_MISMATCH_MESSAGE);
   }
-  const serialNumber = await ensureDeviceSerial(device);
+  const reportedSerial = await ensureDeviceSerial(device);
 
   const { vid, pid } = formatUsbDeviceId(vendorId, productId);
   const previous = getAuthState();
+  const serialNumber = await resolveStableDeviceSerial(device, reportedSerial, previous);
   const preservedDisplayName =
     previous?.serial === serialNumber
       ? previous.displayName?.trim() ||

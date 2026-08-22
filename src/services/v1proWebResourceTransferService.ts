@@ -1,7 +1,11 @@
 import type { ResourceItem } from "../types/resource";
 import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
 import { withApiSignature } from "./apiSign";
-import { getAuthState, hasValidLocalAuth } from "./authService";
+import {
+  getAuthState,
+  hasValidLocalAuth,
+  matchesAuthenticatedUsbDevice,
+} from "./authService";
 import { API_BASE, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import {
@@ -157,8 +161,8 @@ async function resolveAuthenticatedV1ProDevice(): Promise<USBDevice> {
   }
 
   const devices = await listAuthorizedV1ProDevices();
-  const matched = devices.find(
-    (device) => device.serialNumber?.trim() === authenticatedSerial,
+  const matched = devices.find((device) =>
+    matchesAuthenticatedUsbDevice(device, authenticatedSerial),
   );
   if (!matched) {
     throw new Error(`未找到当前认证的 V1PRO（SN ${authenticatedSerial}），请重新认证该设备`);
