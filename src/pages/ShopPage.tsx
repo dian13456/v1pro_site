@@ -6,18 +6,35 @@ import {
   SiteAlert,
   SiteButton,
   SiteEmptyBlock,
+  SiteInput,
   SiteLoadingBlock,
   SitePanel,
   SiteSectionTitle,
+  SiteTextarea,
   SITE_CONTENT_MEDIUM,
 } from "../components/SiteUi";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { hasValidLocalAuth } from "../services/authService";
 import { DEFAULT_AI_CREDITS } from "../services/profileService";
 import { fetchShopCatalog, redeemShopItem } from "../services/shopService";
+import { loadMallAddresses, saveMallAddress, toShippingInput } from "../services/mallAddressBook";
 import type { CreditLedgerEntry } from "../types/credits";
+import type { MallShippingInput } from "../types/mall";
 import type { ShopItem } from "../types/shop";
 import { formatCredits } from "../utils/formatCredits";
+
+const PHONE_PATTERN = /^1\d{10}$/;
+const QQ_PATTERN = /^[1-9]\d{4,11}$/;
+const EMPTY_SHIPPING: MallShippingInput = {
+  name: "",
+  phone: "",
+  wechat: "",
+  qq: "",
+  province: "",
+  city: "",
+  address: "",
+  remark: "",
+};
 
 function rewardLabel(item: ShopItem): string {
   switch (item.effect.type) {
@@ -27,6 +44,8 @@ function rewardLabel(item: ShopItem): string {
       return "次数权益";
     case "add_credits":
       return "积分权益";
+    case "physical":
+      return "实物商品";
     default:
       return "积分商品";
   }
@@ -49,6 +68,8 @@ export default function ShopPage() {
   const [creditLedger, setCreditLedger] = useState<CreditLedgerEntry[]>([]);
   const [notice, setNotice] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
+  const [redeemOrderId, setRedeemOrderId] = useState("");
+  const [shipping, setShipping] = useState<MallShippingInput>(EMPTY_SHIPPING);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -93,15 +114,38 @@ export default function ShopPage() {
 
   const handleRedeem = async (item: ShopItem) => {
     if (redeemingId) return;
+    if (item.effect.type === "physical") {
+      if (!shipping.name.trim() || !shipping.phone.trim() || !shipping.qq.trim() || !shipping.province.trim() || !shipping.city.trim() || !shipping.address.trim()) {
+        setErrorMessage("请完整填写收货人、手机、QQ、省市和详细地址");
+        return;
+      }
+      if (!PHONE_PATTERN.test(shipping.phone.trim())) {
+        setErrorMessage("手机号格式不正确");
+        return;
+      }
+      if (!QQ_PATTERN.test(shipping.qq.trim())) {
+        setErrorMessage("QQ 号格式不正确");
+        return;
+      }
+    }
     setRedeemingId(item.id);
     setNotice("");
     setRedeemCode("");
+    setRedeemOrderId("");
     setCopied(false);
     setErrorMessage("");
     try {
-      const result = await redeemShopItem(item.id);
+      const result = await redeemShopItem(item.id, item.effect.type === "physical" ? shipping : undefined);
       if (typeof result.creditsRemaining === "number") setCredits(result.creditsRemaining);
       if (result.redeemCode) setRedeemCode(result.redeemCode);
+      if (result.orderId) {
+        setRedeemOrderId(result.orderId);
+        try {
+          saveMallAddress(shipping);
+        } catch {
+          // 订单成功优先，地址簿已满不影响兑换结果。
+        }
+      }
       setNotice(result.message || `已兑换「${item.title}」`);
       setConfirmItem(null);
       await loadCatalog(false);
@@ -110,6 +154,19 @@ export default function ShopPage() {
     } finally {
       setRedeemingId(null);
     }
+  };
+
+  const openRedeemConfirm = (item: ShopItem) => {
+    setErrorMessage("");
+    if (item.effect.type === "physical") {
+      const saved = loadMallAddresses()[0];
+      if (saved) setShipping(toShippingInput(saved));
+    }
+    setConfirmItem(item);
+  };
+
+  const updateShipping = (field: keyof MallShippingInput, value: string) => {
+    setShipping((current) => ({ ...current, [field]: value }));
   };
 
   const handleCopyCode = async () => {
@@ -167,6 +224,21 @@ export default function ShopPage() {
         </SitePanel>
       ) : null}
 
+      {redeemOrderId ? (
+        <SitePanel className="border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <p className="font-semibold text-emerald-800 dark:text-emerald-200">实物兑换成功，等待发货</p>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+            订单号：<span className="select-all font-mono font-semibold">{redeemOrderId}</span>
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link to="/mall" className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500">
+              查看实物商城订单
+            </Link>
+            <span className="self-center text-xs text-slate-500 dark:text-slate-400">进入后点击“我的订单”查看物流单号。</span>
+          </div>
+        </SitePanel>
+      ) : null}
+
       <section aria-labelledby="shop-products-title">
         <SiteSectionTitle
           title="可兑换商品"
@@ -179,6 +251,7 @@ export default function ShopPage() {
           {!loading && items.length === 0 ? <div className="sm:col-span-2"><SiteEmptyBlock>暂无可兑换商品。</SiteEmptyBlock></div> : null}
           {!loading ? items.map((item) => {
             const affordable = credits >= item.cost;
+            const soldOut = item.effect.type === "physical" && typeof item.stock === "number" && item.stock <= 0;
             const missingCredits = Math.max(0, item.cost - credits);
             const progress = item.cost > 0 ? Math.min(100, (credits / item.cost) * 100) : 0;
             return (
@@ -190,6 +263,11 @@ export default function ShopPage() {
                 <div className="mt-4 flex-1">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{item.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.description}</p>
+                  {item.effect.type === "physical" && typeof item.stock === "number" ? (
+                    <p className={`mt-2 text-xs font-medium ${soldOut ? "text-rose-600 dark:text-rose-300" : "text-emerald-600 dark:text-emerald-300"}`}>
+                      {soldOut ? "当前库存不足" : `剩余库存 ${item.stock} 件`}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="mt-5">
                   <div className="mb-2 flex items-center justify-between text-xs">
@@ -202,7 +280,7 @@ export default function ShopPage() {
                 </div>
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <div><span className="text-2xl font-bold text-violet-700 dark:text-violet-200">{formatCredits(item.cost)}</span><span className="ml-1 text-xs text-slate-500 dark:text-slate-400">积分</span></div>
-                  <SiteButton type="button" disabled={!affordable || Boolean(redeemingId)} onClick={() => setConfirmItem(item)} className="px-5 py-2.5">{affordable ? "立即兑换" : "积分不足"}</SiteButton>
+                  <SiteButton type="button" disabled={!affordable || soldOut || Boolean(redeemingId)} onClick={() => openRedeemConfirm(item)} className="px-5 py-2.5">{soldOut ? "库存不足" : affordable ? "立即兑换" : "积分不足"}</SiteButton>
                 </div>
               </SitePanel>
             );
@@ -235,11 +313,29 @@ export default function ShopPage() {
       </SitePanel>
 
       {confirmItem ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !redeemingId) setConfirmItem(null); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="redeem-confirm-title" className="w-full max-w-md rounded-3xl border border-white/30 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-sm sm:items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !redeemingId) setConfirmItem(null); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="redeem-confirm-title" className="my-auto w-full max-w-2xl rounded-3xl border border-white/30 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-900">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-3xl text-white" aria-hidden="true">🎁</div>
             <h2 id="redeem-confirm-title" className="mt-4 text-xl font-bold text-slate-900 dark:text-white">确认兑换</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">确定使用 <strong className="text-violet-700 dark:text-violet-200">{formatCredits(confirmItem.cost)} 积分</strong>兑换“{confirmItem.title}”吗？兑换成功后积分将立即扣除。</p>
+            {confirmItem.effect.type === "physical" ? (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/50">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">收货信息</h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">地址仅用于本次发货，并会加密保存在服务器。</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SiteInput placeholder="收货人姓名 *" value={shipping.name} onChange={(event) => updateShipping("name", event.target.value)} />
+                  <SiteInput inputMode="tel" placeholder="手机号 *" value={shipping.phone} onChange={(event) => updateShipping("phone", event.target.value)} />
+                  <SiteInput inputMode="numeric" placeholder="QQ 号 *" value={shipping.qq} onChange={(event) => updateShipping("qq", event.target.value)} />
+                  <SiteInput placeholder="微信号（选填）" value={shipping.wechat || ""} onChange={(event) => updateShipping("wechat", event.target.value)} />
+                  <SiteInput placeholder="省份 *" value={shipping.province} onChange={(event) => updateShipping("province", event.target.value)} />
+                  <SiteInput placeholder="城市 *" value={shipping.city} onChange={(event) => updateShipping("city", event.target.value)} />
+                </div>
+                <SiteTextarea className="mt-3" rows={2} placeholder="详细收货地址 *" value={shipping.address} onChange={(event) => updateShipping("address", event.target.value)} />
+                <SiteTextarea className="mt-3" rows={2} placeholder="订单备注（选填）" value={shipping.remark || ""} onChange={(event) => updateShipping("remark", event.target.value)} />
+              </div>
+            ) : null}
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm dark:bg-slate-950/60">
               <span className="text-slate-500 dark:text-slate-400">兑换后余额</span>
               <span className="font-semibold text-slate-800 dark:text-slate-100">{formatCredits(Math.max(0, credits - confirmItem.cost))} 积分</span>

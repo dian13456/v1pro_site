@@ -429,7 +429,7 @@ export default function MallPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <MallOrderStatusBadge status={order.status} />
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {formatMallPrice(order.totalCents)}
+                        {order.totalCents === 0 ? "积分兑换" : formatMallPrice(order.totalCents)}
                       </span>
                     </div>
                   </div>
@@ -446,7 +446,7 @@ export default function MallPage() {
                         className="h-12 w-12 shrink-0"
                       />
                       <span>
-                        {item.title} × {item.quantity}（{formatMallPrice(item.priceCents)}）
+                        {item.title} × {item.quantity}{item.priceCents > 0 ? `（${formatMallPrice(item.priceCents)}）` : ""}
                       </span>
                     </li>
                   ))}

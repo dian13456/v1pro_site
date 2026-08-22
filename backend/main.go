@@ -42,7 +42,15 @@ type likeRequest struct {
 }
 
 type shopRedeemRequest struct {
-	ItemID string `json:"itemId"`
+	ItemID   string `json:"itemId"`
+	Name     string `json:"name"`
+	Phone    string `json:"phone"`
+	Wechat   string `json:"wechat"`
+	QQ       string `json:"qq"`
+	Province string `json:"province"`
+	City     string `json:"city"`
+	Address  string `json:"address"`
+	Remark   string `json:"remark"`
 }
 
 type favoriteRequest struct {
@@ -1926,6 +1934,17 @@ func main() {
 			creditLedgerEntries = []service.CreditLedgerEntry{}
 		}
 		creditLedger := service.ToCreditLedgerViews(creditLedgerEntries)
+		publicItems := shopCatalog.PublicItems()
+		for i := range publicItems {
+			if publicItems[i].Effect.Type != service.ShopEffectPhysical {
+				continue
+			}
+			stock := 0
+			if current, stockErr := mallService.PointRedemptionStock(publicItems[i].Effect.ProductID); stockErr == nil {
+				stock = current
+			}
+			publicItems[i].Stock = &stock
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"success":                  true,
 			"credits":                  balance,
@@ -1935,7 +1954,7 @@ func main() {
 			"actorLikeDailyLimit":      service.CreditDailyActorLikeLimit,
 			"downloadRewardCredits":    service.UnitsToCredits(service.DownloadRewardUnits),
 			"downloadDailyCapCredits":  service.UnitsToCredits(service.CreditDailyDownloadCapUnits),
-			"items":                    shopCatalog.PublicItems(),
+			"items":                    publicItems,
 			"creditLedger":             creditLedger,
 		})
 	})
@@ -1958,10 +1977,19 @@ func main() {
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
 		result, redeemErr := service.RedeemShopItem(
-			service.ShopRedeemInput{Serial: serial, ItemID: req.ItemID},
+			service.ShopRedeemInput{
+				Serial: serial,
+				ItemID: req.ItemID,
+				Shipping: service.MallShippingPlain{
+					Name: req.Name, Phone: req.Phone, Wechat: req.Wechat, QQ: req.QQ,
+					Province: req.Province, City: req.City, Address: req.Address,
+				},
+				Remark: req.Remark,
+			},
 			shopCatalog,
 			&aiCredits,
 			&aiShareQuota,
+			mallService,
 		)
 		if redeemErr != nil {
 			balance := aiCredits.BalanceCredits(serial)
@@ -1975,6 +2003,12 @@ func main() {
 			return
 		}
 		if saveErr := userDataRepo.SaveAICredits(aiCredits); saveErr != nil {
+			if result.OrderID != "" {
+				if rollbackErr := mallService.RollbackPointRedemptionOrder(result.OrderID); rollbackErr != nil {
+					log.Printf("error: rollback point redemption order %s failed: %v", result.OrderID, rollbackErr)
+				}
+			}
+			aiCredits.RefundUnits(serial, service.CreditsToUnits(result.Cost))
 			aiShareMu.Unlock()
 			aiCreditsMu.Unlock()
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分保存失败"})
@@ -2022,6 +2056,8 @@ func main() {
 			"rewardCredits":    result.RewardCredits,
 			"redeemCode":       result.RedeemCode,
 			"shareCount":       result.ShareCount,
+			"orderId":          result.OrderID,
+			"orderStatus":      result.OrderStatus,
 		}
 		if aiShareUnlimited.Has(serial) {
 			resp["shareUnlimited"] = true

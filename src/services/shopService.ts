@@ -2,6 +2,7 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import type { ShopCatalogPayload, ShopRedeemResult } from "../types/shop";
+import type { MallShippingInput } from "../types/mall";
 
 export async function fetchShopCatalog(): Promise<ShopCatalogPayload> {
   if (!hasValidLocalAuth()) {
@@ -27,7 +28,10 @@ export async function fetchShopCatalog(): Promise<ShopCatalogPayload> {
   });
 }
 
-export async function redeemShopItem(itemId: string): Promise<ShopRedeemResult> {
+export async function redeemShopItem(
+  itemId: string,
+  shipping?: MallShippingInput,
+): Promise<ShopRedeemResult> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
@@ -44,6 +48,6 @@ export async function redeemShopItem(itemId: string): Promise<ShopRedeemResult> 
       Authorization: `Bearer ${auth.token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ itemId }),
+    body: JSON.stringify({ itemId, ...(shipping || {}) }),
   });
 }

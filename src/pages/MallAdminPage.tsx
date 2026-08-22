@@ -402,7 +402,7 @@ export default function MallAdminPage() {
             <div key={order.id} className="rounded-2xl border border-white/20 p-3 dark:border-white/10">
               <div className="font-medium">
                 {order.id} · {MALL_ORDER_STATUS_LABEL[order.status] || order.status} ·{" "}
-                {formatMallPrice(order.totalCents)}
+                {order.totalCents === 0 ? "积分兑换" : formatMallPrice(order.totalCents)}
               </div>
               <div className="text-xs text-slate-500">
                 用户 SN：{order.userSerial || "-"} · {order.province} {order.city}
@@ -418,15 +418,19 @@ export default function MallAdminPage() {
                 <SiteButton type="button" variant="secondary" onClick={() => void handleViewContact(order.id)}>
                   查看地址
                 </SiteButton>
-                <SiteButton type="button" variant="success" onClick={() => void handleStatus(order.id, "paid")}>
-                  确认收款
-                </SiteButton>
+                {order.totalCents > 0 ? (
+                  <SiteButton type="button" variant="success" onClick={() => void handleStatus(order.id, "paid")}>
+                    确认收款
+                  </SiteButton>
+                ) : null}
                 <SiteButton type="button" onClick={() => void handleStatus(order.id, "shipped")}>
                   标记发货
                 </SiteButton>
-                <SiteButton type="button" variant="secondary" onClick={() => void handleStatus(order.id, "cancelled")}>
-                  取消订单
-                </SiteButton>
+                {order.totalCents > 0 ? (
+                  <SiteButton type="button" variant="secondary" onClick={() => void handleStatus(order.id, "cancelled")}>
+                    取消订单
+                  </SiteButton>
+                ) : null}
               </div>
             </div>
           ))

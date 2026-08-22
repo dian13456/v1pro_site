@@ -3,11 +3,11 @@
     {
       "id": "v1pro_miaomiao_shell_77",
       "title": "V1PRO CNC 喵喵壳子 77帧",
-      "description": "兑换后可获得专属兑换码，用于领取 V1PRO CNC 喵喵壳子 77 帧素材。",
+      "description": "实物兑换。填写收货信息并扣除积分后生成待发货订单，可在实物商城查看物流状态。",
       "cost": 1350,
       "effect": {
-        "type": "grant_code",
-        "code": "MIAOMIAO77"
+        "type": "physical",
+        "productId": "mall-shell-sample"
       }
     }
   ]

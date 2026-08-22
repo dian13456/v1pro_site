@@ -1,9 +1,10 @@
 import type { CreditLedgerEntry } from "./credits";
 
 export interface ShopEffect {
-  type: "add_credits" | "reset_ai_share" | "grant_code" | string;
+  type: "add_credits" | "reset_ai_share" | "grant_code" | "physical" | string;
   amount?: number;
   code?: string;
+  productId?: string;
 }
 
 export interface ShopItem {
@@ -12,6 +13,7 @@ export interface ShopItem {
   description: string;
   cost: number;
   effect: ShopEffect;
+  stock?: number;
 }
 
 export interface ShopCatalogPayload {
@@ -39,4 +41,6 @@ export interface ShopRedeemResult {
   redeemCode?: string;
   shareCount?: number;
   shareRemaining?: number;
+  orderId?: string;
+  orderStatus?: string;
 }

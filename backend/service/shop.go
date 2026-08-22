@@ -13,12 +13,14 @@ const (
 	ShopEffectAddCredits   = "add_credits"
 	ShopEffectResetAIShare = "reset_ai_share"
 	ShopEffectGrantCode    = "grant_code"
+	ShopEffectPhysical     = "physical"
 )
 
 type ShopEffect struct {
-	Type   string `json:"type"`
-	Amount int    `json:"amount,omitempty"`
-	Code   string `json:"code,omitempty"`
+	Type      string `json:"type"`
+	Amount    int    `json:"amount,omitempty"`
+	Code      string `json:"code,omitempty"`
+	ProductID string `json:"productId,omitempty"`
 }
 
 type ShopItem struct {
@@ -27,6 +29,7 @@ type ShopItem struct {
 	Description string     `json:"description"`
 	Cost        int        `json:"cost"`
 	Effect      ShopEffect `json:"effect"`
+	Stock       *int       `json:"stock,omitempty"`
 }
 
 type ShopCatalog struct {
@@ -62,6 +65,9 @@ func LoadShopCatalog(path string) (ShopCatalog, error) {
 		if item.Effect.Type == ShopEffectGrantCode && strings.TrimSpace(item.Effect.Code) == "" {
 			continue
 		}
+		if item.Effect.Type == ShopEffectPhysical && strings.TrimSpace(item.Effect.ProductID) == "" {
+			continue
+		}
 		valid = append(valid, item)
 	}
 	catalog.Items = valid
@@ -91,8 +97,10 @@ func (catalog ShopCatalog) PublicItems() []ShopItem {
 }
 
 type ShopRedeemInput struct {
-	Serial string
-	ItemID string
+	Serial   string
+	ItemID   string
+	Shipping MallShippingPlain
+	Remark   string
 }
 
 type ShopRedeemResult struct {
@@ -104,6 +112,8 @@ type ShopRedeemResult struct {
 	RedeemCode       string  `json:"redeemCode,omitempty"`
 	ShareCount       int     `json:"shareCount,omitempty"`
 	ShareRemaining   int     `json:"shareRemaining,omitempty"`
+	OrderID          string  `json:"orderId,omitempty"`
+	OrderStatus      string  `json:"orderStatus,omitempty"`
 	Message          string  `json:"message"`
 }
 
@@ -112,6 +122,7 @@ func RedeemShopItem(
 	catalog ShopCatalog,
 	credits *AICreditsStore,
 	shareQuota *AIShareQuotaStore,
+	mallService *MallService,
 ) (ShopRedeemResult, error) {
 	item, ok := catalog.FindItem(input.ItemID)
 	if !ok {
@@ -164,6 +175,28 @@ func RedeemShopItem(
 		}
 		result.RedeemCode = code
 		result.Message = fmt.Sprintf("兑换成功，请妥善保存兑换码：%s", code)
+	case ShopEffectPhysical:
+		if mallService == nil {
+			refundUnits := credits.RefundUnits(input.Serial, CreditsToUnits(item.Cost))
+			result.CreditsRemaining = UnitsToCredits(refundUnits)
+			return result, fmt.Errorf("实物兑换服务未初始化")
+		}
+		order, orderErr := mallService.CreatePointRedemptionOrder(MallPointRedemptionInput{
+			UserSerial: input.Serial,
+			ProductID:  item.Effect.ProductID,
+			Title:      item.Title,
+			Credits:    item.Cost,
+			Shipping:   input.Shipping,
+			Remark:     input.Remark,
+		})
+		if orderErr != nil {
+			refundUnits := credits.RefundUnits(input.Serial, CreditsToUnits(item.Cost))
+			result.CreditsRemaining = UnitsToCredits(refundUnits)
+			return result, orderErr
+		}
+		result.OrderID = order.ID
+		result.OrderStatus = order.Status
+		result.Message = fmt.Sprintf("兑换成功，订单 %s 已进入待发货队列", order.ID)
 	default:
 		refundUnits := credits.RefundUnits(input.Serial, CreditsToUnits(item.Cost))
 		result.CreditsRemaining = UnitsToCredits(refundUnits)

@@ -260,6 +260,158 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	return toPublicOrder(order), nil
 }
 
+func validatePointRedemptionShipping(input MallShippingPlain, remark string) (MallShippingPlain, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.Wechat = strings.TrimSpace(input.Wechat)
+	input.QQ = strings.TrimSpace(input.QQ)
+	input.Province = strings.TrimSpace(input.Province)
+	input.City = strings.TrimSpace(input.City)
+	input.Address = strings.TrimSpace(input.Address)
+	if input.Name == "" || input.Phone == "" || input.QQ == "" || input.Province == "" || input.City == "" || input.Address == "" {
+		return MallShippingPlain{}, errors.New("请完整填写收货信息（姓名、手机、QQ、省市、详细地址）")
+	}
+	if !ValidateChinaMobilePhone(input.Phone) {
+		return MallShippingPlain{}, errors.New("手机号格式不正确")
+	}
+	if !ValidateQQNumber(input.QQ) {
+		return MallShippingPlain{}, errors.New("QQ 号格式不正确")
+	}
+	if len([]rune(input.Name)) > maxMallNameRunes || len([]rune(input.Wechat)) > maxMallContactRunes ||
+		len([]rune(input.Province)) > maxMallRegionRunes || len([]rune(input.City)) > maxMallRegionRunes ||
+		len([]rune(input.Address)) > maxMallAddressRunes || len([]rune(remark)) > maxMallRemarkRunes {
+		return MallShippingPlain{}, errors.New("收货信息或备注过长")
+	}
+	return input, nil
+}
+
+func (s *MallService) PointRedemptionStock(productID string) (int, error) {
+	if s == nil || s.repo == nil {
+		return 0, errors.New("实物商城服务未初始化")
+	}
+	product, ok, err := s.repo.GetProduct(strings.TrimSpace(productID))
+	if err != nil {
+		return 0, err
+	}
+	if !ok || product.Status != MallProductOnSale {
+		return 0, errors.New("关联实物商品不存在或已下架")
+	}
+	return product.Stock, nil
+}
+
+func (s *MallService) CreatePointRedemptionOrder(input MallPointRedemptionInput) (MallOrderPublic, error) {
+	if s == nil || s.repo == nil {
+		return MallOrderPublic{}, errors.New("实物商城服务未初始化")
+	}
+	serial := strings.TrimSpace(input.UserSerial)
+	productID := strings.TrimSpace(input.ProductID)
+	title := strings.TrimSpace(input.Title)
+	if serial == "" || productID == "" || title == "" || input.Credits <= 0 {
+		return MallOrderPublic{}, errors.New("实物兑换参数无效")
+	}
+	shipping, err := validatePointRedemptionShipping(input.Shipping, input.Remark)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	product, ok, err := s.repo.GetProduct(productID)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	if !ok || product.Status != MallProductOnSale {
+		return MallOrderPublic{}, errors.New("兑换商品不存在或已下架")
+	}
+	if product.Stock <= 0 {
+		return MallOrderPublic{}, errors.New("兑换商品库存不足")
+	}
+
+	nameEnc, err := EncryptActivityField(s.secret, shipping.Name)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	phoneEnc, err := EncryptActivityField(s.secret, shipping.Phone)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	wechatEnc, err := EncryptActivityField(s.secret, shipping.Wechat)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	qqEnc, err := EncryptActivityField(s.secret, shipping.QQ)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	addressEnc, err := EncryptActivityField(s.secret, shipping.Address)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+
+	now := time.Now().UnixMilli()
+	remark := fmt.Sprintf("积分兑换 · %d 积分", input.Credits)
+	if extra := strings.TrimSpace(input.Remark); extra != "" {
+		remark += " · " + extra
+	}
+	order := MallOrder{
+		ID:         mallNewID("pts"),
+		UserSerial: serial,
+		Status:     MallOrderPaid,
+		Items: []MallOrderItem{{
+			ProductID:  product.ID,
+			Title:      title,
+			ImageURL:   product.ImageURL,
+			PriceCents: 0,
+			Quantity:   1,
+		}},
+		TotalCents: 0,
+		NameEnc:    nameEnc,
+		PhoneEnc:   phoneEnc,
+		WechatEnc:  wechatEnc,
+		QQEnc:      qqEnc,
+		Province:   shipping.Province,
+		City:       shipping.City,
+		AddressEnc: addressEnc,
+		Remark:     remark,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		PaidAt:     now,
+	}
+	if err := s.repo.CreateOrder(order, map[string]int{product.ID: -1}); err != nil {
+		return MallOrderPublic{}, err
+	}
+	return toPublicOrder(order), nil
+}
+
+func isPointRedemptionOrder(order MallOrder) bool {
+	return order.TotalCents == 0 && strings.HasPrefix(order.Remark, "积分兑换 · ")
+}
+
+// RollbackPointRedemptionOrder cancels an order created by a points redemption and
+// restores its stock. It is only used when persisting the matching credit charge fails.
+func (s *MallService) RollbackPointRedemptionOrder(orderID string) error {
+	if s == nil || s.repo == nil {
+		return errors.New("实物商城服务未初始化")
+	}
+	order, ok, err := s.repo.GetOrder(strings.TrimSpace(orderID))
+	if err != nil {
+		return err
+	}
+	if !ok || !isPointRedemptionOrder(order) {
+		return errors.New("积分兑换订单不存在")
+	}
+	if order.Status == MallOrderCancelled {
+		return nil
+	}
+	if order.Status != MallOrderPaid {
+		return errors.New("当前订单状态无法回滚")
+	}
+	stockDelta := make(map[string]int, len(order.Items))
+	for _, item := range order.Items {
+		stockDelta[item.ProductID] += item.Quantity
+	}
+	order.Status = MallOrderCancelled
+	order.UpdatedAt = time.Now().UnixMilli()
+	return s.repo.UpdateOrder(order, stockDelta)
+}
+
 func (s *MallService) ListMyOrders(serial string) ([]MallOrderPublic, error) {
 	items, err := s.repo.ListOrdersByUser(strings.TrimSpace(serial))
 	if err != nil {
@@ -352,6 +504,9 @@ func (s *MallService) UpdateOrderStatus(orderID, status, trackingNo string) (Mal
 	}
 	if prevStatus == MallOrderCancelled && status != MallOrderCancelled {
 		return MallOrderPublic{}, errors.New("已取消订单不可再改状态")
+	}
+	if status == MallOrderCancelled && prevStatus != MallOrderCancelled && isPointRedemptionOrder(order) {
+		return MallOrderPublic{}, errors.New("积分兑换订单不能直接取消，请先人工退还积分")
 	}
 	if status == MallOrderCancelled && prevStatus != MallOrderCancelled {
 		if prevStatus == MallOrderPaid || prevStatus == MallOrderShipped {
