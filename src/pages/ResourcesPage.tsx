@@ -7,6 +7,7 @@ import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
+import { DeviceAuthenticationDialog } from "../components/DeviceAuthenticationDialog";
 import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
 import { SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
@@ -48,6 +49,7 @@ const WEEKLY_TOP_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 16;
 const RECOMMENDATION_FETCH_SIZE = 64;
 const RECENT_RECOMMENDATIONS_KEY = "jiadian_recent_recommendations_v2";
+const CURRENT_DEVICE_NOT_FOUND_PATTERN = /^未找到当前认证的 V1PRO（SN .+），请重新认证该设备$/;
 
 function readRecentRecommendationIds(): number[] {
   try {
@@ -112,6 +114,7 @@ export default function ResourcesPage() {
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deviceAuthErrorMessage, setDeviceAuthErrorMessage] = useState("");
   const [capacityFilter, setCapacityFilter] = useState<"all" | DeviceFrameCapacity>("all");
   const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
   const [albumMode, setAlbumMode] = useState(false);
@@ -459,6 +462,13 @@ export default function ResourcesPage() {
     }));
   };
 
+  const showResourceError = (message: string) => {
+    setErrorMessage(message);
+    if (CURRENT_DEVICE_NOT_FOUND_PATTERN.test(message)) {
+      setDeviceAuthErrorMessage(message);
+    }
+  };
+
   const handleOpenResource = (resource: ResourceItem) => {
     setSelectedResource(resource);
     void recordResourceInteraction(resource.id, "view").catch(() => undefined);
@@ -503,7 +513,7 @@ export default function ResourcesPage() {
       .catch((err) => {
         setTransferNotice("");
         setWebUsbProgress(null);
-        setErrorMessage((err as Error)?.message || "网页直传失败");
+        showResourceError((err as Error)?.message || "网页直传失败");
       })
       .finally(() => {
         setWebUsbTransferringId(null);
@@ -528,7 +538,7 @@ export default function ResourcesPage() {
           window.setTimeout(() => setTransferNotice(""), 5000);
         },
         onError: (message) => {
-          setErrorMessage(message);
+          showResourceError(message);
         },
         onPreparing: () => setTransferringId(resource.id),
         onPrepareEnd: () => setTransferringId(null),
@@ -723,7 +733,7 @@ export default function ResourcesPage() {
       .catch((err) => {
         setWebUsbProgress(null);
         setAlbumTransferStatus("");
-        setErrorMessage((err as Error)?.message || "相册网页直传失败");
+        showResourceError((err as Error)?.message || "相册网页直传失败");
       })
       .finally(() => {
         setAlbumTransferring(false);
@@ -1034,6 +1044,17 @@ export default function ResourcesPage() {
           onClose={() => setSelectedResource(null)}
           onTransfer={handleTransfer}
           onWebUsbTransfer={handleWebUsbTransfer}
+        />
+      ) : null}
+      {deviceAuthErrorMessage ? (
+        <DeviceAuthenticationDialog
+          message={deviceAuthErrorMessage}
+          onClose={() => setDeviceAuthErrorMessage("")}
+          onReauthenticate={() => {
+            setDeviceAuthErrorMessage("");
+            setSelectedResource(null);
+            navigate("/auth", { replace: true });
+          }}
         />
       ) : null}
     </div>
