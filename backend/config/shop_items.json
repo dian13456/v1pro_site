@@ -9,6 +9,16 @@
         "type": "physical",
         "productId": "mall-shell-sample"
       }
+    },
+    {
+      "id": "v1pro_77_frame_board",
+      "title": "佳点V1PRO 77帧板子",
+      "description": "300 积分实物兑换。填写收货信息并扣除积分后生成待发货订单，可在实物商城查看物流状态。",
+      "cost": 300,
+      "effect": {
+        "type": "physical",
+        "productId": "mall-v1pro-77-frame-board"
+      }
     }
   ]
 }

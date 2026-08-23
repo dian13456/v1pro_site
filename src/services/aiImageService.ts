@@ -10,6 +10,7 @@ import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { spendDevCredits } from "./profileService";
 import { launchV1ProTransferSync, assertCosTransferUrl, fileNameFromTransferUrl } from "./v1proTransferService";
+import type { ResourceTransferDefaults } from "../types/resource";
 
 export class ImageReviewPendingError extends Error {
   readonly reviewId: string;
@@ -321,7 +322,7 @@ export async function transferAiImageToDevice(
 export async function shareAiImageToCatalog(
   image: GeneratedAiImage,
   prompt: string,
-  options: { title?: string; description?: string } = {},
+  options: { title?: string; description?: string; transferDefaults?: ResourceTransferDefaults } = {},
 ): Promise<AiImageShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -342,6 +343,7 @@ export async function shareAiImageToCatalog(
         imageBase64: image.dataUrl,
         title: uploadTitle,
         description: (options.description || prompt).trim() || uploadTitle,
+        transferDefaults: options.transferDefaults,
       }
     : {
         imageBase64: image.dataUrl,

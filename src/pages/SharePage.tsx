@@ -38,6 +38,7 @@ import {
 import { scheduleFfmpegAssetPreload } from "../services/ffmpegAssetCache";
 import { validateShareCoverFile } from "../services/shareCoverService";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
+import type { ResourceTransferDefaults } from "../types/resource";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
@@ -136,7 +137,7 @@ export default function SharePage() {
   const [shareUnlimited, setShareUnlimited] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [targetFrameOptions, setTargetFrameOptions] = useState<number[]>([77, 154, 308]);
-  const [videoFps, setVideoFps] = useState(25);
+  const [videoFps, setVideoFps] = useState<ResourceTransferDefaults["videoFps"]>(25);
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
   const [videoColorProfile, setVideoColorProfile] = useState<VideoColorProfile>("normal");
@@ -233,12 +234,20 @@ export default function SharePage() {
       let resourceId: number | undefined;
       let remaining: number | undefined;
       let unlimited = false;
+      const transferDefaults: ResourceTransferDefaults = {
+        targetFrameCapacities: [...targetFrameOptions] as ResourceTransferDefaults["targetFrameCapacities"],
+        videoFps,
+        fitMode,
+        rotationDeg,
+        colorProfile: videoColorProfile,
+      };
 
       switch (mediaKind) {
         case "gif": {
           const result = await shareGifToCatalog(selectedFile, {
             title,
             description,
+            transferDefaults,
             coverFile: customCoverFile || undefined,
             onProgress: setProgress,
           });
@@ -252,6 +261,7 @@ export default function SharePage() {
             title,
             description,
             columnTag,
+            transferDefaults,
             coverFile: customCoverFile || undefined,
             onProgress: setProgress,
           });
@@ -267,7 +277,7 @@ export default function SharePage() {
           const result = await shareAiImageToCatalog(
             uploaded,
             description.trim() || title.trim(),
-            { title: title.trim(), description: description.trim() || title.trim() },
+            { title: title.trim(), description: description.trim() || title.trim(), transferDefaults },
           );
           resourceId = result.resourceId;
           remaining = result.shareRemaining;
@@ -585,7 +595,7 @@ export default function SharePage() {
             <div className="mb-4 grid grid-cols-2 gap-3.5">
               <div>
                 <label className={fieldLabelClass}>视频帧率</label>
-                <select className={fieldClass} value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value))}>
+                <select className={fieldClass} value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value) as ResourceTransferDefaults["videoFps"])}>
                   <option value={20}>20 fps</option><option value={25}>25 fps</option><option value={30}>30 fps</option>
                 </select>
               </div>

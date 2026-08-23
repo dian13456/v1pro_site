@@ -51,6 +51,11 @@ func (s *MallService) ListPublicProducts() ([]MallProductPublic, error) {
 	})
 	out := make([]MallProductPublic, 0, len(items))
 	for _, p := range items {
+		// Zero-priced products are inventory records used exclusively by the
+		// points shop. They must not be orderable for free in the cash mall.
+		if p.PriceCents == 0 {
+			continue
+		}
 		NormalizeMallProductImages(&p)
 		out = append(out, MallProductPublic{
 			ID: p.ID, Title: p.Title, Description: p.Description,

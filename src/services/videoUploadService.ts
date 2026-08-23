@@ -9,6 +9,7 @@ import {
   MAX_SHARE_VIDEO_SOURCE_BYTES,
 } from "./browserVideoUploadCompressionService";
 import { prepareShareCoverJpeg } from "./shareCoverService";
+import type { ResourceTransferDefaults } from "../types/resource";
 
 /** Source file limit shown on the share page. The COS object remains <=20MB. */
 export const MAX_VIDEO_UPLOAD_BYTES = MAX_SHARE_VIDEO_SOURCE_BYTES;
@@ -354,6 +355,7 @@ export async function shareVideoToCatalog(
     title?: string;
     description?: string;
     columnTag?: string;
+    transferDefaults?: ResourceTransferDefaults;
     coverFile?: File;
     onProgress?: (stage: string) => void;
   } = {}
@@ -382,6 +384,7 @@ export async function shareVideoToCatalog(
         title,
         description,
         columnTag,
+        transferDefaults: options.transferDefaults,
       }),
     });
     throwIfPendingReview(payload);
@@ -433,6 +436,7 @@ export async function shareVideoToCatalog(
         title,
         description,
         columnTag,
+        transferDefaults: options.transferDefaults,
       }),
     },
     { timeoutMs: 150_000 },

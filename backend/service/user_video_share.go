@@ -59,12 +59,12 @@ type CreateVideoUploadSessionInput struct {
 }
 
 type CreateVideoUploadSessionResult struct {
-	SessionID       string `json:"sessionId"`
-	VideoUploadURL  string `json:"videoUploadUrl"`
-	CoverUploadURL  string `json:"coverUploadUrl"`
-	VideoObjectKey  string `json:"videoObjectKey"`
-	CoverObjectKey  string `json:"coverObjectKey"`
-	MaxBytes        int64  `json:"maxBytes"`
+	SessionID      string `json:"sessionId"`
+	VideoUploadURL string `json:"videoUploadUrl"`
+	CoverUploadURL string `json:"coverUploadUrl"`
+	VideoObjectKey string `json:"videoObjectKey"`
+	CoverObjectKey string `json:"coverObjectKey"`
+	MaxBytes       int64  `json:"maxBytes"`
 }
 
 func CreateVideoUploadSession(
@@ -189,14 +189,15 @@ func (store *VideoUploadSessionStore) Consume(sessionID, serial string) (VideoUp
 }
 
 type ShareUserVideoInput struct {
-	Title          string
-	Description    string
-	ColumnTag      string
-	Author         string
-	UploaderSerial string
-	VideoObjectKey string
-	CoverObjectKey string
-	VideoSizeBytes int64
+	Title            string
+	Description      string
+	ColumnTag        string
+	Author           string
+	UploaderSerial   string
+	VideoObjectKey   string
+	CoverObjectKey   string
+	VideoSizeBytes   int64
+	TransferDefaults *ResourceTransferDefaults
 }
 
 func VerifyUploadedVideoObjects(
@@ -247,6 +248,10 @@ func ShareUserVideoToCatalog(
 	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
 	if videoObjectKey == "" || coverObjectKey == "" {
 		return nil, fmt.Errorf("视频或封面路径无效")
+	}
+	transferDefaults, err := NormalizeResourceTransferDefaults(input.TransferDefaults)
+	if err != nil {
+		return nil, err
 	}
 
 	code, err := randomHexCode(8)
@@ -303,6 +308,9 @@ func ShareUserVideoToCatalog(
 	}
 	if columnTag := strings.TrimSpace(input.ColumnTag); columnTag != "" {
 		entry["columnTag"] = columnTag
+	}
+	if transferDefaults != nil {
+		entry["transferDefaults"] = transferDefaults
 	}
 	uploaderSerial := normalizeUploaderSerial(input.UploaderSerial)
 	if uploaderSerial != "" {

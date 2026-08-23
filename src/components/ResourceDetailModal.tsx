@@ -72,12 +72,12 @@ export function ResourceDetailModal({
   const { access } = useDeviceFeatureAccess();
   const featureEnabled = access?.enabled === true;
   const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
-  const [fps, setFps] = useState<VideoFpsOption>(20);
+  const [fps, setFps] = useState<VideoFpsOption>(() => resource.transferDefaults?.videoFps ?? 20);
   const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
-    defaultTransferFitMode(transferMediaKind),
+    resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind),
   );
-  const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(0);
-  const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>("normal");
+  const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(() => resource.transferDefaults?.rotationDeg ?? 0);
+  const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>(() => resource.transferDefaults?.colorProfile ?? "normal");
   const [previewUrl, setPreviewUrl] = useState("");
   const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
   const [probing, setProbing] = useState(false);
@@ -90,8 +90,11 @@ export function ResourceDetailModal({
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    setFitMode(defaultTransferFitMode(transferMediaKind));
-  }, [resource.id, transferMediaKind]);
+    setFps(resource.transferDefaults?.videoFps ?? 20);
+    setFitMode(resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind));
+    setRotationDeg(resource.transferDefaults?.rotationDeg ?? 0);
+    setColorProfile(resource.transferDefaults?.colorProfile ?? "normal");
+  }, [resource.id, resource.transferDefaults, transferMediaKind]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -226,7 +229,15 @@ export function ResourceDetailModal({
           <dl className="space-y-2 text-[12.5px]">
             <div className="flex justify-between gap-4"><dt className="text-slate-400">上传时间</dt><dd className="font-semibold">{new Date(resource.updatedAt).toLocaleDateString("zh-CN")}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-400">下载量</dt><dd className="font-semibold">{downloadCount} 次</dd></div>
+            {resource.transferDefaults ? (
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-400">分享者适配</dt>
+                <dd className="text-right font-semibold">{resource.transferDefaults.targetFrameCapacities.map((value) => `${value}帧`).join(" / ")}</dd>
+              </div>
+            ) : null}
           </dl>
+
+          {resource.transferDefaults ? <p className="text-xs font-semibold text-emerald-600">✓ 已载入分享者推荐的下传参数，可在下方继续调整</p> : null}
 
           {isAnimated ? (
             <>

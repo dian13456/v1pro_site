@@ -23,11 +23,12 @@ const (
 var aiImageShareMu sync.Mutex
 
 type ShareAIImageInput struct {
-	ImageBase64    string
-	Prompt         string
-	Title          string
-	Author         string
-	UploaderSerial string
+	ImageBase64      string
+	Prompt           string
+	Title            string
+	Author           string
+	UploaderSerial   string
+	TransferDefaults *ResourceTransferDefaults
 }
 
 type ShareAIImageResult struct {
@@ -47,6 +48,10 @@ func ShareAIImageToCatalog(
 ) (*ShareAIImageResult, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("图片存储未配置")
+	}
+	transferDefaults, err := NormalizeResourceTransferDefaults(input.TransferDefaults)
+	if err != nil {
+		return nil, err
 	}
 
 	raw, err := DecodeAIImageBytes(input.ImageBase64)
@@ -107,6 +112,9 @@ func ShareAIImageToCatalog(
 	}
 	if author != "" {
 		entry["author"] = author
+	}
+	if transferDefaults != nil {
+		entry["transferDefaults"] = transferDefaults
 	}
 	uploaderSerial := normalizeUploaderSerial(input.UploaderSerial)
 	if uploaderSerial != "" {

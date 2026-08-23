@@ -142,9 +142,10 @@ type aiImageShareRequest struct {
 }
 
 type userImageShareRequest struct {
-	ImageBase64 string `json:"imageBase64"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	ImageBase64      string                            `json:"imageBase64"`
+	Title            string                            `json:"title"`
+	Description      string                            `json:"description"`
+	TransferDefaults *service.ResourceTransferDefaults `json:"transferDefaults,omitempty"`
 }
 
 type userGifUploadSessionRequest struct {
@@ -153,9 +154,10 @@ type userGifUploadSessionRequest struct {
 }
 
 type userGifShareRequest struct {
-	SessionID   string `json:"sessionId"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	SessionID        string                            `json:"sessionId"`
+	Title            string                            `json:"title"`
+	Description      string                            `json:"description"`
+	TransferDefaults *service.ResourceTransferDefaults `json:"transferDefaults,omitempty"`
 }
 
 type userVideoUploadSessionRequest struct {
@@ -164,10 +166,11 @@ type userVideoUploadSessionRequest struct {
 }
 
 type userVideoShareRequest struct {
-	SessionID   string `json:"sessionId"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ColumnTag   string `json:"columnTag"`
+	SessionID        string                            `json:"sessionId"`
+	Title            string                            `json:"title"`
+	Description      string                            `json:"description"`
+	ColumnTag        string                            `json:"columnTag"`
+	TransferDefaults *service.ResourceTransferDefaults `json:"transferDefaults,omitempty"`
 }
 
 type imageReviewActionRequest struct {
@@ -2611,6 +2614,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
 			return
 		}
+		transferDefaults, err := service.NormalizeResourceTransferDefaults(req.TransferDefaults)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
@@ -2636,12 +2644,13 @@ func main() {
 			imageSigner,
 			&imageReviewStore,
 			service.EnqueueImageReviewInput{
-				Serial:      serial,
-				Action:      service.ReviewActionShareUser,
-				Title:       req.Title,
-				Description: req.Description,
-				Source:      "upload",
-				ImageBase64: req.ImageBase64,
+				Serial:           serial,
+				Action:           service.ReviewActionShareUser,
+				Title:            req.Title,
+				Description:      req.Description,
+				TransferDefaults: transferDefaults,
+				Source:           "upload",
+				ImageBase64:      req.ImageBase64,
 			},
 			serial+"-upload-share",
 			"IMAGE",
@@ -2672,11 +2681,12 @@ func main() {
 			resourcesPath,
 			imageMapPath,
 			service.ShareAIImageInput{
-				ImageBase64:    req.ImageBase64,
-				Prompt:         req.Description,
-				Title:          req.Title,
-				Author:         author,
-				UploaderSerial: serial,
+				ImageBase64:      req.ImageBase64,
+				Prompt:           req.Description,
+				Title:            req.Title,
+				Author:           author,
+				UploaderSerial:   serial,
+				TransferDefaults: transferDefaults,
 			},
 		)
 		if err != nil {
@@ -2838,6 +2848,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
 			return
 		}
+		transferDefaults, err := service.NormalizeResourceTransferDefaults(req.TransferDefaults)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
@@ -2882,12 +2897,13 @@ func main() {
 		}
 
 		reviewInput := service.EnqueueGifReviewInput{
-			Serial:         serial,
-			Author:         author,
-			Title:          title,
-			Description:    description,
-			GifObjectKey:   session.GifObjectKey,
-			CoverObjectKey: session.CoverObjectKey,
+			Serial:           serial,
+			Author:           author,
+			Title:            title,
+			Description:      description,
+			GifObjectKey:     session.GifObjectKey,
+			CoverObjectKey:   session.CoverObjectKey,
+			TransferDefaults: transferDefaults,
 		}
 
 		imageReviewMu.Lock()
@@ -2920,13 +2936,14 @@ func main() {
 			resourceMapPath,
 			imageMapPath,
 			service.ShareUserGifInput{
-				Title:          title,
-				Description:    description,
-				Author:         author,
-				UploaderSerial: serial,
-				GifObjectKey:   session.GifObjectKey,
-				CoverObjectKey: session.CoverObjectKey,
-				GifSizeBytes:   gifSize,
+				Title:            title,
+				Description:      description,
+				Author:           author,
+				UploaderSerial:   serial,
+				GifObjectKey:     session.GifObjectKey,
+				CoverObjectKey:   session.CoverObjectKey,
+				GifSizeBytes:     gifSize,
+				TransferDefaults: transferDefaults,
 			},
 		)
 		if err != nil {
@@ -3088,6 +3105,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "sessionId 不能为空"})
 			return
 		}
+		transferDefaults, err := service.NormalizeResourceTransferDefaults(req.TransferDefaults)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
@@ -3151,13 +3173,14 @@ func main() {
 		columnTag := strings.TrimSpace(req.ColumnTag)
 
 		reviewInput := service.EnqueueVideoReviewInput{
-			Serial:         serial,
-			Author:         author,
-			Title:          title,
-			Description:    description,
-			ColumnTag:      columnTag,
-			VideoObjectKey: videoObjectKey,
-			CoverObjectKey: session.CoverObjectKey,
+			Serial:           serial,
+			Author:           author,
+			Title:            title,
+			Description:      description,
+			ColumnTag:        columnTag,
+			VideoObjectKey:   videoObjectKey,
+			CoverObjectKey:   session.CoverObjectKey,
+			TransferDefaults: transferDefaults,
 		}
 
 		imageReviewMu.Lock()
@@ -3191,14 +3214,15 @@ func main() {
 			resourceMapPath,
 			imageMapPath,
 			service.ShareUserVideoInput{
-				Title:          title,
-				Description:    description,
-				ColumnTag:      columnTag,
-				Author:         author,
-				UploaderSerial: serial,
-				VideoObjectKey: videoObjectKey,
-				CoverObjectKey: session.CoverObjectKey,
-				VideoSizeBytes: videoSize,
+				Title:            title,
+				Description:      description,
+				ColumnTag:        columnTag,
+				Author:           author,
+				UploaderSerial:   serial,
+				VideoObjectKey:   videoObjectKey,
+				CoverObjectKey:   session.CoverObjectKey,
+				VideoSizeBytes:   videoSize,
+				TransferDefaults: transferDefaults,
 			},
 		)
 		if err != nil {

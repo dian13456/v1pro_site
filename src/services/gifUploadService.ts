@@ -3,6 +3,7 @@ import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { ImageReviewPendingError } from "./aiImageService";
 import { prepareShareCoverJpeg } from "./shareCoverService";
+import type { ResourceTransferDefaults } from "../types/resource";
 
 export const MAX_GIF_UPLOAD_BYTES = 15 * 1024 * 1024;
 
@@ -149,7 +150,7 @@ export async function createGifUploadSession(file: File): Promise<GifUploadSessi
 
 export async function shareGifToCatalog(
   file: File,
-  options: { title?: string; description?: string; coverFile?: File; onProgress?: (stage: string) => void } = {}
+  options: { title?: string; description?: string; transferDefaults?: ResourceTransferDefaults; coverFile?: File; onProgress?: (stage: string) => void } = {}
 ): Promise<GifShareResponse> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -173,6 +174,7 @@ export async function shareGifToCatalog(
         sessionId: "dev-session",
         title,
         description,
+        transferDefaults: options.transferDefaults,
       }),
     });
     throwIfPendingReview(payload);
@@ -209,6 +211,7 @@ export async function shareGifToCatalog(
         sessionId: session.sessionId,
         title,
         description,
+        transferDefaults: options.transferDefaults,
       }),
     },
     { timeoutMs: 150_000 },

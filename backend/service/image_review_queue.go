@@ -19,34 +19,35 @@ const (
 	ImageReviewStatusApproved = "approved"
 	ImageReviewStatusRejected = "rejected"
 
-	ReviewActionShareAI     = "share_ai"
-	ReviewActionShareUser   = "share_user"
+	ReviewActionShareAI        = "share_ai"
+	ReviewActionShareUser      = "share_user"
 	ReviewActionShareUserGif   = "share_user_gif"
 	ReviewActionShareUserVideo = "share_user_video"
-	ReviewActionTransfer    = "transfer"
-	ReviewActionGenerate    = "generate"
+	ReviewActionTransfer       = "transfer"
+	ReviewActionGenerate       = "generate"
 )
 
 type PendingImageReview struct {
-	ID             string `json:"id"`
-	Serial         string `json:"serial"`
-	Author         string `json:"author,omitempty"`
-	Action         string `json:"action"`
-	Title          string `json:"title,omitempty"`
-	Prompt         string `json:"prompt,omitempty"`
-	Description    string `json:"description,omitempty"`
-	ColumnTag      string `json:"columnTag,omitempty"`
-	Source         string `json:"source,omitempty"`
-	ImageObjectKey string `json:"imageObjectKey"`
-	GifObjectKey   string `json:"gifObjectKey,omitempty"`
-	CoverObjectKey string `json:"coverObjectKey,omitempty"`
-	Label          string `json:"label,omitempty"`
-	SubLabel       string `json:"subLabel,omitempty"`
-	Score          int    `json:"score,omitempty"`
-	Status         string `json:"status"`
-	ReviewNote     string `json:"reviewNote,omitempty"`
-	CreatedAt      string `json:"createdAt"`
-	ReviewedAt     string `json:"reviewedAt,omitempty"`
+	ID               string                    `json:"id"`
+	Serial           string                    `json:"serial"`
+	Author           string                    `json:"author,omitempty"`
+	Action           string                    `json:"action"`
+	Title            string                    `json:"title,omitempty"`
+	Prompt           string                    `json:"prompt,omitempty"`
+	Description      string                    `json:"description,omitempty"`
+	ColumnTag        string                    `json:"columnTag,omitempty"`
+	Source           string                    `json:"source,omitempty"`
+	ImageObjectKey   string                    `json:"imageObjectKey"`
+	GifObjectKey     string                    `json:"gifObjectKey,omitempty"`
+	CoverObjectKey   string                    `json:"coverObjectKey,omitempty"`
+	TransferDefaults *ResourceTransferDefaults `json:"transferDefaults,omitempty"`
+	Label            string                    `json:"label,omitempty"`
+	SubLabel         string                    `json:"subLabel,omitempty"`
+	Score            int                       `json:"score,omitempty"`
+	Status           string                    `json:"status"`
+	ReviewNote       string                    `json:"reviewNote,omitempty"`
+	CreatedAt        string                    `json:"createdAt"`
+	ReviewedAt       string                    `json:"reviewedAt,omitempty"`
 }
 
 type ImageReviewStore struct {
@@ -164,15 +165,16 @@ func StageImageForReview(
 }
 
 type EnqueueImageReviewInput struct {
-	Serial      string
-	Author      string
-	Action      string
-	Title       string
-	Prompt      string
-	Description string
-	Source      string
-	ImageBase64 string
-	Outcome     ImageModerationOutcome
+	Serial           string
+	Author           string
+	Action           string
+	Title            string
+	Prompt           string
+	Description      string
+	Source           string
+	ImageBase64      string
+	Outcome          ImageModerationOutcome
+	TransferDefaults *ResourceTransferDefaults
 }
 
 func EnqueueImageReview(
@@ -187,18 +189,19 @@ func EnqueueImageReview(
 		return PendingImageReview{}, err
 	}
 	item := store.Enqueue(PendingImageReview{
-		ID:             reviewID,
-		Serial:         strings.TrimSpace(input.Serial),
-		Author:         strings.TrimSpace(input.Author),
-		Action:         strings.TrimSpace(input.Action),
-		Title:          strings.TrimSpace(input.Title),
-		Prompt:         strings.TrimSpace(input.Prompt),
-		Description:    strings.TrimSpace(input.Description),
-		Source:         strings.TrimSpace(input.Source),
-		ImageObjectKey: objectKey,
-		Label:          strings.TrimSpace(input.Outcome.Label),
-		SubLabel:       strings.TrimSpace(input.Outcome.SubLabel),
-		Score:          input.Outcome.Score,
+		ID:               reviewID,
+		Serial:           strings.TrimSpace(input.Serial),
+		Author:           strings.TrimSpace(input.Author),
+		Action:           strings.TrimSpace(input.Action),
+		Title:            strings.TrimSpace(input.Title),
+		Prompt:           strings.TrimSpace(input.Prompt),
+		Description:      strings.TrimSpace(input.Description),
+		Source:           strings.TrimSpace(input.Source),
+		ImageObjectKey:   objectKey,
+		TransferDefaults: input.TransferDefaults,
+		Label:            strings.TrimSpace(input.Outcome.Label),
+		SubLabel:         strings.TrimSpace(input.Outcome.SubLabel),
+		Score:            input.Outcome.Score,
 	})
 	return item, nil
 }
@@ -308,11 +311,12 @@ func approvePendingImageShare(
 		deps.ResourcesPath,
 		deps.ImageMapPath,
 		ShareAIImageInput{
-			ImageBase64:    imageBase64,
-			Prompt:         prompt,
-			Title:          title,
-			Author:         item.Author,
-			UploaderSerial: item.Serial,
+			ImageBase64:      imageBase64,
+			Prompt:           prompt,
+			Title:            title,
+			Author:           item.Author,
+			UploaderSerial:   item.Serial,
+			TransferDefaults: item.TransferDefaults,
 		},
 	)
 	if err != nil {
@@ -364,13 +368,14 @@ func approvePendingGifShare(
 		deps.ResourceMapPath,
 		deps.ImageMapPath,
 		ShareUserGifInput{
-			Title:          title,
-			Description:    description,
-			Author:         item.Author,
-			UploaderSerial: item.Serial,
-			GifObjectKey:   gifObjectKey,
-			CoverObjectKey: coverObjectKey,
-			GifSizeBytes:   0,
+			Title:            title,
+			Description:      description,
+			Author:           item.Author,
+			UploaderSerial:   item.Serial,
+			GifObjectKey:     gifObjectKey,
+			CoverObjectKey:   coverObjectKey,
+			GifSizeBytes:     0,
+			TransferDefaults: item.TransferDefaults,
 		},
 	)
 	if err != nil {
@@ -435,14 +440,15 @@ func approvePendingVideoShare(
 		deps.ResourceMapPath,
 		deps.ImageMapPath,
 		ShareUserVideoInput{
-			Title:          title,
-			Description:    description,
-			ColumnTag:      item.ColumnTag,
-			Author:         item.Author,
-			UploaderSerial: item.Serial,
-			VideoObjectKey: videoObjectKey,
-			CoverObjectKey: coverObjectKey,
-			VideoSizeBytes: videoSize,
+			Title:            title,
+			Description:      description,
+			ColumnTag:        item.ColumnTag,
+			Author:           item.Author,
+			UploaderSerial:   item.Serial,
+			VideoObjectKey:   videoObjectKey,
+			CoverObjectKey:   coverObjectKey,
+			VideoSizeBytes:   videoSize,
+			TransferDefaults: item.TransferDefaults,
 		},
 	)
 	if err != nil {
@@ -505,32 +511,34 @@ func ProcessImageModerationWithReview(
 }
 
 type EnqueueGifReviewInput struct {
-	Serial         string
-	Author         string
-	Title          string
-	Description    string
-	GifObjectKey   string
-	CoverObjectKey string
-	Outcome        ImageModerationOutcome
+	Serial           string
+	Author           string
+	Title            string
+	Description      string
+	GifObjectKey     string
+	CoverObjectKey   string
+	Outcome          ImageModerationOutcome
+	TransferDefaults *ResourceTransferDefaults
 }
 
 func EnqueueGifReview(store *ImageReviewStore, input EnqueueGifReviewInput) PendingImageReview {
 	reviewID := fmt.Sprintf("rev-%d", time.Now().UnixNano())
 	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
 	return store.Enqueue(PendingImageReview{
-		ID:             reviewID,
-		Serial:         strings.TrimSpace(input.Serial),
-		Author:         strings.TrimSpace(input.Author),
-		Action:         ReviewActionShareUserGif,
-		Title:          strings.TrimSpace(input.Title),
-		Description:    strings.TrimSpace(input.Description),
-		Source:         "upload",
-		ImageObjectKey: coverObjectKey,
-		GifObjectKey:   strings.TrimSpace(input.GifObjectKey),
-		CoverObjectKey: coverObjectKey,
-		Label:          strings.TrimSpace(input.Outcome.Label),
-		SubLabel:       strings.TrimSpace(input.Outcome.SubLabel),
-		Score:          input.Outcome.Score,
+		ID:               reviewID,
+		Serial:           strings.TrimSpace(input.Serial),
+		Author:           strings.TrimSpace(input.Author),
+		Action:           ReviewActionShareUserGif,
+		Title:            strings.TrimSpace(input.Title),
+		Description:      strings.TrimSpace(input.Description),
+		Source:           "upload",
+		ImageObjectKey:   coverObjectKey,
+		GifObjectKey:     strings.TrimSpace(input.GifObjectKey),
+		CoverObjectKey:   coverObjectKey,
+		TransferDefaults: input.TransferDefaults,
+		Label:            strings.TrimSpace(input.Outcome.Label),
+		SubLabel:         strings.TrimSpace(input.Outcome.SubLabel),
+		Score:            input.Outcome.Score,
 	})
 }
 
@@ -566,34 +574,36 @@ func ProcessGifShareModerationWithReview(
 }
 
 type EnqueueVideoReviewInput struct {
-	Serial         string
-	Author         string
-	Title          string
-	Description    string
-	ColumnTag      string
-	VideoObjectKey string
-	CoverObjectKey string
-	Outcome        ImageModerationOutcome
+	Serial           string
+	Author           string
+	Title            string
+	Description      string
+	ColumnTag        string
+	VideoObjectKey   string
+	CoverObjectKey   string
+	Outcome          ImageModerationOutcome
+	TransferDefaults *ResourceTransferDefaults
 }
 
 func EnqueueVideoReview(store *ImageReviewStore, input EnqueueVideoReviewInput) PendingImageReview {
 	reviewID := fmt.Sprintf("rev-%d", time.Now().UnixNano())
 	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
 	return store.Enqueue(PendingImageReview{
-		ID:             reviewID,
-		Serial:         strings.TrimSpace(input.Serial),
-		Author:         strings.TrimSpace(input.Author),
-		Action:         ReviewActionShareUserVideo,
-		Title:          strings.TrimSpace(input.Title),
-		Description:    strings.TrimSpace(input.Description),
-		ColumnTag:      strings.TrimSpace(input.ColumnTag),
-		Source:         "upload",
-		ImageObjectKey: coverObjectKey,
-		GifObjectKey:   strings.TrimSpace(input.VideoObjectKey),
-		CoverObjectKey: coverObjectKey,
-		Label:          strings.TrimSpace(input.Outcome.Label),
-		SubLabel:       strings.TrimSpace(input.Outcome.SubLabel),
-		Score:          input.Outcome.Score,
+		ID:               reviewID,
+		Serial:           strings.TrimSpace(input.Serial),
+		Author:           strings.TrimSpace(input.Author),
+		Action:           ReviewActionShareUserVideo,
+		Title:            strings.TrimSpace(input.Title),
+		Description:      strings.TrimSpace(input.Description),
+		ColumnTag:        strings.TrimSpace(input.ColumnTag),
+		Source:           "upload",
+		ImageObjectKey:   coverObjectKey,
+		GifObjectKey:     strings.TrimSpace(input.VideoObjectKey),
+		CoverObjectKey:   coverObjectKey,
+		TransferDefaults: input.TransferDefaults,
+		Label:            strings.TrimSpace(input.Outcome.Label),
+		SubLabel:         strings.TrimSpace(input.Outcome.SubLabel),
+		Score:            input.Outcome.Score,
 	})
 }
 

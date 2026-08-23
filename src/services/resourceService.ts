@@ -1,4 +1,4 @@
-import type { ResourceItem } from "../types/resource";
+import type { ResourceItem, ResourceTransferDefaults } from "../types/resource";
 import { apiFetch } from "./httpClient";
 import bundledResources from "../data/resources.json";
 
@@ -51,6 +51,29 @@ function sortByUpdatedAtDesc(items: ResourceItem[]): ResourceItem[] {
   return [...items].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
+function normalizeTransferDefaults(value: unknown): ResourceTransferDefaults | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Partial<ResourceTransferDefaults>;
+  const allowedCapacities = new Set([77, 154, 308]);
+  const targetFrameCapacities = Array.isArray(record.targetFrameCapacities)
+    ? [...new Set(record.targetFrameCapacities.filter((item) => allowedCapacities.has(Number(item))))]
+        .map(Number)
+        .sort((a, b) => a - b)
+    : [];
+  if (targetFrameCapacities.length === 0) return undefined;
+  if (record.videoFps !== 20 && record.videoFps !== 25 && record.videoFps !== 30) return undefined;
+  if (record.fitMode !== "fill" && record.fitMode !== "contain") return undefined;
+  if (record.rotationDeg !== 0 && record.rotationDeg !== 90 && record.rotationDeg !== 180 && record.rotationDeg !== 270) return undefined;
+  if (record.colorProfile !== "normal" && record.colorProfile !== "vivid" && record.colorProfile !== "professional") return undefined;
+  return {
+    targetFrameCapacities: targetFrameCapacities as ResourceTransferDefaults["targetFrameCapacities"],
+    videoFps: record.videoFps,
+    fitMode: record.fitMode,
+    rotationDeg: record.rotationDeg,
+    colorProfile: record.colorProfile,
+  };
+}
+
 function normalizeRecord(item: ResourceRecord): ResourceItem | null {
   const sanitized = sanitizeResourceRecord(item);
   const imageRaw = (sanitized.image || "").trim();
@@ -95,6 +118,7 @@ function normalizeRecord(item: ResourceRecord): ResourceItem | null {
       typeof sanitized.height === "number" && Number.isFinite(sanitized.height)
         ? Math.max(1, Math.floor(sanitized.height))
         : undefined,
+    transferDefaults: normalizeTransferDefaults(sanitized.transferDefaults),
   };
 }
 

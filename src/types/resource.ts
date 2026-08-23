@@ -3,6 +3,14 @@ export type MaterialType = "image" | "video" | "gif" | "v1pro-pack";
 export type MaterialTypeFilter = "all" | MaterialType;
 export type ColumnTagFilter = "all" | string;
 
+export interface ResourceTransferDefaults {
+  targetFrameCapacities: Array<77 | 154 | 308>;
+  videoFps: 20 | 25 | 30;
+  fitMode: "fill" | "contain";
+  rotationDeg: 0 | 90 | 180 | 270;
+  colorProfile: "normal" | "vivid" | "professional";
+}
+
 export interface ResourceItem {
   id: number;
   title: string;
@@ -24,6 +32,8 @@ export interface ResourceItem {
   sourceFrameCount?: number;
   width?: number;
   height?: number;
+  /** Uploader-selected defaults used when this resource is transferred. */
+  transferDefaults?: ResourceTransferDefaults;
   likeCount?: number;
   liked?: boolean;
 }

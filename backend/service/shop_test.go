@@ -121,3 +121,30 @@ func TestRedeemPhysicalCreatesPaidOrderAndDecrementsStock(t *testing.T) {
 		t.Fatalf("expected restored stock 2, got %d, err=%v", stock, err)
 	}
 }
+
+func TestListPublicProductsHidesPointsOnlyInventory(t *testing.T) {
+	repo, err := NewMallRepo(t.TempDir())
+	if err != nil {
+		t.Fatalf("new mall repo: %v", err)
+	}
+	service := NewMallService(repo, "test-secret")
+	if _, err := service.UpsertProduct(MallProduct{
+		ID: "points-only-board", Title: "佳点V1PRO 77帧板子", PriceCents: 0,
+		Stock: 20, Status: MallProductOnSale,
+	}); err != nil {
+		t.Fatalf("upsert points-only product: %v", err)
+	}
+	items, err := service.ListPublicProducts()
+	if err != nil {
+		t.Fatalf("list public products: %v", err)
+	}
+	for _, item := range items {
+		if item.ID == "points-only-board" {
+			t.Fatal("points-only inventory must not appear in the cash mall")
+		}
+	}
+	stock, err := service.PointRedemptionStock("points-only-board")
+	if err != nil || stock != 20 {
+		t.Fatalf("points-only inventory should remain redeemable, stock=%d err=%v", stock, err)
+	}
+}

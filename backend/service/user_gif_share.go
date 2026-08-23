@@ -183,13 +183,14 @@ func (store *GifUploadSessionStore) Consume(sessionID, serial string) (GifUpload
 }
 
 type ShareUserGifInput struct {
-	Title          string
-	Description    string
-	Author         string
-	UploaderSerial string
-	GifObjectKey   string
-	CoverObjectKey string
-	GifSizeBytes   int64
+	Title            string
+	Description      string
+	Author           string
+	UploaderSerial   string
+	GifObjectKey     string
+	CoverObjectKey   string
+	GifSizeBytes     int64
+	TransferDefaults *ResourceTransferDefaults
 }
 
 func VerifyUploadedGifObjects(
@@ -240,6 +241,10 @@ func ShareUserGifToCatalog(
 	coverObjectKey := strings.TrimSpace(input.CoverObjectKey)
 	if gifObjectKey == "" || coverObjectKey == "" {
 		return nil, fmt.Errorf("GIF 或封面路径无效")
+	}
+	transferDefaults, err := NormalizeResourceTransferDefaults(input.TransferDefaults)
+	if err != nil {
+		return nil, err
 	}
 
 	code, err := randomHexCode(8)
@@ -293,6 +298,9 @@ func ShareUserGifToCatalog(
 	}
 	if author := strings.TrimSpace(input.Author); author != "" {
 		entry["author"] = author
+	}
+	if transferDefaults != nil {
+		entry["transferDefaults"] = transferDefaults
 	}
 	uploaderSerial := normalizeUploaderSerial(input.UploaderSerial)
 	if uploaderSerial != "" {
