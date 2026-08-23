@@ -31,6 +31,22 @@ const EMPTY_SHIPPING: MallShippingInput = {
   remark: "",
 };
 
+function validatePhysicalShipping(shipping: MallShippingInput): string {
+  if (
+    !shipping.name.trim()
+    || !shipping.phone.trim()
+    || !shipping.qq.trim()
+    || !shipping.province.trim()
+    || !shipping.city.trim()
+    || !shipping.address.trim()
+  ) {
+    return "请完整填写收货人、手机、QQ、省市和详细地址";
+  }
+  if (!PHONE_PATTERN.test(shipping.phone.trim())) return "手机号格式不正确";
+  if (!QQ_PATTERN.test(shipping.qq.trim())) return "QQ 号格式不正确";
+  return "";
+}
+
 function rewardLabel(item: ShopItem): string {
   switch (item.effect.type) {
     case "grant_code":
@@ -111,16 +127,9 @@ export default function ShopPage() {
   const handleRedeem = async (item: ShopItem) => {
     if (redeemingId) return;
     if (item.effect.type === "physical") {
-      if (!shipping.name.trim() || !shipping.phone.trim() || !shipping.qq.trim() || !shipping.province.trim() || !shipping.city.trim() || !shipping.address.trim()) {
-        setErrorMessage("请完整填写收货人、手机、QQ、省市和详细地址");
-        return;
-      }
-      if (!PHONE_PATTERN.test(shipping.phone.trim())) {
-        setErrorMessage("手机号格式不正确");
-        return;
-      }
-      if (!QQ_PATTERN.test(shipping.qq.trim())) {
-        setErrorMessage("QQ 号格式不正确");
+      const validationError = validatePhysicalShipping(shipping);
+      if (validationError) {
+        setErrorMessage(validationError);
         return;
       }
     }
@@ -163,6 +172,7 @@ export default function ShopPage() {
 
   const updateShipping = (field: keyof MallShippingInput, value: string) => {
     setShipping((current) => ({ ...current, [field]: value }));
+    setErrorMessage("");
   };
 
   const handleCopyCode = async () => {
@@ -414,6 +424,9 @@ export default function ShopPage() {
                 <SiteTextarea className="mt-3" rows={2} placeholder="订单备注（选填）" value={shipping.remark || ""} onChange={(event) => updateShipping("remark", event.target.value)} />
               </div>
             ) : null}
+            <div aria-live="assertive">
+              {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+            </div>
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm dark:bg-slate-950/60">
               <span className="text-slate-500 dark:text-slate-400">兑换后余额</span>
               <span className="font-semibold text-slate-800 dark:text-slate-100">{formatCredits(Math.max(0, credits - confirmItem.cost))} 积分</span>
