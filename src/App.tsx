@@ -56,11 +56,7 @@ export default function App() {
           <Route path="/auth" element={<AuthPage />} />
           <Route
             path="/"
-            element={
-              <ProtectedRoute>
-                <ResourcesPage />
-              </ProtectedRoute>
-            }
+            element={<ResourcesPage />}
           />
           <Route
             path="/favorites"
@@ -130,11 +126,7 @@ export default function App() {
           />
           <Route
             path="/activities"
-            element={
-              <ProtectedRoute>
-                <ActivityCenterPage />
-              </ProtectedRoute>
-            }
+            element={<ActivityCenterPage />}
           />
           <Route
             path="/creator/:author"

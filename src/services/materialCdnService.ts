@@ -12,6 +12,21 @@ const LEGACY_BUCKET_PREFIXES: Readonly<Record<string, string>> = {
 
 const UNIFIED_BUCKET = "v1media-1311844229";
 const LEGACY_MATERIAL_CDN_HOST = "media.jadot.club";
+const MATERIAL_PREFIXES = new Set([
+  "resource",
+  "image",
+  "software",
+  "video",
+  "gif",
+  "video-cover",
+  "gif-cover",
+]);
+
+interface PublicCoverResource {
+  materialType?: string;
+  image?: string;
+  download?: string;
+}
 
 function materialCdnBaseUrl(): URL | null {
   const configured = (
@@ -91,4 +106,28 @@ export function isMaterialCdnUrl(rawUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Builds a public, static card-cover URL from the sanitized catalog key. */
+export function publicMaterialCoverUrl(resource: PublicCoverResource): string {
+  const rawKey = (resource.image || "").trim();
+  if (!rawKey) return "";
+  if (/^https:\/\//i.test(rawKey)) return toMaterialCdnUrl(rawKey);
+
+  const cdnBase = materialCdnBaseUrl();
+  if (!cdnBase) return "";
+  const normalizedKey = rawKey.replace(/^\/+/, "");
+  const firstSegment = normalizedKey.split("/", 1)[0]?.toLowerCase() || "";
+  const prefix = MATERIAL_PREFIXES.has(firstSegment)
+    ? ""
+    : resource.materialType === "video"
+      ? "video-cover"
+      : resource.materialType === "gif"
+        ? "gif-cover"
+        : "image";
+  const target = new URL(cdnBase.toString());
+  target.pathname = joinPath(cdnBase.pathname, prefix, normalizedKey);
+  target.search = "";
+  target.hash = "";
+  return target.toString();
 }

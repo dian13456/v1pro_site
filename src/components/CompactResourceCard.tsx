@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { useCreatorAvatar } from "../hooks/useCreatorAvatar";
 import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
+import { publicMaterialCoverUrl } from "../services/materialCdnService";
 import {
   formatMediaDuration,
   resourceMetricsFromCatalog,
@@ -66,7 +67,11 @@ export function CompactResourceCard({
   onToggleSelection?: (resource: ResourceItem) => void;
 }) {
   const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
-    useResourcePreviewImage(resource.id, resource.image || resource.download);
+    useResourcePreviewImage(
+      resource.id,
+      resource.image || resource.download,
+      publicMaterialCoverUrl(resource),
+    );
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const metrics = resourceMetricsFromCatalog(resource);
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);

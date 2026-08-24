@@ -93,6 +93,7 @@ export default function ResourcesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const authenticated = hasValidLocalAuth();
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
@@ -315,15 +316,16 @@ export default function ResourcesPage() {
   useImagePreload(preloadList);
 
   useEffect(() => {
-    if (!hasValidLocalAuth() || isStaticMode()) return;
+    if (!authenticated || isStaticMode()) return;
     for (const item of displayedItems) {
       if (canTransferViaV1Pro(item)) {
         prefetchTransferDownloadUrl(item);
       }
     }
-  }, [displayedItems]);
+  }, [authenticated, displayedItems]);
 
   useEffect(() => {
+    if (!authenticated) return;
     let active = true;
     const loadLikes = (attempt = 0) => {
       fetchResourceLikes()
@@ -360,10 +362,10 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authenticated]);
 
   useEffect(() => {
-    if (resources.length === 0) return;
+    if (!authenticated || resources.length === 0) return;
     let active = true;
     fetchHiddenResourceState(resources)
       .then((state) => {
@@ -377,10 +379,10 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [resources]);
+  }, [authenticated, resources]);
 
   useEffect(() => {
-    if (resources.length === 0) return;
+    if (!authenticated || resources.length === 0) return;
     let active = true;
     fetchUploaderFollows(resources)
       .then((state) => {
@@ -395,10 +397,10 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [resources]);
+  }, [authenticated, resources]);
 
   useEffect(() => {
-    if (!hasValidLocalAuth() || isStaticMode()) {
+    if (!authenticated || isStaticMode()) {
       setRecommendationsLoading(false);
       return;
     }
@@ -424,7 +426,7 @@ export default function ResourcesPage() {
     return () => {
       active = false;
     };
-  }, [location.key, recommendationRefreshKey]);
+  }, [authenticated, location.key, recommendationRefreshKey]);
 
   const handleRandomRecommend = () => {
     const pool = filtered.filter(
@@ -456,6 +458,10 @@ export default function ResourcesPage() {
   };
 
   const handleDiscoverySection = (section: "recommend" | "latest" | "following" | "hot") => {
+    if (section === "following" && !authenticated) {
+      navigate("/auth", { state: { from: location } });
+      return;
+    }
     setErrorMessage("");
     setShowHidden(false);
     setAlbumMode(false);
@@ -495,6 +501,10 @@ export default function ResourcesPage() {
   };
 
   const handleOpenResource = (resource: ResourceItem) => {
+    if (!authenticated) {
+      navigate("/auth", { state: { from: location } });
+      return;
+    }
     setSelectedResource(resource);
     void recordResourceInteraction(resource.id, "view").catch(() => undefined);
   };
@@ -694,6 +704,10 @@ export default function ResourcesPage() {
   };
 
   const toggleAlbumMode = () => {
+    if (!authenticated) {
+      navigate("/auth", { state: { from: location } });
+      return;
+    }
     if (albumTransferring) return;
     setAlbumMode((current) => {
       if (current) {
@@ -797,6 +811,18 @@ export default function ResourcesPage() {
         }}
       />
       <main className="mx-auto max-w-[1488px] px-4 py-6 sm:px-6">
+        {!authenticated ? (
+          <SiteAlert variant="info" className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <span>当前为公开浏览模式，仅加载静态封面；打开详情、点赞、收藏、下载和设备传输需要连接佳点设备。</span>
+            <button
+              type="button"
+              onClick={() => navigate("/auth", { state: { from: location } })}
+              className="shrink-0 rounded-full bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#0878e8]"
+            >
+              连接设备
+            </button>
+          </SiteAlert>
+        ) : null}
         <details className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 lg:hidden dark:border-slate-800 dark:bg-slate-900">
           <summary className="cursor-pointer font-semibold">筛选素材</summary>
           <div className="mt-4">
@@ -891,7 +917,7 @@ export default function ResourcesPage() {
                   ["latest", "最新上传"],
                   ["following", "关注动态"],
                   ["hot", "热门排行"],
-                ] as const).map(([value, label]) => {
+                ] as const).filter(([value]) => authenticated || value !== "following").map(([value, label]) => {
                   const active = value === "recommend"
                     ? showingRecommendations
                     : value === "following"
@@ -942,36 +968,40 @@ export default function ResourcesPage() {
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentPage(1);
-                    setFollowingOnly(false);
-                    setShowHidden((current) => !current);
-                  }}
-                  aria-pressed={showHidden}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    showHidden
-                      ? "border-violet-300 bg-violet-50 text-violet-600 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-300"
-                      : "border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  }`}
-                >
-                  <span aria-hidden="true">⊘</span>
-                  {showHidden ? "返回素材库" : `已屏蔽用户 ${blockedUploaderCount}`}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleAlbumMode}
-                  aria-pressed={albumMode}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    albumMode
-                      ? "border-[#ff8a5c] bg-[#fff2ec] text-[#ff7448] shadow-sm dark:bg-orange-500/15"
-                      : "border-slate-200 bg-white text-slate-500 hover:border-orange-200 hover:text-[#ff7448] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  }`}
-                >
-                  <span aria-hidden="true">▦</span>
-                  {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
-                </button>
+                {authenticated ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentPage(1);
+                        setFollowingOnly(false);
+                        setShowHidden((current) => !current);
+                      }}
+                      aria-pressed={showHidden}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        showHidden
+                          ? "border-violet-300 bg-violet-50 text-violet-600 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-300"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      }`}
+                    >
+                      <span aria-hidden="true">⊘</span>
+                      {showHidden ? "返回素材库" : `已屏蔽用户 ${blockedUploaderCount}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleAlbumMode}
+                      aria-pressed={albumMode}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        albumMode
+                          ? "border-[#ff8a5c] bg-[#fff2ec] text-[#ff7448] shadow-sm dark:bg-orange-500/15"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-orange-200 hover:text-[#ff7448] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      }`}
+                    >
+                      <span aria-hidden="true">▦</span>
+                      {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
+                    </button>
+                  </>
+                ) : null}
                 {currentPage !== 0 ? (
                   <select
                     value={sortMode}
@@ -1015,12 +1045,12 @@ export default function ResourcesPage() {
                     onFavorite={(item) => void handleFavorite(item)}
                     followed={followedIdSet.has(resource.id)}
                     following={followingId === resource.id}
-                    onFollow={resource.uploaderBlockable && !ownResourceIdSet.has(resource.id)
+                    onFollow={authenticated && resource.uploaderBlockable && !ownResourceIdSet.has(resource.id)
                       ? (item, followed) => void handleFollowChange(item, followed)
                       : undefined}
                     hidden={hiddenIdSet.has(resource.id)}
                     hiding={hidingId === resource.id}
-                    onHiddenChange={resource.uploaderBlockable
+                    onHiddenChange={authenticated && resource.uploaderBlockable
                       ? (item, hidden) => void handleHiddenChange(item, hidden)
                       : undefined}
                     selectionMode={albumMode}

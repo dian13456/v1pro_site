@@ -6,6 +6,7 @@ import { useResourcePreviewImage } from "../hooks/useResourcePreviewImage";
 import { canTransferViaV1Pro } from "../services/v1proTransferService";
 import { canWebUsbDirectTransfer } from "../services/v1proWebResourceTransferService";
 import { useDeviceFeatureAccess } from "../services/featureAccessService";
+import { publicMaterialCoverUrl } from "../services/materialCdnService";
 
 function looksLikeFilename(text: string): boolean {
   const value = text.trim();
@@ -94,7 +95,11 @@ function MediaResourceCard({
       ? "object-cover"
       : "object-contain";
   const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
-    useResourcePreviewImage(resource.id, resource.image || resource.download);
+    useResourcePreviewImage(
+      resource.id,
+      resource.image || resource.download,
+      publicMaterialCoverUrl(resource),
+    );
   const [playError, setPlayError] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const transferPrefetchedRef = useRef(false);

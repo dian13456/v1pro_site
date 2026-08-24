@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
@@ -10,7 +9,6 @@ import {
   type ActivityItem,
   type ActivityStatus,
 } from "../content/activityCenter";
-import { hasValidLocalAuth } from "../services/authService";
 
 function formatActivityDate(raw: string): string {
   const date = new Date(`${raw}T00:00:00`);
@@ -87,12 +85,6 @@ export default function ActivityCenterPage() {
     (item) => item.id !== "promo-choice-2026" && item.id !== "device-lottery",
   );
   const ongoingCount = ACTIVITIES.filter((item) => item.status === "ongoing").length;
-
-  useEffect(() => {
-    if (!hasValidLocalAuth()) {
-      navigate("/auth", { replace: true });
-    }
-  }, [navigate]);
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
