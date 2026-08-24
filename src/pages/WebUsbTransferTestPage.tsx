@@ -13,6 +13,7 @@ import {
 import { convertBrowserRasterWithFfmpeg } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
 import type {
+  V1ProDisplayStatus,
   V1ProTransferResult,
   V1ProWebTransferClient,
 } from "../types/v1proWebTransfer";
@@ -66,6 +67,8 @@ export default function WebUsbTransferTestPage() {
   const navigate = useNavigate();
   const clientRef = useRef<V1ProWebTransferClient | null>(null);
   const transferLockRef = useRef(false);
+  const displayControlLockRef = useRef(false);
+  const brightnessTimerRef = useRef<number | null>(null);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkVersion, setSdkVersion] = useState(WEBUSB_TRANSFER_VERSION);
@@ -79,6 +82,13 @@ export default function WebUsbTransferTestPage() {
   const [lastResult, setLastResult] = useState<V1ProTransferResult | null>(null);
   const [authorizedDevices, setAuthorizedDevices] = useState<USBDevice[]>([]);
   const [selectedDeviceKey, setSelectedDeviceKey] = useState("");
+  const [displayControlBusy, setDisplayControlBusy] = useState(false);
+  const [displayControlSupported, setDisplayControlSupported] = useState<boolean | null>(null);
+  const [displayControlMessage, setDisplayControlMessage] = useState("连接设备后自动读取当前显示设置。");
+  const [brightnessPercent, setBrightnessPercent] = useState(50);
+  const [screenOff, setScreenOff] = useState(false);
+  const [screenRotation, setScreenRotation] = useState<0 | 2>(2);
+  const [followScreenOff, setFollowScreenOffState] = useState(false);
 
   const webUsbSupported = isWebUsbSupported();
 
@@ -117,6 +127,10 @@ export default function WebUsbTransferTestPage() {
       });
     return () => {
       cancelled = true;
+      if (brightnessTimerRef.current !== null) {
+        window.clearTimeout(brightnessTimerRef.current);
+        brightnessTimerRef.current = null;
+      }
       void clientRef.current?.disconnect();
       clientRef.current = null;
     };
@@ -146,6 +160,54 @@ export default function WebUsbTransferTestPage() {
     return clientRef.current;
   }, []);
 
+  const applyDisplayStatus = useCallback((status: V1ProDisplayStatus) => {
+    const percent = Math.round((Math.max(0, Math.min(255, status.brightness)) * 100) / 255);
+    setBrightnessPercent(percent);
+    setScreenOff(status.screenOff);
+    setScreenRotation(status.rotation === 0 ? 0 : 2);
+    setFollowScreenOffState(status.followScreenOff);
+    setDisplayControlSupported(true);
+    setDisplayControlMessage(
+      `已同步：亮度 ${percent}% · ${status.rotation === 0 ? "0°" : "180°"} · 跟随熄屏${status.followScreenOff ? "已开启" : "已关闭"}`,
+    );
+  }, []);
+
+  const syncDisplayStatus = useCallback(async (client: V1ProWebTransferClient) => {
+    setDisplayControlMessage("正在读取设备显示设置…");
+    try {
+      applyDisplayStatus(await client.getDisplayStatus());
+    } catch (err) {
+      setDisplayControlSupported(false);
+      setDisplayControlMessage(formatError(err));
+    }
+  }, [applyDisplayStatus]);
+
+  const runDisplayControl = useCallback(async (
+    action: (client: V1ProWebTransferClient) => Promise<void>,
+    successMessage: string,
+  ) => {
+    const client = clientRef.current;
+    if (!client?.connected) {
+      setDisplayControlMessage("请先连接设备后再调整显示设置。");
+      return;
+    }
+    if (displayControlLockRef.current || transferLockRef.current) return;
+    displayControlLockRef.current = true;
+    setDisplayControlBusy(true);
+    setDisplayControlMessage("正在写入设备设置…");
+    try {
+      await action(client);
+      setDisplayControlSupported(true);
+      setDisplayControlMessage(successMessage);
+    } catch (err) {
+      setDisplayControlMessage(formatError(err));
+    } finally {
+      displayControlLockRef.current = false;
+      setDisplayControlBusy(false);
+      refreshConnectionState();
+    }
+  }, [refreshConnectionState]);
+
   const handleConnect = async () => {
     if (!webUsbSupported) return;
     setStatusText("正在请求设备…");
@@ -162,6 +224,7 @@ export default function WebUsbTransferTestPage() {
         setSelectedDeviceKey(deviceKey(client.device as USBDevice));
       }
       await refreshAuthorizedDevices();
+      await syncDisplayStatus(client);
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
       const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -179,6 +242,10 @@ export default function WebUsbTransferTestPage() {
   };
 
   const handleDisconnect = async () => {
+    if (brightnessTimerRef.current !== null) {
+      window.clearTimeout(brightnessTimerRef.current);
+      brightnessTimerRef.current = null;
+    }
     await clientRef.current?.disconnect();
     clientRef.current = null;
     setConnected(false);
@@ -186,11 +253,13 @@ export default function WebUsbTransferTestPage() {
     setStatusText("已断开");
     setStatusKind("idle");
     setProgress(0);
+    setDisplayControlSupported(null);
+    setDisplayControlMessage("连接设备后自动读取当前显示设置。");
     setMetaText("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   };
 
   const handleReadCapacity = async () => {
-    if (!webUsbSupported || !sdkReady || busy) return;
+    if (!webUsbSupported || !sdkReady || busy || displayControlLockRef.current) return;
     setStatusKind("idle");
     setProgress(0);
     setLastResult(null);
@@ -222,9 +291,55 @@ export default function WebUsbTransferTestPage() {
     }
   };
 
+  const handleRefreshDisplayStatus = async () => {
+    const client = clientRef.current;
+    if (!client?.connected || displayControlLockRef.current || transferLockRef.current) return;
+    displayControlLockRef.current = true;
+    setDisplayControlBusy(true);
+    try {
+      await syncDisplayStatus(client);
+    } finally {
+      displayControlLockRef.current = false;
+      setDisplayControlBusy(false);
+      refreshConnectionState();
+    }
+  };
+
+  const handleBrightnessChange = (nextPercent: number) => {
+    const percent = Math.max(0, Math.min(100, Math.round(nextPercent)));
+    setBrightnessPercent(percent);
+    if (brightnessTimerRef.current !== null) {
+      window.clearTimeout(brightnessTimerRef.current);
+    }
+    brightnessTimerRef.current = window.setTimeout(() => {
+      brightnessTimerRef.current = null;
+      const deviceLevel = Math.round((percent * 255) / 100);
+      void runDisplayControl(async (client) => {
+        const acknowledged = await client.setDisplayBrightness(deviceLevel);
+        const actualPercent = Math.round((acknowledged * 100) / 255);
+        setBrightnessPercent(actualPercent);
+        setScreenOff(acknowledged === 0);
+      }, percent === 0 ? "屏幕已关闭；向右拖动亮度滑块可重新点亮。" : `亮度已设置为 ${percent}%。`);
+    }, 220);
+  };
+
+  const handleRotationChange = (rotation: 0 | 2) => {
+    void runDisplayControl(async (client) => {
+      const acknowledged = await client.setDisplayRotation(rotation);
+      setScreenRotation(acknowledged === 0 ? 0 : 2);
+    }, `屏幕方向已切换为 ${rotation === 0 ? "0°" : "180°"}。`);
+  };
+
+  const handleFollowScreenOffChange = () => {
+    const enabled = !followScreenOff;
+    void runDisplayControl(async (client) => {
+      setFollowScreenOffState(await client.setFollowScreenOff(enabled));
+    }, `跟随熄屏已${enabled ? "开启" : "关闭"}。`);
+  };
+
   const runTransfer = useCallback(
     async (file: File, options: { connectIfNeeded?: boolean } = {}) => {
-      if (!webUsbSupported || !sdkReady || transferLockRef.current) return;
+      if (!webUsbSupported || !sdkReady || transferLockRef.current || displayControlLockRef.current) return;
       transferLockRef.current = true;
       setSelectedFile(file);
       setLastResult(null);
@@ -366,6 +481,8 @@ export default function WebUsbTransferTestPage() {
       : statusKind === "error"
         ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]"
         : "border-[#e6e9f2] bg-[#fafbfe] text-[#6f7890]";
+  const displayControlsDisabled =
+    !connected || busy || displayControlBusy || displayControlSupported === false;
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
@@ -373,16 +490,16 @@ export default function WebUsbTransferTestPage() {
       <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
-            <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">↥</div>
+            <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">⚙</div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">WebUSB Transfer</p>
-              <h1 className="mt-1 text-2xl font-extrabold">网页直传</h1>
+              <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">WebUSB Device Control</p>
+              <h1 className="mt-1 text-2xl font-extrabold">设备控制</h1>
             </div>
             <div className="col-start-3 row-start-1 rounded-[16px] bg-[#f0edff] px-4 py-3 text-center sm:row-span-2 sm:px-6">
-              <p className="text-[11px] font-semibold text-[#8a93a8]">传输组件</p>
+              <p className="text-[11px] font-semibold text-[#8a93a8]">控制组件</p>
               <p className="mt-0.5 text-sm font-extrabold text-[#7c6cf0]">v{sdkVersion}</p>
             </div>
-            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，将图片、GIF 或短视频直接传输到设备；完成后自动释放 USB 连接。</p>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，调节屏幕亮度、方向和跟随熄屏，也可将图片、GIF 或短视频直接传输到设备。</p>
           </div>
         </section>
 
@@ -390,7 +507,7 @@ export default function WebUsbTransferTestPage() {
           <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。</div>
         ) : null}
 
-        <div className="grid items-stretch gap-[14px] lg:grid-cols-[.92fr_1.08fr]">
+        <div className="grid items-stretch gap-[14px] lg:grid-cols-2">
           <section className="rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6">
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#fff4e8] text-sm font-extrabold text-[#ff8a5c]">1</span>
@@ -423,24 +540,117 @@ export default function WebUsbTransferTestPage() {
             {lastResult?.note ? <p className="mt-2 text-xs text-amber-600">提示：{lastResult.note}</p> : null}
 
             <div className="mt-5 flex flex-wrap gap-2.5">
-              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
-              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
-              <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">断开</button>
-              {selectedFile && connected && !busy ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
+              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy || displayControlBusy} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
+              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
+              <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">断开</button>
+              {selectedFile && connected && !busy && !displayControlBusy ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
             </div>
           </section>
 
-          <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6">
+          <section className="rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6">
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#f0edff] text-sm font-extrabold text-[#7c6cf0]">2</span>
               <div>
+                <h2 className="text-[17px] font-extrabold">屏幕显示控制</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">设置会写入当前连接设备并由设备保存</p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[12.5px] font-bold text-[#4a5270]">屏幕亮度</p>
+                  <p className="mt-1 text-[11px] text-[#8a93a8]">0% 为关闭屏幕，拖动停止后写入</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-sm font-extrabold ${screenOff ? "bg-slate-200 text-slate-600" : "bg-amber-100 text-amber-700"}`}>
+                  {screenOff ? "已熄屏" : `${brightnessPercent}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={brightnessPercent}
+                disabled={displayControlsDisabled}
+                onChange={(event) => handleBrightnessChange(Number(event.target.value))}
+                className="mt-4 h-2 w-full cursor-pointer accent-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="屏幕亮度"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-[#9aa2b7]"><span>熄屏</span><span>100%</span></div>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
+                <p className="text-[12.5px] font-bold text-[#4a5270]">屏幕旋转</p>
+                <p className="mt-1 text-[11px] text-[#8a93a8]">切换设备横屏朝向</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {([0, 2] as const).map((rotation) => {
+                    const active = screenRotation === rotation;
+                    const label = rotation === 0 ? "0°" : "180°";
+                    return (
+                      <button
+                        key={rotation}
+                        type="button"
+                        disabled={displayControlsDisabled}
+                        onClick={() => handleRotationChange(rotation)}
+                        className={`rounded-[10px] border px-3 py-2 text-[12px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${active ? "border-[#7c6cf0] bg-[#f0edff] text-[#7c6cf0]" : "border-[#e1e5ef] bg-white text-[#69728a] hover:border-[#7c6cf0]"}`}
+                      >
+                        ↻ {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[12.5px] font-bold text-[#4a5270]">跟随熄屏</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">电脑 USB 挂起时熄屏，恢复后自动点亮</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={followScreenOff}
+                    aria-label="跟随熄屏"
+                    disabled={displayControlsDisabled}
+                    onClick={handleFollowScreenOffChange}
+                    className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${followScreenOff ? "bg-[#32b879]" : "bg-[#cfd5e2]"}`}
+                  >
+                    <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${followScreenOff ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                </div>
+                <p className={`mt-3 text-[11px] font-semibold ${followScreenOff ? "text-[#29966b]" : "text-[#8a93a8]"}`}>
+                  当前：{followScreenOff ? "已开启" : "已关闭"}
+                </p>
+              </div>
+            </div>
+
+            <div className={`mt-3 rounded-[12px] border px-4 py-3 text-[12px] leading-5 ${displayControlSupported === false ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]" : "border-[#dce6fb] bg-[#f5f8ff] text-[#66708d]"}`}>
+              {displayControlMessage}
+            </div>
+            <button
+              type="button"
+              disabled={!connected || busy || displayControlBusy}
+              onClick={() => void handleRefreshDisplayStatus()}
+              className="mt-3 text-[11.5px] font-semibold text-[#7c6cf0] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {displayControlBusy ? "正在同步…" : "重新读取设备设置"}
+            </button>
+          </section>
+
+          <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6 lg:col-span-2">
+            <div className="flex items-start gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">3</span>
+              <div>
                 <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材</p>
+                <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材，完成后自动释放 USB</p>
               </div>
             </div>
             <div className="flex flex-1 flex-col justify-center">
               <WebUsbDropZone
-                disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey}
+                disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || displayControlBusy}
                 busy={busy}
                 connected={connected}
                 selectedFileName={selectedFile?.name ?? null}

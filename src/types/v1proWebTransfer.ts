@@ -14,6 +14,13 @@ export interface V1ProDeviceCapacity {
   maxFrames: number;
 }
 
+export interface V1ProDisplayStatus {
+  brightness: number;
+  screenOff: boolean;
+  rotation: number;
+  followScreenOff: boolean;
+}
+
 export interface V1ProTransferProgress {
   phase: "encode" | "transfer";
   sent: number;
@@ -85,6 +92,10 @@ export interface V1ProWebTransferClient {
   connect(opts?: V1ProConnectOptions): Promise<V1ProWebUsbDevice>;
   disconnect(): Promise<void>;
   refreshDeviceCapacity(): Promise<V1ProDeviceCapacity | null>;
+  getDisplayStatus(): Promise<V1ProDisplayStatus>;
+  setDisplayBrightness(brightness: number): Promise<number>;
+  setDisplayRotation(rotation: number): Promise<number>;
+  setFollowScreenOff(enabled: boolean): Promise<boolean>;
   getCapacityLabel(): string;
   predictVideoUrl(
     url: string,

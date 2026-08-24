@@ -10,13 +10,18 @@ import {
   PING_TIMEOUT_MS,
   USB_CHUNK,
   USBDL_CMD_ERASE,
+  USBDL_CMD_DISPLAY,
   USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
   USBDL_CMD_START,
+  USBDL_DISPLAY_SUB_BRIGHTNESS,
+  USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF,
+  USBDL_DISPLAY_SUB_QUERY,
+  USBDL_DISPLAY_SUB_ROTATE,
   USBDL_MAGIC0,
   USBDL_MAGIC1,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.28";
+} from "./v1pro-constants.js?v=1.2.29";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -25,6 +30,7 @@ const TRANSFER_DRAIN_INTERVAL_MS = 2000;
 const TRANSFER_DRAIN_BYTES = 1024 * 1024;
 const PROBE_POLL_TIMEOUT_MS = 4000;
 const JEDEC_PROBE_TIMEOUT_MS = 3000;
+const DISPLAY_COMMAND_TIMEOUT_MS = 2000;
 
 /**
  * @typedef {{
@@ -435,6 +441,98 @@ export async function bulkIn(device, length = 64) {
     if (err instanceof V1ProUsbError) throw err;
     throw new V1ProUsbError("transfer_in_failed", formatUsbOpenHint(err), err);
   }
+}
+
+function requireOpenDisplayDevice(device) {
+  if (!device?.opened) {
+    throw new V1ProUsbError("not_connected", "请先连接设备。");
+  }
+}
+
+async function sendDisplayCommand(device, payload, replyPrefix) {
+  requireOpenDisplayDevice(device);
+  await drainInQuick(device);
+  await bulkOut(device, payload, { timeoutMs: DISPLAY_COMMAND_TIMEOUT_MS, retries: 2 });
+  const reply = await readTextReply(device, [replyPrefix], DISPLAY_COMMAND_TIMEOUT_MS);
+  if (!reply) {
+    throw new V1ProUsbError(
+      "display_control_unsupported",
+      "设备未确认显示控制命令，请升级 V1PRO 固件后重试。"
+    );
+  }
+  return reply;
+}
+
+/** Query DISPLAY prefs: STA,<brightness>,<screenOff>,<rotation>,<followScreenOff>. */
+export async function queryDisplayStatus(device) {
+  const reply = await sendDisplayCommand(
+    device,
+    new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_DISPLAY, USBDL_DISPLAY_SUB_QUERY]),
+    "STA,"
+  );
+  const parts = reply.replace(/\0/g, "").trim().split(",");
+  if (parts.length < 5 || parts[0].toUpperCase() !== "STA") {
+    throw new V1ProUsbError("display_status_invalid", `设备显示状态格式错误：${reply}`);
+  }
+  const brightness = Math.max(0, Math.min(255, Number.parseInt(parts[1], 10) || 0));
+  const rotation = Math.max(0, Math.min(3, Number.parseInt(parts[3], 10) || 0));
+  return {
+    brightness,
+    screenOff: Number.parseInt(parts[2], 10) !== 0,
+    rotation,
+    followScreenOff: Number.parseInt(parts[4], 10) !== 0,
+  };
+}
+
+/** Set backlight PWM level (0 switches the screen off, 1..255 switches it on). */
+export async function setDisplayBrightness(device, brightness) {
+  const level = Math.max(0, Math.min(255, Math.round(Number(brightness) || 0)));
+  const reply = await sendDisplayCommand(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_DISPLAY,
+      USBDL_DISPLAY_SUB_BRIGHTNESS,
+      level,
+    ]),
+    "DSP,"
+  );
+  return Math.max(0, Math.min(255, Number.parseInt(reply.split(",")[1], 10) || level));
+}
+
+/** Set physical LCD landscape direction. Website UI uses 0 and 2 (0°/180°). */
+export async function setDisplayRotation(device, rotation) {
+  const direction = Math.max(0, Math.min(3, Math.round(Number(rotation) || 0)));
+  const reply = await sendDisplayCommand(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_DISPLAY,
+      USBDL_DISPLAY_SUB_ROTATE,
+      direction,
+    ]),
+    "ROT,"
+  );
+  return Math.max(0, Math.min(3, Number.parseInt(reply.split(",")[1], 10) || direction));
+}
+
+/** Follow host USB suspend / screen-off state. */
+export async function setFollowScreenOff(device, enabled) {
+  const value = enabled ? 1 : 0;
+  const reply = await sendDisplayCommand(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_DISPLAY,
+      USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF,
+      value,
+    ]),
+    "VSO,"
+  );
+  return Number.parseInt(reply.split(",")[1], 10) !== 0;
 }
 
 function formatUsbOpenHint(err) {

@@ -110,7 +110,7 @@ async function ensureDeviceSerial(device: USBDevice): Promise<string> {
         }
       })(),
       USB_OPEN_TIMEOUT_MS,
-      "USB 设备打开超时，请关闭「佳点V1PRO控制工具」或网页直传页后再试",
+      "USB 设备打开超时，请关闭「佳点V1PRO控制工具」或设备控制页后再试",
     );
   } catch (error) {
     if (error instanceof Error && error.message.includes("打开超时")) {

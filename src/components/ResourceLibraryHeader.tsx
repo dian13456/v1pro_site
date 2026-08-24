@@ -89,7 +89,7 @@ export function ResourceLibraryHeader({
           to="/webusb-test"
           className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 xl:inline-flex"
         >
-          <ThemeIcon name="device" size={15} /> 网页直传
+          <ThemeIcon name="device" size={15} /> 设备控制
         </Link>
         <Link
           to="/profile"

@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.28";
+} from "./v1pro-constants.js?v=1.2.29";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.28";
+} from "./v1pro-gfm1.js?v=1.2.29";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -19,11 +19,15 @@ import {
   openAuthorizedDevice,
   openSelectedDevice,
   probeDevice,
+  queryDisplayStatus,
   queryDeviceCapacity,
   requestAndOpenDevice,
   sendGfm1PayloadStream,
+  setDisplayBrightness,
+  setDisplayRotation,
+  setFollowScreenOff,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.28";
+} from "./v1pro-usb.js?v=1.2.29";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -173,6 +177,37 @@ export class V1ProWebTransfer {
     this.capacityError = null;
     this.preparedTransferBytes = null;
     await closeDevice(d);
+  }
+
+  async runDisplayControl(action) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "请先连接设备。");
+    }
+    if (this.busy) {
+      throw new V1ProUsbError("busy", "当前有设备任务正在进行，请稍后重试。");
+    }
+    this.busy = true;
+    try {
+      return await action(this.device);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  async getDisplayStatus() {
+    return this.runDisplayControl((device) => queryDisplayStatus(device));
+  }
+
+  async setDisplayBrightness(brightness) {
+    return this.runDisplayControl((device) => setDisplayBrightness(device, brightness));
+  }
+
+  async setDisplayRotation(rotation) {
+    return this.runDisplayControl((device) => setDisplayRotation(device, rotation));
+  }
+
+  async setFollowScreenOff(enabled) {
+    return this.runDisplayControl((device) => setFollowScreenOff(device, enabled));
   }
 
   async predictVideoUrl(url, opts = {}) {

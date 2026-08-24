@@ -88,7 +88,7 @@ export default function AuthPage() {
         return;
       }
       if (silent === "timeout") {
-        setError("连接超时。请关闭「佳点V1PRO控制工具」和网页直传页后重试。");
+        setError("连接超时。请关闭「佳点V1PRO控制工具」和设备控制页后重试。");
         return;
       }
 
@@ -129,7 +129,7 @@ export default function AuthPage() {
           return;
         }
         if (silentResult === "timeout") {
-          setError("自动连接超时。请关闭「佳点V1PRO控制工具」和网页直传页，确认设备已插入后点击「同意条款并连接」。");
+          setError("自动连接超时。请关闭「佳点V1PRO控制工具」和设备控制页，确认设备已插入后点击「同意条款并连接」。");
         }
         await hasGrantedAuthorizedDevice().then((value) => {
           if (active) {
