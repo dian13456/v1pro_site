@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
+import {
+  SHARE_DEVICE_PREVIEW_FILTER,
+  ShareDevicePreview,
+} from "../components/ShareDevicePreview";
 import { SiteFooter } from "../components/SiteFooter";
 import { SiteAlert } from "../components/SiteUi";
 import { useColumnTags } from "../hooks/useColumnTags";
@@ -42,12 +46,6 @@ import type { ResourceTransferDefaults } from "../types/resource";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
-
-const VIDEO_PREVIEW_FILTER: Record<VideoColorProfile, string> = {
-  normal: "saturate(1.08) contrast(1.05) brightness(1.002)",
-  vivid: "saturate(1.18) contrast(1.07) brightness(1.003)",
-  professional: "saturate(1.04) contrast(1.05) brightness(1.002) sepia(.015)",
-};
 
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   const parts = [err.message];
@@ -479,9 +477,9 @@ export default function SharePage() {
               >
                 {previewUrl && mediaKind ? (
                   mediaKind === "video" ? (
-                    <video src={previewUrl} muted playsInline className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }} />
+                    <video src={previewUrl} muted playsInline className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: SHARE_DEVICE_PREVIEW_FILTER[videoColorProfile] }} />
                   ) : (
-                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: VIDEO_PREVIEW_FILTER[videoColorProfile] }} />
+                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: SHARE_DEVICE_PREVIEW_FILTER[videoColorProfile] }} />
                   )
                 ) : <span className="mb-1.5 text-[28px]">📁</span>}
                 <span>点击选择文件，或拖拽到此处</span>
@@ -622,6 +620,18 @@ export default function SharePage() {
                   <label key={value} className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="videoColor" checked={videoColorProfile === value} onChange={() => setVideoColorProfile(value)} /> {label}</label>
                 ))}
               </div>
+            </div>
+
+            <div className="mt-5">
+              <ShareDevicePreview
+                previewUrl={previewUrl}
+                mediaKind={mediaKind}
+                fitMode={fitMode}
+                rotationDeg={rotationDeg}
+                colorProfile={videoColorProfile}
+                videoFps={videoFps}
+                targetFrameOptions={targetFrameOptions}
+              />
             </div>
 
             {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
