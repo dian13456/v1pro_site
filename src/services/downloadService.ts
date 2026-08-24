@@ -5,6 +5,7 @@ import { isStaticMode } from "./runtimeMode";
 import { parseDownloadStats } from "../types/downloadStats";
 import type { SignedDownloadResult } from "../types/downloadStats";
 import { requireDeviceFeatureAccess } from "./featureAccessService";
+import { toMaterialCdnUrl } from "./materialCdnService";
 
 interface GinResourceResponse {
   url?: string;
@@ -57,9 +58,11 @@ export function prefetchPlayUrl(resourceId: number, fallbackDownloadUrl?: string
 export async function createDownloadUrl(
   resourceId: number,
   fallbackDownloadUrl?: string,
-  options: { forDownload?: boolean } = {}
+  options: { forDownload?: boolean; preferOrigin?: boolean; forceRefresh?: boolean } = {}
 ): Promise<SignedDownloadResult> {
   const forDownload = options.forDownload === true;
+  const preferOrigin = options.preferOrigin === true;
+  const forceRefresh = options.forceRefresh === true;
   const auth = getAuthState();
   if (!hasValidLocalAuth() || !auth?.token) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -71,7 +74,7 @@ export async function createDownloadUrl(
     if (!valid) {
       throw new Error("认证已失效，请重新验证设备");
     }
-  } else {
+  } else if (!preferOrigin && !forceRefresh) {
     const cached = getCachedPlayUrl(resourceId);
     if (cached) {
       return { url: cached };
@@ -99,11 +102,12 @@ export async function createDownloadUrl(
   });
 
   if (signed.url) {
+    const resolvedUrl = preferOrigin ? signed.url : toMaterialCdnUrl(signed.url);
     if (!forDownload) {
-      rememberPlayUrl(resourceId, signed.url);
+      rememberPlayUrl(resourceId, resolvedUrl);
     }
     return {
-      url: signed.url,
+      url: resolvedUrl,
       stats: parseDownloadStats(signed),
     };
   }

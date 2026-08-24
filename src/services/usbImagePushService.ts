@@ -28,12 +28,23 @@ export async function pushResourceImageToDevice(
   const signed = await createImageUrl(resourceId, fallbackImageUrl);
 
   onProgress?.({ phase: "convert", sent: 0, total: 0 });
-  let raw = await fetchImageToRgb565(signed.url, {
-    width: DESKTOP_IMAGE_TRANSFER.width,
-    height: DESKTOP_IMAGE_TRANSFER.height,
-    fitMode: DESKTOP_IMAGE_TRANSFER.fitMode,
-    rotateDeg: DESKTOP_IMAGE_TRANSFER.rotateDeg,
-  });
+  const convert = (url: string) =>
+    fetchImageToRgb565(url, {
+      width: DESKTOP_IMAGE_TRANSFER.width,
+      height: DESKTOP_IMAGE_TRANSFER.height,
+      fitMode: DESKTOP_IMAGE_TRANSFER.fitMode,
+      rotateDeg: DESKTOP_IMAGE_TRANSFER.rotateDeg,
+    });
+  let raw: Uint8Array;
+  try {
+    raw = await convert(signed.url);
+  } catch {
+    const origin = await createImageUrl(resourceId, fallbackImageUrl, {
+      forceRefresh: true,
+      preferOrigin: true,
+    });
+    raw = await convert(origin.url);
+  }
   if (DESKTOP_IMAGE_TRANSFER.swapRgb565) {
     raw = swapRgb565Bytes(raw);
   }

@@ -4,6 +4,7 @@ import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { parseDownloadStats } from "../types/downloadStats";
 import type { SignedDownloadResult } from "../types/downloadStats";
+import { toMaterialCdnUrl } from "./materialCdnService";
 
 interface ImageSignResponse {
   url?: string;
@@ -29,12 +30,13 @@ export function invalidateImageUrl(resourceId: number, failedUrl?: string): void
 export async function createImageUrl(
   resourceId: number,
   fallbackImageUrl?: string,
-  options: { forDownload?: boolean; forceRefresh?: boolean } = {}
+  options: { forDownload?: boolean; forceRefresh?: boolean; preferOrigin?: boolean } = {}
 ): Promise<SignedDownloadResult> {
   const forDownload = options.forDownload === true;
   const forceRefresh = options.forceRefresh === true;
+  const preferOrigin = options.preferOrigin === true;
   const cached = imageUrlCache.get(resourceId);
-  if (!forDownload && !forceRefresh && cached && cached.expiresAt > Date.now()) {
+  if (!forDownload && !forceRefresh && !preferOrigin && cached && cached.expiresAt > Date.now()) {
     return { url: cached.url };
   }
   if (cached && cached.expiresAt <= Date.now()) {
@@ -79,16 +81,17 @@ export async function createImageUrl(
   if (!signed.url) {
     throw new Error(signed.error || "图片链接生成失败");
   }
+  const resolvedUrl = preferOrigin ? signed.url : toMaterialCdnUrl(signed.url);
 
   if (!forDownload) {
     imageUrlCache.set(resourceId, {
-      url: signed.url,
+      url: resolvedUrl,
       expiresAt: Date.now() + PREVIEW_URL_CACHE_TTL_MS,
     });
   }
 
   return {
-    url: signed.url,
+    url: resolvedUrl,
     stats: forDownload ? parseDownloadStats(signed) : null,
   };
 }

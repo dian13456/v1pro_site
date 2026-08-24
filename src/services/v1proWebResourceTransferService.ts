@@ -16,6 +16,7 @@ import {
   WEBUSB_TRANSFER_VERSION,
 } from "./v1proWebTransferClient";
 import { guessTransferFileName } from "./v1proTransferService";
+import { toMaterialCdnUrl } from "./materialCdnService";
 import {
   convertBrowserRasterWithFfmpeg,
   convertBrowserVideoWithFfmpeg,
@@ -282,7 +283,7 @@ async function fetchDirectTransferUrl(resource: ResourceItem, signal?: AbortSign
   if (!payload.url) {
     throw new Error(payload.error || "COS 下载地址生成失败");
   }
-  return payload.url;
+  return toMaterialCdnUrl(payload.url);
 }
 
 async function fetchTransferBlob(

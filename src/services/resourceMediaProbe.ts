@@ -49,16 +49,30 @@ export async function probeResourceMedia(resource: ResourceItem): Promise<{
   url: string;
   metrics: ResourceMediaMetrics;
 }> {
-  const result = await createDownloadUrl(resource.id, resource.download, { forDownload: false });
-  if (!result.url) throw new Error("素材预览地址生成失败");
-  if (resource.materialType === "video") {
-    return { url: result.url, metrics: await probeVideo(result.url) };
-  }
-  if (resource.materialType === "gif") {
-    return { url: result.url, metrics: await probeGif(result.url) };
-  }
-  return {
-    url: result.url,
-    metrics: { durationSec: null, sourceFrameCount: 1 },
+  const probe = async (preferOrigin: boolean) => {
+    const result = await createDownloadUrl(resource.id, resource.download, {
+      forDownload: false,
+      preferOrigin,
+      forceRefresh: preferOrigin,
+    });
+    if (!result.url) throw new Error("素材预览地址生成失败");
+    if (resource.materialType === "video") {
+      return { url: result.url, metrics: await probeVideo(result.url) };
+    }
+    if (resource.materialType === "gif") {
+      return { url: result.url, metrics: await probeGif(result.url) };
+    }
+    return {
+      url: result.url,
+      metrics: { durationSec: null, sourceFrameCount: 1 },
+    };
   };
+
+  try {
+    return await probe(false);
+  } catch {
+    // Keep previews available if the CDN or a regional route is temporarily
+    // unavailable. The refreshed source URL remains signed and short-lived.
+    return probe(true);
+  }
 }

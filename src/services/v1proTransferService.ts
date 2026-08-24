@@ -5,6 +5,7 @@ import { getAuthState, hasValidLocalAuth, verifyTokenRemote } from "./authServic
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { requireDeviceFeatureAccess } from "./featureAccessService";
+import { toMaterialCdnUrl } from "./materialCdnService";
 
 export interface V1ProOpenOptions {
   auto?: boolean;
@@ -90,7 +91,7 @@ function rejectAfterTimeout<T>(promise: Promise<T>, timeoutMs: number, message: 
   });
 }
 
-const TRUSTED_TRANSFER_CDN_HOSTS = new Set(["media.jadot.club"]);
+const TRUSTED_TRANSFER_CDN_HOSTS = new Set(["media.jadot.cn", "media.jadot.club"]);
 
 function isTrustedTransferHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
@@ -146,8 +147,7 @@ export function assertCosTransferUrl(url: string): void {
   } catch {
     throw new Error("传输链接格式无效");
   }
-  // 后端启用 MATERIAL_CDN_BASE_URL 后会返回 media.jadot.club 的签名 CDN
-  // 地址，而不是 COS 默认域名。先精确放行受信任 CDN，再拦截官网/API。
+  // 素材 CDN 地址不是 COS 默认域名。先精确放行受信任 CDN，再拦截官网/API。
   if (isTrustedTransferHost(parsed.hostname)) {
     return;
   }
@@ -270,10 +270,11 @@ async function fetchTransferDownloadUrl(
       { priority: options.priority },
     );
 
-    const url = payload.url?.trim();
-    if (!url) {
+    const sourceUrl = payload.url?.trim();
+    if (!sourceUrl) {
       throw new Error(payload.error || payload.message || "下载链接生成失败");
     }
+    const url = toMaterialCdnUrl(sourceUrl);
 
     assertCosTransferUrl(url);
     return {
