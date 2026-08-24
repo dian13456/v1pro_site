@@ -298,7 +298,11 @@ html[data-theme="cat"] .site-page-shell::before {
   z-index: 0;
 }
 
-html[data-theme="cat"] .site-page-shell > * {
+/* Keep only normal document-flow content above the decorative layer. Applying
+   this to every direct child overrides sticky/fixed positioning on headers,
+   mobile docks and modals, which lets resource cards cover their popovers. */
+html[data-theme="cat"] .site-page-shell > main,
+html[data-theme="cat"] .site-page-shell > footer {
   position: relative;
   z-index: 1;
 }
@@ -340,7 +344,8 @@ html[data-theme="doro"] .site-page-shell::before {
   z-index: 0;
 }
 
-html[data-theme="doro"] .site-page-shell > * {
+html[data-theme="doro"] .site-page-shell > main,
+html[data-theme="doro"] .site-page-shell > footer {
   position: relative;
   z-index: 1;
 }
