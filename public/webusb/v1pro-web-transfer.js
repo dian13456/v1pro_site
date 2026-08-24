@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.29";
+} from "./v1pro-constants.js?v=1.2.30";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.29";
+} from "./v1pro-gfm1.js?v=1.2.30";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -19,6 +19,7 @@ import {
   openAuthorizedDevice,
   openSelectedDevice,
   probeDevice,
+  queryBootWebsiteConfig,
   queryDisplayStatus,
   queryDeviceCapacity,
   requestAndOpenDevice,
@@ -26,8 +27,9 @@ import {
   setDisplayBrightness,
   setDisplayRotation,
   setFollowScreenOff,
+  setBootWebsiteConfig,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.29";
+} from "./v1pro-usb.js?v=1.2.30";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -208,6 +210,14 @@ export class V1ProWebTransfer {
 
   async setFollowScreenOff(enabled) {
     return this.runDisplayControl((device) => setFollowScreenOff(device, enabled));
+  }
+
+  async getBootWebsiteConfig() {
+    return this.runDisplayControl((device) => queryBootWebsiteConfig(device));
+  }
+
+  async setBootWebsiteConfig(enabled, url) {
+    return this.runDisplayControl((device) => setBootWebsiteConfig(device, enabled, url));
   }
 
   async predictVideoUrl(url, opts = {}) {

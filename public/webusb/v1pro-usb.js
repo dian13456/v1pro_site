@@ -14,14 +14,22 @@ import {
   USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
   USBDL_CMD_START,
+  USBDL_CMD_URL,
   USBDL_DISPLAY_SUB_BRIGHTNESS,
   USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF,
   USBDL_DISPLAY_SUB_QUERY,
   USBDL_DISPLAY_SUB_ROTATE,
   USBDL_MAGIC0,
   USBDL_MAGIC1,
+  USBDL_URL_SUB_BEGIN,
+  USBDL_URL_SUB_CHUNK,
+  USBDL_URL_SUB_COMMIT,
+  USBDL_URL_SUB_ENABLE,
+  USBDL_URL_SUB_QUERY,
+  USBDL_URL_SUB_WRITE,
+  USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.29";
+} from "./v1pro-constants.js?v=1.2.30";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -533,6 +541,159 @@ export async function setFollowScreenOff(device, enabled) {
     "VSO,"
   );
   return Number.parseInt(reply.split(",")[1], 10) !== 0;
+}
+
+function validateBootWebsiteUrl(url) {
+  const text = String(url || "").trim();
+  if (!text) {
+    throw new V1ProUsbError("boot_url_invalid", "请填写要在上电时打开的网址。");
+  }
+  if (text.length > USB_HID_URL_MAX_LEN) {
+    throw new V1ProUsbError(
+      "boot_url_invalid",
+      `网址最长 ${USB_HID_URL_MAX_LEN} 个字符。`
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new V1ProUsbError("boot_url_invalid", "网址格式不正确，请填写完整的 http:// 或 https:// 地址。");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new V1ProUsbError("boot_url_invalid", "网址必须以 http:// 或 https:// 开头。");
+  }
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code > 0x7e) {
+      throw new V1ProUsbError("boot_url_invalid", "网址仅支持可由键盘输入的 ASCII 字符。");
+    }
+  }
+  return text;
+}
+
+async function sendBootWebsiteCommand(device, payload, replyPrefix) {
+  requireOpenDisplayDevice(device);
+  await drainInQuick(device);
+  await bulkOut(device, payload, { timeoutMs: DISPLAY_COMMAND_TIMEOUT_MS, retries: 2 });
+  const reply = await readTextReply(device, [replyPrefix], DISPLAY_COMMAND_TIMEOUT_MS);
+  if (!reply) {
+    throw new V1ProUsbError(
+      "boot_url_unsupported",
+      "设备未确认上电打开网页命令，请升级 V1PRO 固件后重试。"
+    );
+  }
+  return reply;
+}
+
+/** Read the persisted HID boot-launcher URL and enabled state. */
+export async function queryBootWebsiteConfig(device) {
+  const reply = await sendBootWebsiteCommand(
+    device,
+    new Uint8Array([USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_URL, USBDL_URL_SUB_QUERY]),
+    "URL,"
+  );
+  const parts = reply.replace(/\0/g, "").trim().split(",");
+  if (parts.length < 3 || parts[0].toUpperCase() !== "URL") {
+    throw new V1ProUsbError("boot_url_invalid_reply", `设备网址状态格式错误：${reply}`);
+  }
+  const enabled = Number.parseInt(parts[1], 10) !== 0;
+  const length = Math.max(
+    0,
+    Math.min(USB_HID_URL_MAX_LEN, Number.parseInt(parts[2], 10) || 0)
+  );
+  if (length === 0) return { enabled: false, url: "" };
+
+  let url = "";
+  for (let offset = 0; offset < length;) {
+    const chunkLength = Math.min(48, length - offset);
+    const chunkReply = await sendBootWebsiteCommand(
+      device,
+      new Uint8Array([
+        USBDL_MAGIC0,
+        USBDL_MAGIC1,
+        USBDL_CMD_URL,
+        USBDL_URL_SUB_CHUNK,
+        offset & 0xff,
+        chunkLength,
+      ]),
+      "URLC,"
+    );
+    const chunk = chunkReply.slice(5, 5 + chunkLength);
+    if (chunk.length !== chunkLength) {
+      throw new V1ProUsbError("boot_url_invalid_reply", "设备返回的网址数据不完整，请重新读取。");
+    }
+    url += chunk;
+    offset += chunkLength;
+  }
+  return { enabled, url: validateBootWebsiteUrl(url) };
+}
+
+/** Persist a URL and enable/disable the firmware HID boot launcher. */
+export async function setBootWebsiteConfig(device, enabled, url) {
+  const rawUrl = String(url || "").trim();
+  const cleaned = enabled || rawUrl ? validateBootWebsiteUrl(rawUrl) : "";
+  if (!cleaned) {
+    const reply = await sendBootWebsiteCommand(
+      device,
+      new Uint8Array([
+        USBDL_MAGIC0,
+        USBDL_MAGIC1,
+        USBDL_CMD_URL,
+        USBDL_URL_SUB_ENABLE,
+        0,
+      ]),
+      "URLE,"
+    );
+    if (!/^URLE,0(?:,|$)/i.test(reply)) {
+      throw new V1ProUsbError("boot_url_write_failed", `设备未确认关闭上电打开网页：${reply}`);
+    }
+    return queryBootWebsiteConfig(device);
+  }
+
+  const data = new TextEncoder().encode(cleaned);
+  await sendBootWebsiteCommand(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_URL,
+      USBDL_URL_SUB_BEGIN,
+      data.length & 0xff,
+      (data.length >> 8) & 0xff,
+    ]),
+    "URLB,"
+  );
+  for (let offset = 0; offset < data.length;) {
+    const chunk = data.subarray(offset, Math.min(offset + 48, data.length));
+    const payload = new Uint8Array(6 + chunk.length);
+    payload.set([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_URL,
+      USBDL_URL_SUB_WRITE,
+      offset & 0xff,
+      (offset >> 8) & 0xff,
+    ]);
+    payload.set(chunk, 6);
+    await sendBootWebsiteCommand(device, payload, "URLW,");
+    offset += chunk.length;
+  }
+  const committed = await sendBootWebsiteCommand(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_URL,
+      USBDL_URL_SUB_COMMIT,
+      enabled ? 1 : 0,
+    ]),
+    "URL,"
+  );
+  if (committed.replace(/\0/g, "").trim().toUpperCase() !== "URL,OK") {
+    throw new V1ProUsbError("boot_url_write_failed", `设备保存网址失败：${committed}`);
+  }
+  return queryBootWebsiteConfig(device);
 }
 
 function formatUsbOpenHint(err) {

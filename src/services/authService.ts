@@ -2,7 +2,11 @@ import { ALLOWED_USB_DEVICES, formatUsbDeviceId, isAllowedUsbDevice, usbDeviceFi
 import { apiFetch } from "./httpClient";
 import type { AuthState } from "../types/resource";
 import { isStaticMode } from "./runtimeMode";
-import { disableBootWebsiteAfterEntry } from "./bootWebsiteService";
+import {
+  disableBootWebsiteAfterEntry,
+  markBootWebsiteEntryHandled,
+  wasBootWebsiteEntryHandled,
+} from "./bootWebsiteService";
 
 const AUTH_STORAGE_KEY = "jiadian_hub_auth";
 const BRAVE_STABLE_SERIAL_KEY_PREFIX = "jiadian_hub_brave_stable_usb_serial";
@@ -330,12 +334,15 @@ export async function requestUsbAndAuthorize(): Promise<AuthState> {
   const picked = await requestFilteredUsbDevice();
   try {
     const state = await authorizeUsbDevice(picked);
-    try {
-      await disableBootWebsiteAfterEntry(picked);
-    } catch (error) {
-      // Older firmware may not implement the URL command. Authentication must
-      // still succeed; supported devices will disable the one-shot launcher.
-      console.warn("Unable to disable the device boot website launcher", error);
+    if (!wasBootWebsiteEntryHandled(picked)) {
+      try {
+        await disableBootWebsiteAfterEntry(picked);
+        markBootWebsiteEntryHandled(picked);
+      } catch (error) {
+        // Older firmware may not implement the URL command. Authentication must
+        // still succeed; supported devices will disable the one-shot launcher.
+        console.warn("Unable to disable the device boot website launcher", error);
+      }
     }
     return state;
   } finally {

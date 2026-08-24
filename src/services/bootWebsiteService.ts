@@ -5,11 +5,40 @@ const USB_URL_QUERY = 0xfc;
 const USB_URL_ENABLE = 0xfd;
 const USB_REPLY_BYTES = 64;
 const USB_COMMAND_TIMEOUT_MS = 2_000;
+const BOOT_WEBSITE_ENTRY_HANDLED_PREFIX = "jiadian_hub_boot_website_entry_handled:";
+
+interface UsbDeviceIdentity {
+  serialNumber?: string | null;
+  vendorId?: number;
+  productId?: number;
+}
 
 interface BulkEndpoints {
   interfaceNumber: number;
   inEndpoint: number;
   outEndpoint: number;
+}
+
+function bootWebsiteHandledKey(device: UsbDeviceIdentity): string {
+  const serial = device.serialNumber?.trim();
+  const identity = serial || `${device.vendorId ?? 0}:${device.productId ?? 0}`;
+  return `${BOOT_WEBSITE_ENTRY_HANDLED_PREFIX}${identity}`;
+}
+
+export function wasBootWebsiteEntryHandled(device: UsbDeviceIdentity): boolean {
+  try {
+    return window.localStorage.getItem(bootWebsiteHandledKey(device)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markBootWebsiteEntryHandled(device: UsbDeviceIdentity): void {
+  try {
+    window.localStorage.setItem(bootWebsiteHandledKey(device), "1");
+  } catch {
+    // The device setting still succeeds when storage is unavailable.
+  }
 }
 
 function findBulkEndpoints(device: USBDevice): BulkEndpoints {

@@ -21,6 +21,11 @@ export interface V1ProDisplayStatus {
   followScreenOff: boolean;
 }
 
+export interface V1ProBootWebsiteConfig {
+  enabled: boolean;
+  url: string;
+}
+
 export interface V1ProTransferProgress {
   phase: "encode" | "transfer";
   sent: number;
@@ -96,6 +101,8 @@ export interface V1ProWebTransferClient {
   setDisplayBrightness(brightness: number): Promise<number>;
   setDisplayRotation(rotation: number): Promise<number>;
   setFollowScreenOff(enabled: boolean): Promise<boolean>;
+  getBootWebsiteConfig(): Promise<V1ProBootWebsiteConfig>;
+  setBootWebsiteConfig(enabled: boolean, url: string): Promise<V1ProBootWebsiteConfig>;
   getCapacityLabel(): string;
   predictVideoUrl(
     url: string,

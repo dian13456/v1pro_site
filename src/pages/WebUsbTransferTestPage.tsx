@@ -17,6 +17,7 @@ import {
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
+import { markBootWebsiteEntryHandled } from "../services/bootWebsiteService";
 import type {
   V1ProDisplayStatus,
   V1ProTransferResult,
@@ -28,6 +29,7 @@ type MaterialTransferMode = "auto" | "image" | "gif" | "video";
 type MaterialRotation = "auto" | 0 | 90 | 180 | 270;
 type MaterialFitMode = "fill" | "contain";
 type MaterialColorProfile = "normal" | "vivid" | "professional";
+const DEFAULT_BOOT_WEBSITE_URL = "https://www.jadot.cn/";
 
 function deviceKey(device: USBDevice): string {
   return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
@@ -134,6 +136,10 @@ export default function WebUsbTransferTestPage() {
   const [screenOff, setScreenOff] = useState(false);
   const [screenRotation, setScreenRotation] = useState<0 | 2>(2);
   const [followScreenOff, setFollowScreenOffState] = useState(false);
+  const [bootWebsiteEnabled, setBootWebsiteEnabled] = useState(false);
+  const [bootWebsiteUrl, setBootWebsiteUrl] = useState(DEFAULT_BOOT_WEBSITE_URL);
+  const [bootWebsiteSupported, setBootWebsiteSupported] = useState<boolean | null>(null);
+  const [bootWebsiteMessage, setBootWebsiteMessage] = useState("连接设备后自动读取上电打开网页设置。");
   const [materialTransferMode, setMaterialTransferMode] = useState<MaterialTransferMode>("auto");
   const [materialFps, setMaterialFps] = useState<20 | 25 | 30>(30);
   const [materialRotation, setMaterialRotation] = useState<MaterialRotation>("auto");
@@ -234,6 +240,29 @@ export default function WebUsbTransferTestPage() {
     }
   }, [applyDisplayStatus]);
 
+  const syncBootWebsiteConfig = useCallback(async (client: V1ProWebTransferClient) => {
+    setBootWebsiteMessage("正在读取上电打开网页设置…");
+    try {
+      const config = await client.getBootWebsiteConfig();
+      setBootWebsiteEnabled(config.enabled);
+      setBootWebsiteUrl(config.url || DEFAULT_BOOT_WEBSITE_URL);
+      setBootWebsiteSupported(true);
+      if (client.device) {
+        markBootWebsiteEntryHandled(client.device as USBDevice);
+      }
+      setBootWebsiteMessage(
+        config.enabled
+          ? `已开启：设备下次上电时将自动打开 ${config.url}`
+          : config.url
+            ? `已关闭，设备中已保存网址：${config.url}`
+            : "当前未开启，可填写网址后打开开关。",
+      );
+    } catch (err) {
+      setBootWebsiteSupported(false);
+      setBootWebsiteMessage(formatError(err));
+    }
+  }, []);
+
   const runDisplayControl = useCallback(async (
     action: (client: V1ProWebTransferClient) => Promise<void>,
     successMessage: string,
@@ -277,6 +306,7 @@ export default function WebUsbTransferTestPage() {
       }
       await refreshAuthorizedDevices();
       await syncDisplayStatus(client);
+      await syncBootWebsiteConfig(client);
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
       const capacityLabel = client.getCapacityLabel?.() ?? "";
@@ -307,6 +337,9 @@ export default function WebUsbTransferTestPage() {
     setProgress(0);
     setDisplayControlSupported(null);
     setDisplayControlMessage("连接设备后自动读取当前显示设置。");
+    setBootWebsiteEnabled(false);
+    setBootWebsiteSupported(null);
+    setBootWebsiteMessage("连接设备后自动读取上电打开网页设置。");
     setMetaText("连接设备后，将图片、GIF 或短视频拖入下方区域即可自动传输。");
   };
 
@@ -343,13 +376,14 @@ export default function WebUsbTransferTestPage() {
     }
   };
 
-  const handleRefreshDisplayStatus = async () => {
+  const handleRefreshDeviceStatus = async () => {
     const client = clientRef.current;
     if (!client?.connected || displayControlLockRef.current || transferLockRef.current) return;
     displayControlLockRef.current = true;
     setDisplayControlBusy(true);
     try {
       await syncDisplayStatus(client);
+      await syncBootWebsiteConfig(client);
     } finally {
       displayControlLockRef.current = false;
       setDisplayControlBusy(false);
@@ -387,6 +421,41 @@ export default function WebUsbTransferTestPage() {
     void runDisplayControl(async (client) => {
       setFollowScreenOffState(await client.setFollowScreenOff(enabled));
     }, `跟随熄屏已${enabled ? "开启" : "关闭"}。`);
+  };
+
+  const handleBootWebsiteChange = async () => {
+    const client = clientRef.current;
+    if (!client?.connected) {
+      setBootWebsiteMessage("请先连接设备后再设置上电打开网页。");
+      return;
+    }
+    if (displayControlLockRef.current || transferLockRef.current) return;
+    const enabled = !bootWebsiteEnabled;
+    const url = bootWebsiteUrl.trim();
+    if (enabled && !url) {
+      setBootWebsiteMessage("请先填写要打开的完整网址。");
+      return;
+    }
+    displayControlLockRef.current = true;
+    setDisplayControlBusy(true);
+    setBootWebsiteMessage("正在写入设备设置…");
+    try {
+      const config = await client.setBootWebsiteConfig(enabled, url);
+      setBootWebsiteEnabled(config.enabled);
+      setBootWebsiteUrl(config.url || DEFAULT_BOOT_WEBSITE_URL);
+      setBootWebsiteSupported(true);
+      setBootWebsiteMessage(
+        config.enabled
+          ? `已开启：设备下次上电时将自动打开 ${config.url}`
+          : `已关闭${config.url ? `，已保留网址 ${config.url}` : ""}。`,
+      );
+    } catch (err) {
+      setBootWebsiteMessage(formatError(err));
+    } finally {
+      displayControlLockRef.current = false;
+      setDisplayControlBusy(false);
+      refreshConnectionState();
+    }
   };
 
   const runTransfer = useCallback(
@@ -587,6 +656,8 @@ export default function WebUsbTransferTestPage() {
         : "border-[#e6e9f2] bg-[#fafbfe] text-[#6f7890]";
   const displayControlsDisabled =
     !connected || busy || displayControlBusy || displayControlSupported === false;
+  const bootWebsiteControlsDisabled =
+    !connected || busy || displayControlBusy || bootWebsiteSupported === false;
   const selectClassName = "mt-1.5 h-10 w-full rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:opacity-50";
   const advancedSettingsDisabled = busy || displayControlBusy;
 
@@ -605,7 +676,7 @@ export default function WebUsbTransferTestPage() {
               <p className="text-[11px] font-semibold text-[#8a93a8]">控制组件</p>
               <p className="mt-0.5 text-sm font-extrabold text-[#7c6cf0]">v{sdkVersion}</p>
             </div>
-            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，调节屏幕亮度、方向和跟随熄屏，也可将图片、GIF 或短视频直接传输到设备。</p>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，调节屏幕亮度、方向、跟随熄屏和上电打开网页，也可将图片、GIF 或短视频直接传输到设备。</p>
           </div>
         </section>
 
@@ -657,8 +728,8 @@ export default function WebUsbTransferTestPage() {
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#f0edff] text-sm font-extrabold text-[#7c6cf0]">2</span>
               <div>
-                <h2 className="text-[17px] font-extrabold">屏幕显示控制</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">设置会写入当前连接设备并由设备保存</p>
+                <h2 className="text-[17px] font-extrabold">设备功能控制</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">显示与开机网址设置会写入当前设备并保存</p>
               </div>
             </div>
 
@@ -733,13 +804,56 @@ export default function WebUsbTransferTestPage() {
               </div>
             </div>
 
+            <div className="mt-3 rounded-[14px] border border-[#e2defe] bg-gradient-to-br from-[#faf9ff] to-[#f5f8ff] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[12.5px] font-bold text-[#4a5270]">上电自动打开网页</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">设备上电后模拟键盘打开网址，适合自动进入佳点素材主页</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={bootWebsiteEnabled}
+                  aria-label="上电自动打开网页"
+                  disabled={bootWebsiteControlsDisabled}
+                  onClick={() => void handleBootWebsiteChange()}
+                  className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${bootWebsiteEnabled ? "bg-[#7c6cf0]" : "bg-[#cfd5e2]"}`}
+                >
+                  <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${bootWebsiteEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="url"
+                  maxLength={180}
+                  value={bootWebsiteUrl}
+                  disabled={!connected || busy || displayControlBusy || bootWebsiteEnabled || bootWebsiteSupported === false}
+                  onChange={(event) => setBootWebsiteUrl(event.target.value)}
+                  placeholder="https://www.jadot.cn/"
+                  aria-label="上电自动打开的网址"
+                  className="h-10 min-w-0 flex-1 rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:bg-[#f1f3f8] disabled:opacity-70"
+                />
+                <button
+                  type="button"
+                  disabled={!connected || busy || displayControlBusy || bootWebsiteEnabled || bootWebsiteSupported === false}
+                  onClick={() => setBootWebsiteUrl(DEFAULT_BOOT_WEBSITE_URL)}
+                  className="h-10 shrink-0 rounded-[10px] border border-[#ded9ff] bg-white px-4 text-[11.5px] font-bold text-[#7c6cf0] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  使用佳点官网
+                </button>
+              </div>
+              <p className={`mt-3 text-[11px] leading-5 ${bootWebsiteSupported === false ? "text-[#dc5d55]" : bootWebsiteEnabled ? "font-semibold text-[#6b5dde]" : "text-[#8a93a8]"}`}>
+                {bootWebsiteMessage}
+              </p>
+            </div>
+
             <div className={`mt-3 rounded-[12px] border px-4 py-3 text-[12px] leading-5 ${displayControlSupported === false ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]" : "border-[#dce6fb] bg-[#f5f8ff] text-[#66708d]"}`}>
               {displayControlMessage}
             </div>
             <button
               type="button"
               disabled={!connected || busy || displayControlBusy}
-              onClick={() => void handleRefreshDisplayStatus()}
+              onClick={() => void handleRefreshDeviceStatus()}
               className="mt-3 text-[11.5px] font-semibold text-[#7c6cf0] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
             >
               {displayControlBusy ? "正在同步…" : "重新读取设备设置"}
