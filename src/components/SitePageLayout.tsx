@@ -5,6 +5,7 @@ import { SitePageShell } from "./SitePageShell";
 import { SitePageToolbar } from "./SitePageToolbar";
 import { SITE_CONTENT_DEFAULT } from "./SiteUi";
 import type { ThemeMode } from "../types/theme";
+import { MobileSiteDock } from "./MobileSiteDock";
 
 interface SitePageLayoutProps {
   subtitle?: string;
@@ -29,6 +30,7 @@ export function SitePageLayout({
 }: SitePageLayoutProps) {
   return (
     <SitePageShell beforeContent={beforeContent}>
+      {toolbarMode === "app" ? <MobileSiteDock /> : null}
       <SiteHeader
         title="佳点电子资源中心"
         subtitle={subtitle}
@@ -38,6 +40,7 @@ export function SitePageLayout({
       />
       <div className={contentClassName}>{children}</div>
       {showFooter ? <SiteFooter /> : null}
+      {toolbarMode === "app" ? <div className="h-16 md:hidden" aria-hidden="true" /> : null}
     </SitePageShell>
   );
 }

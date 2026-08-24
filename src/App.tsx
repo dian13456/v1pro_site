@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { SiteLoadingScreen } from "./components/SiteUi";
 import { useAuthGuard } from "./hooks/useAuthGuard";
+import { GlobalTransferTaskCenter } from "./components/GlobalTransferTaskCenter";
 
 const AiGuidePage = lazy(() => import("./pages/AiGuidePage"));
 const AiImagePage = lazy(() => import("./pages/AiImagePage"));
@@ -48,6 +49,7 @@ export default function App() {
 
   return (
     <>
+      <GlobalTransferTaskCenter />
       <Suspense fallback={<SiteLoadingScreen message="正在加载页面…" />}>
         <Routes location={location}>
           <Route path="/terms" element={<TermsPage />} />

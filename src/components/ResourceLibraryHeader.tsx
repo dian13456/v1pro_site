@@ -1,15 +1,28 @@
-import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { clearAuthState } from "../services/authService";
 import { TechnicalSupportGroup } from "./TechnicalSupportGroup";
 import { ThemeIcon } from "./ThemeIcon";
 import { useThemeMode } from "../hooks/useThemeMode";
+import { MobileSiteDock } from "./MobileSiteDock";
+import { DeviceStatusCapsule } from "./DeviceStatusCapsule";
+import { ResourceSearchBox } from "./ResourceSearchBox";
 
 interface ResourceLibraryHeaderProps {
   keyword: string;
   onSearch: (value: string) => void;
   searchPlaceholder?: string;
 }
+
+const MORE_LINKS = [
+  { to: "/guide", label: "AI 助手", icon: "✦" },
+  { to: "/ai-image", label: "AI 生图", icon: "◉" },
+  { to: "/favorites", label: "我的收藏", icon: "☆" },
+  { to: "/leaderboard", label: "积分榜", icon: "⌁" },
+  { to: "/downloads", label: "资料中心", icon: "↓" },
+  { to: "/shop", label: "积分商城", icon: "◇" },
+  { to: "/mall", label: "实物商城", icon: "▢" },
+  { to: "/board", label: "留言板", icon: "···" },
+];
 
 export function ResourceLibraryHeader({
   keyword,
@@ -18,14 +31,6 @@ export function ResourceLibraryHeader({
 }: ResourceLibraryHeaderProps) {
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
-  const [draft, setDraft] = useState(keyword);
-
-  useEffect(() => setDraft(keyword), [keyword]);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    onSearch(draft.trim());
-  };
 
   const handleLogout = () => {
     clearAuthState();
@@ -33,81 +38,64 @@ export function ResourceLibraryHeader({
   };
 
   return (
+    <>
     <header className="resource-library-header sticky top-0 z-[80] min-h-[64px] border-b border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex min-h-[64px] items-center gap-3 px-4 sm:px-8">
-        <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold text-[#2b3245] dark:text-white">
+      <div className="flex min-h-[64px] items-center gap-2.5 px-4 sm:px-6 xl:px-8">
+        <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold tracking-[-0.025em] text-[#2b3245] dark:text-white">
           <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] text-[17px] text-white shadow-[0_5px_14px_rgba(0,113,227,.25)]">🐱</span>
-          <span className="hidden sm:inline">佳点电子素材库</span>
+          <span className="hidden 2xl:inline">佳点电子素材库</span>
         </Link>
-        <form onSubmit={submit} className="flex h-10 min-w-0 max-w-[320px] flex-1 items-center rounded-full border border-black/[.055] bg-black/[.035] px-4 transition focus-within:border-[#0071e3]/30 focus-within:bg-white focus-within:ring-4 focus-within:ring-[#0071e3]/10 dark:border-white/10 dark:bg-white/[.06] dark:focus-within:bg-slate-900">
-          <ThemeIcon name="search" size={16} className="mr-2 shrink-0 text-slate-400" />
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#2b3245] outline-none placeholder:text-[#8a93a8] dark:text-slate-100 dark:placeholder:text-slate-500"
-            placeholder={searchPlaceholder}
-          />
-        </form>
-        <Link
-          to="/shop"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20 sm:px-4"
-        >
-          <span aria-hidden="true">🎁</span>
-          <span className="hidden sm:inline">积分商城</span>
-        </Link>
+
+        <ResourceSearchBox keyword={keyword} onSearch={onSearch} placeholder={searchPlaceholder} />
+
         <Link
           to="/share"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-5 py-[10px] text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)]"
+          className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-3.5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)] sm:px-5"
         >
-          <ThemeIcon name="upload" size={15} /> 分享素材
+          <ThemeIcon name="upload" size={15} /> <span className="hidden sm:inline">分享素材</span>
         </Link>
-        <Link
-          to="/activities"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 lg:inline-flex"
-        >
+        <Link to="/activities" className="hidden h-10 shrink-0 items-center gap-1.5 rounded-full border border-black/[.06] bg-white/70 px-4 text-[13px] font-semibold text-[#4a5270] transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200 xl:inline-flex">
           <ThemeIcon name="activity" size={15} /> 活动中心
         </Link>
-        <Link
-          to="/leaderboard"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 xl:inline-flex"
-        >
-          <ThemeIcon name="leaderboard" size={15} /> 积分榜
-        </Link>
-        <Link
-          to="/favorites"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 xl:inline-flex"
-        >
-          <ThemeIcon name="favorite" size={15} /> 我的收藏
-        </Link>
-        <Link
-          to="/downloads"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 lg:inline-flex"
-        >
-          <ThemeIcon name="download" size={15} /> 资料中心
-        </Link>
-        <Link
-          to="/webusb-test"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 xl:inline-flex"
-        >
+        <Link to="/webusb-test" className="hidden h-10 shrink-0 items-center gap-1.5 rounded-full border border-black/[.06] bg-white/70 px-4 text-[13px] font-semibold text-[#4a5270] transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200 lg:inline-flex">
           <ThemeIcon name="device" size={15} /> 设备控制
         </Link>
-        <Link
-          to="/profile"
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#e6e9f2] bg-white px-4 py-2 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 lg:inline-flex"
-        >
+        <Link to="/profile" className="hidden h-10 shrink-0 items-center gap-1.5 rounded-full border border-black/[.06] bg-white/70 px-4 text-[13px] font-semibold text-[#4a5270] transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200 xl:inline-flex">
           <ThemeIcon name="user" size={15} /> 个人中心
         </Link>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[#ffd9d4] bg-[#fff7f5] px-4 py-2 text-[13px] font-semibold text-[#ef6b62] transition hover:border-[#ef6b62] hover:bg-[#fff0ed] dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15 xl:inline-flex"
-        >
-          <ThemeIcon name="logout" size={15} /> 退出认证
-        </button>
+
+        <DeviceStatusCapsule />
+
+        <details className="group relative shrink-0">
+          <summary className="grid h-10 min-w-10 cursor-pointer list-none place-items-center rounded-full border border-black/[.06] bg-white/75 px-3 text-[13px] font-semibold text-[#4a5270] transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200 [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true">•••</span><span className="sr-only">更多功能</span>
+          </summary>
+          <div className="absolute right-0 top-[calc(100%+10px)] z-[120] w-48 rounded-[18px] border border-black/[.07] bg-white/95 p-2 shadow-[0_20px_55px_rgba(15,23,42,.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/95">
+            <div className="grid gap-1 lg:hidden">
+              <Link to="/webusb-test" className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[.07]">设备控制</Link>
+            </div>
+            <div className="grid gap-1 xl:hidden">
+              <Link to="/activities" className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[.07]">活动中心</Link>
+              <Link to="/profile" className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[.07]">个人中心</Link>
+            </div>
+            <div className="grid gap-1">
+              {MORE_LINKS.map((item) => (
+                <Link key={item.to} to={item.to} className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[.07]">
+                  <span className="w-4 text-center text-xs" aria-hidden="true">{item.icon}</span>{item.label}
+                </Link>
+              ))}
+            </div>
+            <div className="my-1 h-px bg-slate-100 dark:bg-white/10" />
+            <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-500/10">
+              <ThemeIcon name="logout" size={15} />退出认证
+            </button>
+          </div>
+        </details>
+
         <button
           type="button"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#e6e9f2] bg-white text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-black/[.06] bg-white/75 text-[#4a5270] transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200"
           aria-label={theme === "dark" ? "切换为浅色模式" : "切换为深色模式"}
           title={theme === "dark" ? "切换为浅色模式" : "切换为深色模式"}
         >
@@ -116,5 +104,7 @@ export function ResourceLibraryHeader({
         <TechnicalSupportGroup compact />
       </div>
     </header>
+    <MobileSiteDock />
+    </>
   );
 }

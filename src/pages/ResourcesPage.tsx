@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
-import { V1ProTransferOrb } from "../components/V1ProTransferOrb";
 import { SiteFooter } from "../components/SiteFooter";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
-import { CompactResourceCard } from "../components/CompactResourceCard";
+import { CompactResourceCard, CompactResourceCardSkeleton } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
 import { DeviceAuthenticationDialog } from "../components/DeviceAuthenticationDialog";
 import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
@@ -43,6 +42,12 @@ import {
   transferResourceViaWebUsb,
   type AlbumTransition,
 } from "../services/v1proWebResourceTransferService";
+import {
+  beginTransferTask,
+  completeTransferTask,
+  failTransferTask,
+  updateTransferTask,
+} from "../services/transferTaskStore";
 
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
@@ -450,6 +455,26 @@ export default function ResourcesPage() {
     setCurrentPage(1);
   };
 
+  const handleDiscoverySection = (section: "recommend" | "latest" | "following" | "hot") => {
+    setErrorMessage("");
+    setShowHidden(false);
+    setAlbumMode(false);
+    setAlbumSelectedIds([]);
+    if (section === "recommend") {
+      handleRecommendationHome();
+      return;
+    }
+    setRandomMode(false);
+    setRandomItems([]);
+    setCurrentPage(1);
+    if (section === "following") {
+      setFollowingOnly(true);
+      return;
+    }
+    setFollowingOnly(false);
+    setSortMode(section);
+  };
+
   const applyDownloadStats = (resourceId: number, stats?: DownloadStatsSnapshot | null) => {
     if (!stats) return;
     setTotalDownloadCounts((prev) => ({
@@ -486,9 +511,16 @@ export default function ResourcesPage() {
     setErrorMessage("");
     setWebUsbTransferringId(resource.id);
     setWebUsbProgress(0);
+    beginTransferTask(`网页直传 · ${resource.title || resource.description || "未命名素材"}`);
     void transferResourceViaWebUsb(resource, {
-      onStatus: (message) => setTransferNotice(message),
-      onProgress: setWebUsbProgress,
+      onStatus: (message) => {
+        setTransferNotice(message);
+        updateTransferTask({ message });
+      },
+      onProgress: (progress) => {
+        setWebUsbProgress(progress);
+        updateTransferTask({ progress });
+      },
     }, {
       videoFps: resource.materialType === "video" ? options.videoFps : undefined,
       fitMode: options.fitMode,
@@ -503,6 +535,7 @@ export default function ResourcesPage() {
           message += `（${result.note}）`;
         }
         setTransferNotice(message);
+        completeTransferTask(message);
         void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
         setWebUsbProgress(100);
         window.setTimeout(() => {
@@ -511,9 +544,11 @@ export default function ResourcesPage() {
         }, 6000);
       })
       .catch((err) => {
+        const message = (err as Error)?.message || "网页直传失败";
         setTransferNotice("");
         setWebUsbProgress(null);
-        showResourceError((err as Error)?.message || "网页直传失败");
+        failTransferTask(message);
+        showResourceError(message);
       })
       .finally(() => {
         setWebUsbTransferringId(null);
@@ -714,11 +749,18 @@ export default function ResourcesPage() {
     setAlbumTransferStatus("正在准备图片相册…");
     setAlbumTransferring(true);
     setWebUsbProgress(0);
+    beginTransferTask(`图片相册 · ${albumResources.length} 张素材`, "正在准备图片相册…");
     void transferAlbumResourcesViaWebUsb(
       albumResources,
       {
-        onStatus: (message) => setAlbumTransferStatus(message),
-        onProgress: setWebUsbProgress,
+        onStatus: (message) => {
+          setAlbumTransferStatus(message);
+          updateTransferTask({ message });
+        },
+        onProgress: (progress) => {
+          setWebUsbProgress(progress);
+          updateTransferTask({ progress });
+        },
       },
       {
         targetFrameCapacity: albumCapacity,
@@ -727,13 +769,17 @@ export default function ResourcesPage() {
       },
     )
       .then((result) => {
+        const message = result.note || `相册传输完成：${result.frameCount} 帧`;
         setWebUsbProgress(100);
-        setAlbumTransferStatus(result.note || `相册传输完成：${result.frameCount} 帧`);
+        setAlbumTransferStatus(message);
+        completeTransferTask(message);
       })
       .catch((err) => {
+        const message = (err as Error)?.message || "相册网页直传失败";
         setWebUsbProgress(null);
         setAlbumTransferStatus("");
-        showResourceError((err as Error)?.message || "相册网页直传失败");
+        failTransferTask(message);
+        showResourceError(message);
       })
       .finally(() => {
         setAlbumTransferring(false);
@@ -743,12 +789,6 @@ export default function ResourcesPage() {
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
-      <V1ProTransferOrb
-        visible={webUsbTransferringId !== null && selectedResource?.id !== webUsbTransferringId}
-        progress={webUsbProgress}
-        transferId={webUsbTransferringId}
-        message={transferNotice}
-      />
       <ResourceLibraryHeader
         keyword={keyword}
         onSearch={(value) => {
@@ -844,6 +884,48 @@ export default function ResourcesPage() {
           </div>
 
           <div className="min-w-0">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <nav className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-black/[.055] bg-white/65 p-1 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055]" aria-label="素材发现栏目">
+                {([
+                  ["recommend", "为你推荐"],
+                  ["latest", "最新上传"],
+                  ["following", "关注动态"],
+                  ["hot", "热门排行"],
+                ] as const).map(([value, label]) => {
+                  const active = value === "recommend"
+                    ? showingRecommendations
+                    : value === "following"
+                      ? followingOnly && !showHidden
+                      : !showingRecommendations && !followingOnly && !showHidden && sortMode === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => handleDiscoverySection(value)}
+                      className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+                        active
+                          ? "bg-[#0071e3] text-white shadow-[0_5px_14px_rgba(0,113,227,.22)]"
+                          : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </nav>
+              {showingRecommendations ? (
+                <button
+                  type="button"
+                  disabled={recommendationsLoading}
+                  onClick={() => setRecommendationRefreshKey((value) => value + 1)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-black/[.06] bg-white/70 px-3.5 py-2 text-sm font-medium text-[#0071e3] shadow-sm transition hover:-translate-y-0.5 hover:bg-white disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-white/[.055] dark:text-sky-300"
+                  aria-label="刷新推荐素材"
+                >
+                  <span aria-hidden="true">↻</span>
+                  {recommendationsLoading ? "刷新中…" : "换一批"}
+                </button>
+              ) : null}
+            </div>
             <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
                 共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页
@@ -912,24 +994,9 @@ export default function ResourcesPage() {
             {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {showInitialLoader ? (
-              <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
-                {recommendationsLoading ? "正在加载猜你喜欢…" : "正在加载素材…"}
-              </div>
-            ) : null}
-            {showingRecommendations ? (
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">猜你喜欢</h2>
-                <button
-                  type="button"
-                  disabled={recommendationsLoading}
-                  onClick={() => setRecommendationRefreshKey((value) => value + 1)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-orange-500 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-wait disabled:opacity-60 dark:border-orange-400/30 dark:bg-slate-900 dark:hover:bg-orange-500/10"
-                  aria-label="刷新猜你喜欢"
-                >
-                  <span aria-hidden="true">↻</span>
-                  {recommendationsLoading ? "刷新中…" : "换一批"}
-                </button>
-              </div>
+              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label={recommendationsLoading ? "正在加载推荐素材" : "正在加载素材"}>
+                {Array.from({ length: 8 }, (_, index) => <CompactResourceCardSkeleton key={index} />)}
+              </section>
             ) : null}
             {canRenderCards ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

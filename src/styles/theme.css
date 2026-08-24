@@ -125,6 +125,12 @@ html[data-theme] .resource-library-shell::before {
   display: none;
 }
 
+@media (max-width: 767px) {
+  .resource-library-shell {
+    padding-bottom: 78px;
+  }
+}
+
 /* Shared Apple-inspired surfaces: quiet borders, translucent layers and
    restrained motion keep the information-heavy pages feeling lightweight. */
 .site-header-panel,
@@ -138,7 +144,7 @@ html[data-theme] .resource-library-shell::before {
 }
 
 .site-header-panel {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .site-header-panel::after {
@@ -220,6 +226,28 @@ html[data-theme] .resource-library-shell::before {
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+@keyframes resource-skeleton-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.resource-skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.resource-skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.72) 48%, transparent 76%);
+  animation: resource-skeleton-sweep 1.55s ease-in-out infinite;
+}
+
 .resource-detail-backdrop {
   background: rgba(18, 18, 20, 0.36) !important;
   -webkit-backdrop-filter: saturate(140%) blur(14px);
@@ -248,6 +276,10 @@ html[data-theme="dark"] .resource-card-apple {
   .site-btn-primary,
   .resource-card-apple {
     transition: none !important;
+  }
+
+  .resource-skeleton-shimmer::after {
+    animation: none !important;
   }
 }
 

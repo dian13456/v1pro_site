@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { useCreatorAvatar } from "../hooks/useCreatorAvatar";
@@ -66,11 +67,16 @@ export function CompactResourceCard({
 }) {
   const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
     useResourcePreviewImage(resource.id, resource.image || resource.download);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
   const metrics = resourceMetricsFromCatalog(resource);
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);
   const displayCapacity = resource.materialType === "image" ? null : capacity;
   const duration = formatMediaDuration(metrics.durationSec);
   const creatorAvatarUrl = useCreatorAvatar(resource.author);
+
+  useEffect(() => {
+    setPreviewLoaded(false);
+  }, [previewUrl]);
 
   return (
     <article
@@ -99,11 +105,17 @@ export function CompactResourceCard({
           <img
             src={previewUrl}
             alt={resource.title}
-            className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+            className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${previewLoaded ? "opacity-100" : "opacity-0"}`}
             loading="lazy"
             decoding="async"
-            onLoad={handlePreviewLoad}
-            onError={handlePreviewError}
+            onLoad={() => {
+              setPreviewLoaded(true);
+              handlePreviewLoad();
+            }}
+            onError={() => {
+              setPreviewLoaded(false);
+              handlePreviewError();
+            }}
           />
         ) : null}
         {previewFailed ? (
@@ -154,46 +166,7 @@ export function CompactResourceCard({
               <span className="min-w-0 truncate font-medium">{resource.author}</span>
             </Link>
           ) : <span className="min-w-0 flex-1" />}
-          {onFollow ? (
-            <button
-              type="button"
-              aria-label={followed ? `取消关注 ${resource.author}` : `关注 ${resource.author}`}
-              aria-pressed={followed}
-              title={followed ? "取消关注" : "关注上传者"}
-              disabled={following}
-              onClick={(event) => {
-                event.stopPropagation();
-                onFollow(resource, !followed);
-              }}
-              className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full border px-1 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                followed
-                  ? "border-sky-200 bg-sky-50 text-[#0071e3] dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:text-[#0071e3] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              }`}
-            >
-              {following ? "…" : followed ? "✓" : "+"}
-            </button>
-          ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {onHiddenChange ? (
-              <button
-                type="button"
-                aria-label={hidden ? "恢复该用户的全部素材" : "屏蔽该用户的全部素材"}
-                title={hidden ? "恢复该用户" : "屏蔽该用户"}
-                disabled={hiding}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onHiddenChange(resource, !hidden);
-                }}
-                className={`inline-flex items-center rounded-full p-1 text-sm transition disabled:cursor-not-allowed ${
-                  hidden
-                    ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                    : "hover:bg-slate-100 hover:text-slate-600"
-                }`}
-              >
-                {hiding ? <span aria-hidden="true">…</span> : <ThemeIcon name={hidden ? "restore" : "block"} size={15} />}
-              </button>
-            ) : null}
             <button
               type="button"
               aria-label={favorited ? "取消收藏" : "收藏"}
@@ -222,9 +195,56 @@ export function CompactResourceCard({
               <span>{liking ? "…" : likeCount}</span>
             </button>
             <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {downloadCount}</span>
+            {onFollow || onHiddenChange ? (
+              <details className="group/card-menu relative" onClick={(event) => event.stopPropagation()}>
+                <summary className="grid h-5 w-5 cursor-pointer list-none place-items-center rounded-full text-[11px] font-bold tracking-[-1px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white [&::-webkit-details-marker]:hidden" aria-label="更多素材操作">
+                  •••
+                </summary>
+                <div className="absolute bottom-[calc(100%+7px)] right-0 z-30 grid w-32 gap-1 rounded-xl border border-black/[.07] bg-white/95 p-1.5 text-[11px] shadow-[0_14px_38px_rgba(15,23,42,.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+                  {onFollow ? (
+                    <button
+                      type="button"
+                      disabled={following}
+                      onClick={() => onFollow(resource, !followed)}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-slate-600 transition hover:bg-sky-50 hover:text-[#0071e3] disabled:opacity-60 dark:text-slate-200 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                    >
+                      <span className="w-4 text-center" aria-hidden="true">{followed ? "✓" : "+"}</span>
+                      {following ? "处理中…" : followed ? "取消关注" : "关注上传者"}
+                    </button>
+                  ) : null}
+                  {onHiddenChange ? (
+                    <button
+                      type="button"
+                      disabled={hiding}
+                      onClick={() => onHiddenChange(resource, !hidden)}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60 dark:text-slate-200 dark:hover:bg-white/[.07] dark:hover:text-white"
+                    >
+                      <ThemeIcon name={hidden ? "restore" : "block"} size={14} />
+                      {hiding ? "处理中…" : hidden ? "恢复该用户" : "屏蔽该用户"}
+                    </button>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
           </div>
         </div>
       </div>
     </article>
+  );
+}
+
+export function CompactResourceCardSkeleton() {
+  return (
+    <div className="resource-card-apple flex aspect-[1.618] animate-pulse flex-col overflow-hidden rounded-[22px] border border-black/[.055] bg-white shadow-sm dark:border-white/10 dark:bg-slate-900" aria-hidden="true">
+      <div className="resource-skeleton-shimmer min-h-0 flex-1 bg-slate-200/80 dark:bg-slate-800" />
+      <div className="shrink-0 space-y-2 px-3 py-2.5">
+        <div className="h-3 w-3/5 rounded-full bg-slate-200 dark:bg-slate-700" />
+        <div className="flex items-center gap-2">
+          <div className="h-5 w-5 rounded-full bg-slate-200 dark:bg-slate-700" />
+          <div className="h-2.5 w-1/3 rounded-full bg-slate-200 dark:bg-slate-700" />
+          <div className="ml-auto h-2.5 w-1/4 rounded-full bg-slate-200 dark:bg-slate-700" />
+        </div>
+      </div>
+    </div>
   );
 }

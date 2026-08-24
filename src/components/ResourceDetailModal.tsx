@@ -107,6 +107,15 @@ export function ResourceDetailModal({
   }, [onClose]);
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      if (previousOverflow) document.body.style.overflow = previousOverflow;
+      else document.body.style.removeProperty("overflow");
+    };
+  }, []);
+
+  useEffect(() => {
     let active = true;
     setMetrics(resourceMetricsFromCatalog(resource));
     setPreviewUrl("");
@@ -196,13 +205,13 @@ export function ResourceDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="resource-detail-surface grid max-h-[92vh] w-full max-w-[1180px] overflow-auto rounded-[28px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.05fr_1fr] lg:grid-cols-[minmax(300px,1.05fr)_minmax(320px,1fr)_minmax(280px,.9fr)]">
-        <div className="relative flex min-h-[220px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-4 md:min-h-[400px]">
+      <div className="resource-detail-surface grid max-h-[92vh] w-full max-w-[1080px] overflow-auto rounded-[28px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[minmax(300px,1.08fr)_minmax(340px,.92fr)]">
+        <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden bg-gradient-to-br from-sky-100 via-slate-100 to-indigo-100 p-5 md:min-h-[520px]">
           {previewUrl ? (
             resource.materialType === "video" ? (
-              <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[380px] w-full rounded-xl object-contain" />
+              <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[470px] w-full rounded-[18px] object-contain shadow-[0_18px_50px_rgba(15,23,42,.14)]" />
             ) : (
-              <img src={previewUrl} alt={resource.title} className="max-h-[380px] w-full rounded-xl object-contain" />
+              <img src={previewUrl} alt={resource.title} className="max-h-[470px] w-full rounded-[18px] object-contain shadow-[0_18px_50px_rgba(15,23,42,.14)]" />
             )
           ) : (
             <div className="text-center text-slate-500">{probing ? "正在读取素材信息…" : "暂无预览"}</div>
@@ -212,10 +221,10 @@ export function ResourceDetailModal({
           </div>
         </div>
 
-        <div className="flex flex-col gap-[13px] border-t border-[#e6e9f2] p-6 md:border-l md:border-t-0">
+        <div className="flex flex-col gap-[13px] border-t border-[#e6e9f2] p-6 md:border-l md:border-t-0 lg:p-7">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-[17px] font-bold text-[#2b3245]">{resource.title || resource.description}</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.025em] text-[#1d1d1f]">{resource.title || resource.description}</h2>
               <div className="mt-2 flex flex-wrap gap-2 text-[11.5px]">
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{materialLabel(resource)}</span>
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || "其他"}</span>
@@ -223,7 +232,7 @@ export function ResourceDetailModal({
                 {metricsKnown && requiredFrames > 308 ? <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-500 dark:bg-orange-500/10">大占用 {requiredFrames}帧</span> : null}
               </div>
             </div>
-            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800">×</button>
+            <button type="button" onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 dark:hover:text-white" aria-label="关闭素材详情">×</button>
           </div>
 
           <dl className="space-y-2 text-[12.5px]">
@@ -342,18 +351,26 @@ export function ResourceDetailModal({
               disabled={webUsbTransferring || !canDirectTransfer}
               title="网页直传"
               onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
-              className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50"
+              className="rounded-[12px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)] disabled:opacity-50"
             >
               {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}
             </button>
           </div>
         </div>
 
-        <aside className="flex min-h-[360px] flex-col border-t border-[#e6e9f2] bg-[#fafbfe] p-5 md:col-span-2 lg:col-span-1 lg:max-h-[92vh] lg:border-l lg:border-t-0">
+        <details className="group/comments border-t border-[#e6e9f2] bg-[#fafbfe] md:col-span-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 transition hover:bg-white/75 [&::-webkit-details-marker]:hidden">
+            <div>
+              <h3 className="text-[15px] font-semibold text-[#2b3245]">评论区</h3>
+              <p className="mt-0.5 text-[11.5px] text-[#8a93a8]">共 {commentTotal} 条评论 · 点击展开参与讨论</p>
+            </div>
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-sm text-slate-500 shadow-sm transition group-open/comments:rotate-180" aria-hidden="true">⌄</span>
+          </summary>
+          <div className="border-t border-[#e6e9f2] p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-[15px] font-bold text-[#2b3245]">评论区</h3>
-              <p className="mt-1 text-[11.5px] text-[#8a93a8]">共 {commentTotal} 条评论</p>
+              <h3 className="text-[14px] font-semibold text-[#2b3245]">参与讨论</h3>
+              <p className="mt-1 text-[11.5px] text-[#8a93a8]">支持 Ctrl + Enter 快速发送</p>
             </div>
             <button
               type="button"
@@ -374,7 +391,7 @@ export function ResourceDetailModal({
             </button>
           </div>
 
-          <div className="mt-4 min-h-[170px] flex-1 space-y-3 overflow-y-auto pr-1 lg:min-h-0">
+          <div className="mt-4 max-h-[280px] min-h-[150px] space-y-3 overflow-y-auto pr-1">
             {commentsLoading ? <p className="py-8 text-center text-xs text-[#8a93a8]">正在加载评论…</p> : null}
             {!commentsLoading && comments.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[#dfe3ed] bg-white/70 px-4 py-8 text-center">
@@ -425,7 +442,8 @@ export function ResourceDetailModal({
               </button>
             </div>
           </div>
-        </aside>
+          </div>
+        </details>
       </div>
     </div>
   );

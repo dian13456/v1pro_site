@@ -4,6 +4,7 @@ import { ThemeSelector } from "./ThemeSelector";
 import { clearAuthState } from "../services/authService";
 import { TechnicalSupportGroup } from "./TechnicalSupportGroup";
 import type { ThemeMode } from "../types/theme";
+import { DeviceStatusCapsule } from "./DeviceStatusCapsule";
 
 interface SitePageToolbarProps {
   theme: ThemeMode;
@@ -31,6 +32,7 @@ export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToo
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SiteNav />
+      <DeviceStatusCapsule />
       <ThemeSelector theme={theme} onChange={onSetTheme} />
       <button
         type="button"
