@@ -12,7 +12,7 @@ export const SITE_CHAT_ASSISTANT_CLASS =
   "max-w-[760px] rounded-2xl border border-white/20 bg-white/80 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-200";
 
 export const SITE_PANEL_CLASS =
-  "site-panel-surface rounded-3xl border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45";
+  "site-panel-surface rounded-[28px] border border-white/25 bg-white/55 p-5 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 sm:p-6";
 
 export const SITE_PANEL_ACCENT_CLASS =
   "rounded-3xl border border-violet-200/60 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 p-5 dark:border-violet-500/20";
@@ -21,7 +21,7 @@ export const SITE_PANEL_NESTED_CLASS =
   "rounded-2xl border border-white/30 bg-white/70 dark:border-white/10 dark:bg-slate-950/50";
 
 export const SITE_INPUT_CLASS =
-  "w-full rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-sm outline-none ring-violet-400/40 focus:ring-2 disabled:opacity-60 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100";
+  "w-full rounded-[14px] border border-black/[.07] bg-white/75 px-4 py-3 text-sm outline-none ring-[#0071e3]/15 transition focus:border-[#0071e3]/35 focus:bg-white focus:ring-4 disabled:opacity-60 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100";
 
 export const SITE_TEXTAREA_CLASS = `${SITE_INPUT_CLASS} resize-y`;
 
@@ -29,7 +29,7 @@ export const SITE_BTN_PRIMARY =
   "site-btn-primary rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60";
 
 export const SITE_BTN_SECONDARY =
-  "rounded-full border border-white/30 bg-white/50 px-5 py-2.5 text-sm text-slate-700 backdrop-blur transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100 dark:hover:bg-slate-900/70";
+  "rounded-full border border-black/[.06] bg-white/70 px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[.06] dark:text-slate-100 dark:hover:bg-white/[.1]";
 
 export const SITE_BTN_SUCCESS =
   "rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
@@ -41,10 +41,10 @@ export const SITE_CHIP_CYAN_CLASS =
   "rounded-full border border-cyan-200/70 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-60 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200";
 
 export const SITE_FILTER_CHIP_ACTIVE =
-  "rounded-full bg-violet-600 px-4 py-2 text-sm font-medium text-white shadow-md shadow-violet-500/20";
+  "rounded-full bg-[#0071e3] px-4 py-2 text-sm font-medium text-white shadow-md shadow-[#0071e3]/20";
 
 export const SITE_FILTER_CHIP_IDLE =
-  "rounded-full border border-white/25 bg-white/55 px-4 py-2 text-sm text-slate-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70";
+  "rounded-full border border-black/[.055] bg-white/60 px-4 py-2 text-sm text-slate-700 shadow-sm backdrop-blur-xl transition hover:bg-white dark:border-white/10 dark:bg-white/[.055] dark:text-slate-200 dark:hover:bg-white/[.1]";
 
 function joinClasses(...parts: Array<string | false | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -205,7 +205,7 @@ export function SiteFilterChip({
 
 export function SiteLoadingBlock({ children = "加载中…" }: { children?: ReactNode }) {
   return (
-    <div className="rounded-3xl border border-white/25 bg-white/55 p-8 text-center text-sm text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
+    <div className="site-loading-surface rounded-[28px] border border-white/25 bg-white/55 p-8 text-center text-sm text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
       {children}
     </div>
   );
@@ -213,7 +213,7 @@ export function SiteLoadingBlock({ children = "加载中…" }: { children?: Rea
 
 export function SiteEmptyBlock({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-3xl border border-white/25 bg-white/55 p-8 text-center text-sm text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
+    <div className="site-loading-surface rounded-[28px] border border-white/25 bg-white/55 p-8 text-center text-sm text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
       {children}
     </div>
   );

@@ -169,7 +169,7 @@ export default function CreatorPage() {
         message={transferNotice}
       />
       <ResourceLibraryHeader keyword="" onSearch={(value) => navigate(value ? `/?q=${encodeURIComponent(value)}` : "/")} />
-      <main className="mx-auto max-w-[1120px] space-y-[14px] px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-[1344px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
             <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">{avatarUrl ? <img src={avatarUrl} alt={`${author}的头像`} className="h-full w-full object-cover" /> : "👤"}</div>

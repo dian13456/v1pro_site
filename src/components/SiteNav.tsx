@@ -29,11 +29,11 @@ export function SiteNav() {
               to={item.to}
               className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold transition ${
                 active
-                  ? "bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 text-white shadow-[0_10px_28px_-10px_rgba(139,92,246,0.9)] ring-2 ring-white/40"
-                  : "bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 text-white shadow-[0_8px_24px_-8px_rgba(139,92,246,0.75)] hover:scale-[1.03] hover:brightness-110"
+                  ? "bg-[#0071e3] text-white shadow-[0_7px_20px_rgba(0,113,227,.25)] ring-1 ring-white/50"
+                  : "border border-black/[.055] bg-white/65 text-slate-700 shadow-sm backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[.06] dark:text-slate-100 dark:hover:bg-white/[.1]"
               }`}
             >
-              <span aria-hidden="true">✨</span>
+              <span aria-hidden="true">{active ? "●" : "○"}</span>
               {item.label}
             </Link>
           );
@@ -44,8 +44,8 @@ export function SiteNav() {
             to={item.to}
             className={`rounded-full px-4 py-2 text-sm transition ${
               active
-                ? "bg-violet-600 text-white"
-                : "border border-white/25 bg-white/55 text-slate-700 hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200 dark:hover:bg-slate-900/70"
+                ? "bg-[#0071e3] text-white shadow-[0_7px_20px_rgba(0,113,227,.22)]"
+                : "border border-black/[.055] bg-white/55 text-slate-700 backdrop-blur-xl hover:bg-white dark:border-white/10 dark:bg-white/[.055] dark:text-slate-200 dark:hover:bg-white/[.1]"
             }`}
           >
             {item.label}

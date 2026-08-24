@@ -756,7 +756,7 @@ export default function ResourcesPage() {
           setCurrentPage(1);
         }}
       />
-      <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-[1488px] px-4 py-6 sm:px-6">
         <details className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 lg:hidden dark:border-slate-800 dark:bg-slate-900">
           <summary className="cursor-pointer font-semibold">筛选素材</summary>
           <div className="mt-4">
@@ -802,7 +802,7 @@ export default function ResourcesPage() {
         </details>
 
         <div className={`grid items-start gap-6 lg:grid-cols-[218px_minmax(0,1fr)] ${albumMode ? "xl:grid-cols-[218px_minmax(0,1fr)_280px]" : ""}`}>
-          <div className="hidden lg:sticky lg:top-[84px] lg:block">
+          <div className="resource-sidebar-scroll hidden self-start lg:sticky lg:top-[80px] lg:block lg:max-h-[calc(100vh-96px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <ResourceLibrarySidebar
               resources={resources}
               materialType={materialType}

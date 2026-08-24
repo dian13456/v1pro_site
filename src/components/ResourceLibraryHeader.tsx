@@ -33,13 +33,13 @@ export function ResourceLibraryHeader({
   };
 
   return (
-    <header className="sticky top-0 z-[80] h-[60px] border-b border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex h-full items-center gap-3 px-4 sm:px-8">
+    <header className="resource-library-header sticky top-0 z-[80] min-h-[64px] border-b border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex min-h-[64px] items-center gap-3 px-4 sm:px-8">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold text-[#2b3245] dark:text-white">
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-[17px] text-white">🐱</span>
+          <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] text-[17px] text-white shadow-[0_5px_14px_rgba(0,113,227,.25)]">🐱</span>
           <span className="hidden sm:inline">佳点电子素材库</span>
         </Link>
-        <form onSubmit={submit} className="flex h-9 min-w-0 max-w-[300px] flex-1 items-center rounded-full border border-[#e6e9f2] bg-[#f8f9fd] px-4 dark:border-slate-700 dark:bg-slate-900">
+        <form onSubmit={submit} className="flex h-10 min-w-0 max-w-[320px] flex-1 items-center rounded-full border border-black/[.055] bg-black/[.035] px-4 transition focus-within:border-[#0071e3]/30 focus-within:bg-white focus-within:ring-4 focus-within:ring-[#0071e3]/10 dark:border-white/10 dark:bg-white/[.06] dark:focus-within:bg-slate-900">
           <ThemeIcon name="search" size={16} className="mr-2 shrink-0 text-slate-400" />
           <input
             value={draft}
@@ -57,7 +57,7 @@ export function ResourceLibraryHeader({
         </Link>
         <Link
           to="/share"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-[9px] text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.35)] transition hover:-translate-y-0.5"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-5 py-[10px] text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)]"
         >
           <ThemeIcon name="upload" size={15} /> 分享素材
         </Link>

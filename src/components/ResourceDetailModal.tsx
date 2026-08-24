@@ -188,7 +188,7 @@ export function ResourceDetailModal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(30,35,55,.45)] p-3 backdrop-blur-[3px]"
+      className="resource-detail-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(30,35,55,.45)] p-3 backdrop-blur-[3px]"
       role="dialog"
       aria-modal="true"
       aria-label={`${resource.title} 详情`}
@@ -196,7 +196,7 @@ export function ResourceDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="grid max-h-[92vh] w-full max-w-[1180px] overflow-auto rounded-[18px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.05fr_1fr] lg:grid-cols-[minmax(300px,1.05fr)_minmax(320px,1fr)_minmax(280px,.9fr)]">
+      <div className="resource-detail-surface grid max-h-[92vh] w-full max-w-[1180px] overflow-auto rounded-[28px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[1.05fr_1fr] lg:grid-cols-[minmax(300px,1.05fr)_minmax(320px,1fr)_minmax(280px,.9fr)]">
         <div className="relative flex min-h-[220px] items-center justify-center overflow-hidden bg-gradient-to-br from-lime-200 via-emerald-200 to-cyan-200 p-4 md:min-h-[400px]">
           {previewUrl ? (
             resource.materialType === "video" ? (

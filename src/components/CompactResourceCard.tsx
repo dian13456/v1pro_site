@@ -85,13 +85,13 @@ export function CompactResourceCard({
           else onOpen(resource);
         }
       }}
-      className={`group cursor-pointer touch-manipulation overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:bg-slate-900 ${
+      className={`resource-card-apple group flex aspect-[1.618] cursor-pointer touch-manipulation flex-col overflow-hidden rounded-[22px] border bg-white text-left shadow-sm transition dark:bg-slate-900 ${
         selected
           ? "border-[#ff8a5c] ring-2 ring-[#ff8a5c]/25 dark:border-[#ff8a5c]"
           : "border-slate-200 dark:border-slate-800"
       }`}
     >
-      <div className={`relative aspect-[1.618] overflow-hidden bg-gradient-to-br ${PREVIEW_BACKGROUNDS[resource.id % PREVIEW_BACKGROUNDS.length]}`}>
+      <div className={`relative min-h-0 flex-1 overflow-hidden bg-gradient-to-br ${PREVIEW_BACKGROUNDS[resource.id % PREVIEW_BACKGROUNDS.length]}`}>
         <div className="grid h-full place-items-center text-5xl opacity-80" aria-hidden={Boolean(previewUrl)}>
           {resource.materialType === "video" ? "🎬" : resource.materialType === "gif" ? "🔁" : "🖼️"}
         </div>
@@ -129,13 +129,52 @@ export function CompactResourceCard({
           </span>
         ) : null}
       </div>
-      <div className="p-3.5">
-        <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{resource.title || resource.description}</h3>
-        <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-          <span className="max-w-[40%] truncate rounded-full bg-indigo-50 px-2 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">
+      <div className="shrink-0 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.015em] text-slate-950 dark:text-white">{resource.title || resource.description}</h3>
+          <span className="max-w-[34%] shrink-0 truncate rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">
             {resource.columnTag || "其他"}
           </span>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+        </div>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[10.5px] text-slate-400">
+          {resource.author ? (
+            <Link
+              to={`/creator/${encodeURIComponent(resource.author)}`}
+              onClick={(event) => event.stopPropagation()}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-slate-500 transition hover:text-[#0071e3] dark:text-slate-400 dark:hover:text-sky-300"
+              title={`查看 ${resource.author} 的全部素材`}
+            >
+              <span className="grid h-5 w-5 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#2997ff] to-[#0071e3] text-[9px] font-semibold text-white shadow-sm">
+                {creatorAvatarUrl ? (
+                  <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  resource.author.trim().slice(0, 1).toUpperCase() || "👤"
+                )}
+              </span>
+              <span className="min-w-0 truncate font-medium">{resource.author}</span>
+            </Link>
+          ) : <span className="min-w-0 flex-1" />}
+          {onFollow ? (
+            <button
+              type="button"
+              aria-label={followed ? `取消关注 ${resource.author}` : `关注 ${resource.author}`}
+              aria-pressed={followed}
+              title={followed ? "取消关注" : "关注上传者"}
+              disabled={following}
+              onClick={(event) => {
+                event.stopPropagation();
+                onFollow(resource, !followed);
+              }}
+              className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full border px-1 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                followed
+                  ? "border-sky-200 bg-sky-50 text-[#0071e3] dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:text-[#0071e3] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              }`}
+            >
+              {following ? "…" : followed ? "✓" : "+"}
+            </button>
+          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {onHiddenChange ? (
               <button
                 type="button"
@@ -146,7 +185,7 @@ export function CompactResourceCard({
                   event.stopPropagation();
                   onHiddenChange(resource, !hidden);
                 }}
-                className={`inline-flex items-center rounded-full px-1.5 py-1 text-sm transition disabled:cursor-not-allowed ${
+                className={`inline-flex items-center rounded-full p-1 text-sm transition disabled:cursor-not-allowed ${
                   hidden
                     ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
                     : "hover:bg-slate-100 hover:text-slate-600"
@@ -164,7 +203,7 @@ export function CompactResourceCard({
                 event.stopPropagation();
                 onFavorite(resource);
               }}
-              className={`inline-flex items-center rounded-full px-1.5 py-1 text-sm transition disabled:cursor-not-allowed ${favorited ? "bg-amber-50 text-amber-500" : "hover:bg-amber-50 hover:text-amber-500"}`}
+                className={`inline-flex items-center rounded-full p-1 text-sm transition disabled:cursor-not-allowed ${favorited ? "bg-amber-50 text-amber-500" : "hover:bg-amber-50 hover:text-amber-500"}`}
             >
               {favoriting ? <span aria-hidden="true">…</span> : <ThemeIcon name="favorite" size={15} filled={favorited} />}
             </button>
@@ -177,52 +216,14 @@ export function CompactResourceCard({
                 event.stopPropagation();
                 onLike(resource);
               }}
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition disabled:cursor-not-allowed ${liked ? "bg-rose-50 text-rose-500" : "hover:bg-rose-50 hover:text-rose-500"}`}
+                className={`inline-flex items-center gap-0.5 rounded-full px-1 py-1 transition disabled:cursor-not-allowed ${liked ? "bg-rose-50 text-rose-500" : "hover:bg-rose-50 hover:text-rose-500"}`}
             >
               <ThemeIcon name="like" size={14} filled={liked} />
               <span>{liking ? "…" : likeCount}</span>
             </button>
-            <span className="inline-flex items-center gap-1"><ThemeIcon name="download" size={14} /> {downloadCount}</span>
+            <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {downloadCount}</span>
           </div>
         </div>
-        {resource.author ? (
-          <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
-            <Link
-              to={`/creator/${encodeURIComponent(resource.author)}`}
-              onClick={(event) => event.stopPropagation()}
-              className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500 transition hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300"
-              title={`查看 ${resource.author} 的全部素材`}
-            >
-              <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-xs font-semibold text-white shadow-sm">
-                {creatorAvatarUrl ? (
-                  <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
-                ) : (
-                  resource.author.trim().slice(0, 1).toUpperCase() || "👤"
-                )}
-              </span>
-              <span className="min-w-0 truncate font-medium">{resource.author}</span>
-            </Link>
-            {onFollow ? (
-              <button
-                type="button"
-                aria-label={followed ? `取消关注 ${resource.author}` : `关注 ${resource.author}`}
-                aria-pressed={followed}
-                disabled={following}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onFollow(resource, !followed);
-                }}
-                className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  followed
-                    ? "border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-300"
-                    : "border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                }`}
-              >
-                {following ? "…" : followed ? "已关注" : "+ 关注"}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       </div>
     </article>
   );

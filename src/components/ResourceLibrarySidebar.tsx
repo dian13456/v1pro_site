@@ -22,7 +22,7 @@ function FilterGroup<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-[14px] border border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-900">
+    <section className="resource-filter-card overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-900">
       <h2 className="px-[18px] pb-2.5 pt-[18px] text-xs font-normal tracking-[1px] text-[#8a93a8] dark:text-slate-400">{title}</h2>
       <div className="pb-3.5">
         {options.map((option) => {
@@ -79,17 +79,6 @@ export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
           { value: "image", label: "图片素材", count: count("image"), icon: "▧" },
           { value: "gif", label: "GIF 素材", count: count("gif"), icon: "◇" },
           { value: "video", label: "视频素材", count: count("video"), icon: "▣" },
-        ]}
-      />
-      <FilterGroup
-        title="设备容量"
-        value={props.capacity}
-        onChange={props.onCapacity}
-        options={[
-          { value: "all", label: "全部容量", note: "任意设备", icon: "⬡" },
-          { value: 77, label: "77 帧设备", note: "≈3.1s · 25fps", icon: "◇" },
-          { value: 154, label: "154 帧设备", note: "≈6.2s · 25fps", icon: "◇" },
-          { value: 308, label: "308 帧设备", note: "≈12.3s · 25fps", icon: "◇" },
         ]}
       />
       {props.showSortOptions !== false ? (
