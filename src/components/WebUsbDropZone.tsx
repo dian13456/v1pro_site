@@ -136,7 +136,7 @@ export function WebUsbDropZone({
       </p>
       <p className="mt-1 text-xs text-[#6f7890]">{hint}</p>
       <p className="mt-2 max-w-md text-[11px] leading-5 text-[#8a93a8]">
-        支持 PNG、JPG、WebP、GIF、MP4（H.264）；视频按设备容量自适应，最高 30fps、5 倍速
+        支持 PNG、JPG、WebP、GIF、MP4（H.264）；高级设置可调帧率、旋转、缩放、铺满、色彩与倍速
       </p>
       {selectedFileName ? (
         <p className="mt-3 max-w-full truncate rounded-full bg-[#f0edff] px-3 py-1 text-xs font-semibold text-[#7c6cf0]">

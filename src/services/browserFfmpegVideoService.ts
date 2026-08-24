@@ -27,6 +27,7 @@ interface ConvertBrowserVideoOptions {
   fileName?: string;
   fitMode?: BrowserVideoFitMode;
   rotationDeg?: 0 | 90 | 180 | 270;
+  scalePercent?: number;
   colorProfile?: BrowserVideoColorProfile;
   onStatus?: (message: string) => void;
   onProgress?: (ratio: number) => void;
@@ -46,6 +47,8 @@ interface ConvertBrowserRasterOptions {
   fileName?: string;
   fitMode?: BrowserVideoFitMode;
   rotationDeg?: 0 | 90 | 180 | 270;
+  scalePercent?: number;
+  playbackSpeed?: number;
   colorProfile?: BrowserVideoColorProfile;
   includeFrames?: boolean;
   onStatus?: (message: string) => void;
@@ -73,6 +76,7 @@ export function planBrowserFfmpegVideo(
   duration: number,
   maxFrames: number,
   fps: number,
+  requestedSpeed = 1,
 ): BrowserFfmpegVideoPlan {
   const safeDuration = finitePositive(duration, 0);
   const frameBudget = Math.max(1, Math.floor(maxFrames));
@@ -82,9 +86,8 @@ export function planBrowserFfmpegVideo(
   }
 
   const normalSpeedFrames = Math.max(1, Math.ceil(safeDuration * safeFps));
-  const speed = normalSpeedFrames <= frameBudget
-    ? 1
-    : (safeDuration * safeFps) / frameBudget;
+  const minimumSpeed = Math.max(0.5, Math.min(MAX_VIDEO_SPEED, finitePositive(requestedSpeed, 1)));
+  const speed = Math.max(minimumSpeed, (safeDuration * safeFps) / frameBudget);
   if (speed > MAX_VIDEO_SPEED) {
     throw new Error(
       `设备空间不足：${safeFps}fps 下需要约 ${normalSpeedFrames} 帧，`
@@ -92,8 +95,15 @@ export function planBrowserFfmpegVideo(
     );
   }
 
-  const frameCount = normalSpeedFrames <= frameBudget ? normalSpeedFrames : frameBudget;
-  const speedNote = speed > 1.0001 ? ` · 自动加速 ${speed.toFixed(2)}×` : " · 原速";
+  const frameCount = Math.min(
+    frameBudget,
+    Math.max(1, Math.ceil((safeDuration * safeFps) / speed)),
+  );
+  const speedNote = Math.abs(speed - 1) < 0.0001
+    ? " · 原速"
+    : speed > minimumSpeed + 0.0001
+      ? ` · 容量适配 ${speed.toFixed(2)}×`
+      : ` · ${speed.toFixed(2)}×`;
   return {
     duration: safeDuration,
     sourceSpan: safeDuration,
@@ -146,17 +156,30 @@ function rotationFilters(rotationDeg: number): string[] {
   return [];
 }
 
-function resizeFilters(fitMode: BrowserVideoFitMode): string[] {
+function resizeFilters(fitMode: BrowserVideoFitMode, scalePercent = 100): string[] {
+  const scale = Math.max(50, Math.min(150, Math.round(scalePercent))) / 100;
+  const filters: string[] = [];
   if (fitMode === "contain") {
-    return [
+    filters.push(
       `scale=${LCD_WIDTH}:${LCD_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos+accurate_rnd+full_chroma_int`,
       `pad=${LCD_WIDTH}:${LCD_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black`,
-    ];
+    );
+  } else {
+    filters.push(
+      `crop='if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih*${LCD_WIDTH}/${LCD_HEIGHT},iw)':'if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih,iw*${LCD_HEIGHT}/${LCD_WIDTH})'`,
+      `scale=${LCD_WIDTH}:${LCD_HEIGHT}:flags=lanczos+accurate_rnd+full_chroma_int`,
+    );
   }
-  return [
-    `crop='if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih*${LCD_WIDTH}/${LCD_HEIGHT},iw)':'if(gte(iw/ih,${LCD_WIDTH}/${LCD_HEIGHT}),ih,iw*${LCD_HEIGHT}/${LCD_WIDTH})'`,
-    `scale=${LCD_WIDTH}:${LCD_HEIGHT}:flags=lanczos+accurate_rnd+full_chroma_int`,
-  ];
+  if (Math.abs(scale - 1) < 0.001) return filters;
+  const scaledWidth = Math.max(1, Math.round(LCD_WIDTH * scale));
+  const scaledHeight = Math.max(1, Math.round(LCD_HEIGHT * scale));
+  filters.push(`scale=${scaledWidth}:${scaledHeight}:flags=lanczos+accurate_rnd+full_chroma_int`);
+  if (scale < 1) {
+    filters.push(`pad=${LCD_WIDTH}:${LCD_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black`);
+  } else {
+    filters.push(`crop=${LCD_WIDTH}:${LCD_HEIGHT}:(iw-ow)/2:(ih-oh)/2`);
+  }
+  return filters;
 }
 
 function colorFilters(profile: BrowserVideoColorProfile): string[] {
@@ -198,7 +221,7 @@ function buildFilterChain(options: ConvertBrowserVideoOptions): string {
     `setpts=(PTS-STARTPTS)/${plan.speed.toFixed(8)}`,
     `fps=${plan.fps}`,
     ...rotationFilters(options.rotationDeg ?? 0),
-    ...resizeFilters(options.fitMode ?? "fill"),
+    ...resizeFilters(options.fitMode ?? "fill", options.scalePercent),
     ...colorFilters(options.colorProfile ?? "normal"),
     "setsar=1",
   ];
@@ -300,6 +323,42 @@ function gifDelaysFromProbe(frames: GifProbeFrame[], frameCount: number): number
   return delays;
 }
 
+function applyRasterPlaybackSpeed(
+  pixels: Uint8Array,
+  delaysMs: number[],
+  requestedSpeed: number | undefined,
+): { pixels: Uint8Array; delaysMs: number[] } {
+  const speed = Math.max(0.5, Math.min(MAX_VIDEO_SPEED, finitePositive(requestedSpeed ?? 1, 1)));
+  if (Math.abs(speed - 1) < 0.0001 || delaysMs.length <= 1) {
+    return {
+      pixels,
+      delaysMs: delaysMs.map((delay) => normalizeDelayMs(delay / speed)),
+    };
+  }
+  if (speed < 1) {
+    return { pixels, delaysMs: delaysMs.map((delay) => normalizeDelayMs(delay / speed)) };
+  }
+
+  const sourceCount = delaysMs.length;
+  const keepCount = Math.max(1, Math.round(sourceCount / speed));
+  if (keepCount >= sourceCount) {
+    return { pixels, delaysMs: delaysMs.map((delay) => normalizeDelayMs(delay / speed)) };
+  }
+  const output = new Uint8Array(keepCount * FRAME_BYTES);
+  const outputDelays: number[] = [];
+  for (let index = 0; index < keepCount; index += 1) {
+    const sourceIndex = keepCount === 1
+      ? 0
+      : Math.round((index * (sourceCount - 1)) / (keepCount - 1));
+    output.set(
+      pixels.subarray(sourceIndex * FRAME_BYTES, (sourceIndex + 1) * FRAME_BYTES),
+      index * FRAME_BYTES,
+    );
+    outputDelays.push(normalizeDelayMs(delaysMs[sourceIndex] / speed));
+  }
+  return { pixels: output, delaysMs: outputDelays };
+}
+
 export async function convertBrowserRasterWithFfmpeg(
   source: Blob,
   options: ConvertBrowserRasterOptions,
@@ -378,7 +437,7 @@ export async function convertBrowserRasterWithFfmpeg(
     );
     const filters = [
       ...rotationFilters(options.rotationDeg ?? 0),
-      ...resizeFilters(options.fitMode ?? "fill"),
+      ...resizeFilters(options.fitMode ?? "fill", options.scalePercent),
       ...colorFilters(options.colorProfile ?? "normal"),
       "setsar=1",
     ];
@@ -395,7 +454,9 @@ export async function convertBrowserRasterWithFfmpeg(
       "-vf",
       filters.join(","),
       "-frames:v",
-      String(options.mediaType === "gif" ? maxFrames : 1),
+      String(options.mediaType === "gif"
+        ? Math.max(maxFrames, Math.ceil(maxFrames * Math.max(1, options.playbackSpeed ?? 1)))
+        : 1),
       "-vsync",
       "0",
       "-pix_fmt",
@@ -416,23 +477,34 @@ export async function convertBrowserRasterWithFfmpeg(
       throw new Error("FFmpeg 输出格式异常");
     }
     const availableFrames = Math.floor(output.byteLength / FRAME_BYTES);
-    const frameCount = Math.min(maxFrames, availableFrames);
-    if (frameCount < 1) {
+    const decodedFrameCount = Math.min(
+      availableFrames,
+      options.mediaType === "gif"
+        ? Math.max(maxFrames, Math.ceil(maxFrames * Math.max(1, options.playbackSpeed ?? 1)))
+        : 1,
+    );
+    if (decodedFrameCount < 1) {
       throw new Error("FFmpeg 未输出有效图片帧");
     }
-    const pixels = output.slice(0, frameCount * FRAME_BYTES);
-    const delaysMs = options.mediaType === "gif"
-      ? gifDelaysFromProbe(probeFrames, frameCount)
+    const decodedPixels = output.slice(0, decodedFrameCount * FRAME_BYTES);
+    const decodedDelays = options.mediaType === "gif"
+      ? gifDelaysFromProbe(probeFrames, decodedFrameCount)
       : [100];
+    const adjusted = applyRasterPlaybackSpeed(decodedPixels, decodedDelays, options.playbackSpeed);
+    const frameCount = Math.min(maxFrames, adjusted.delaysMs.length);
+    const pixels = adjusted.pixels.slice(0, frameCount * FRAME_BYTES);
+    const delaysMs = adjusted.delaysMs.slice(0, frameCount);
     const packed = packGfm1Pixels(pixels, delaysMs);
     const packedBuffer = packed.buffer.slice(
       packed.byteOffset,
       packed.byteOffset + packed.byteLength,
     ) as ArrayBuffer;
     const blob = new Blob([packedBuffer], { type: "application/x-v1pro-gfm1" });
-    const wasTruncated = options.mediaType === "gif" && probeFrames.length > frameCount;
+    const wasTruncated = options.mediaType === "gif" && probeFrames.length > decodedFrameCount;
+    const speed = Math.max(0.5, Math.min(MAX_VIDEO_SPEED, options.playbackSpeed ?? 1));
+    const speedNote = Math.abs(speed - 1) < 0.0001 ? "" : ` · ${speed.toFixed(2)}×`;
     const note = options.mediaType === "gif"
-      ? `FFmpeg 本地转换 · ${frameCount} 帧${wasTruncated ? ` · 已按设备容量截取前 ${frameCount} 帧` : ""}`
+      ? `FFmpeg 本地转换 · ${frameCount} 帧${speedNote}${wasTruncated ? ` · 已按设备容量截取` : ""}`
       : "FFmpeg 本地转换 · 1 帧";
     options.onProgress?.(1);
     return {

@@ -10,7 +10,12 @@ import {
   loadV1ProWebTransferSdk,
   WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
-import { convertBrowserRasterWithFfmpeg } from "../services/browserFfmpegVideoService";
+import {
+  convertBrowserRasterWithFfmpeg,
+  convertBrowserVideoWithFfmpeg,
+  planBrowserFfmpegVideo,
+  probeBrowserVideoDuration,
+} from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
 import type {
   V1ProDisplayStatus,
@@ -19,6 +24,10 @@ import type {
 } from "../types/v1proWebTransfer";
 
 type StatusKind = "idle" | "ok" | "error";
+type MaterialTransferMode = "auto" | "image" | "gif" | "video";
+type MaterialRotation = "auto" | 0 | 90 | 180 | 270;
+type MaterialFitMode = "fill" | "contain";
+type MaterialColorProfile = "normal" | "vivid" | "professional";
 
 function deviceKey(device: USBDevice): string {
   return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
@@ -63,6 +72,42 @@ function rasterMediaType(file: File): "image" | "gif" | null {
   return null;
 }
 
+function isVideoFile(file: File): boolean {
+  return file.type.toLowerCase().startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(file.name);
+}
+
+async function resolveMaterialRotation(
+  file: File,
+  rotation: MaterialRotation,
+): Promise<0 | 90 | 180 | 270> {
+  if (rotation !== "auto") return rotation;
+  if (isVideoFile(file)) {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "metadata";
+    try {
+      const portrait = await new Promise<boolean>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve(video.videoHeight > video.videoWidth);
+        video.onerror = () => reject(new Error("无法读取视频方向"));
+        video.src = url;
+      }).catch(() => false);
+      return portrait ? 90 : 0;
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+    }
+  }
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return 0;
+  try {
+    return bitmap.height > bitmap.width ? 90 : 0;
+  } finally {
+    bitmap.close();
+  }
+}
+
 export default function WebUsbTransferTestPage() {
   const navigate = useNavigate();
   const clientRef = useRef<V1ProWebTransferClient | null>(null);
@@ -89,6 +134,13 @@ export default function WebUsbTransferTestPage() {
   const [screenOff, setScreenOff] = useState(false);
   const [screenRotation, setScreenRotation] = useState<0 | 2>(2);
   const [followScreenOff, setFollowScreenOffState] = useState(false);
+  const [materialTransferMode, setMaterialTransferMode] = useState<MaterialTransferMode>("auto");
+  const [materialFps, setMaterialFps] = useState<20 | 25 | 30>(30);
+  const [materialRotation, setMaterialRotation] = useState<MaterialRotation>("auto");
+  const [materialScale, setMaterialScale] = useState<50 | 75 | 100 | 125 | 150>(100);
+  const [materialFitMode, setMaterialFitMode] = useState<MaterialFitMode>("contain");
+  const [materialColor, setMaterialColor] = useState<MaterialColorProfile>("normal");
+  const [materialPlaybackSpeed, setMaterialPlaybackSpeed] = useState(1);
 
   const webUsbSupported = isWebUsbSupported();
 
@@ -377,44 +429,89 @@ export default function WebUsbTransferTestPage() {
         setStatusText("正在编码并传输…");
         refreshConnectionState();
 
-        const selectedRasterType = rasterMediaType(file);
+        const detectedRasterType = rasterMediaType(file);
+        const detectedVideo = isVideoFile(file);
+        if (materialTransferMode === "video" && !detectedVideo) {
+          throw new Error("视频下传模式需要选择视频文件");
+        }
+        const selectedRasterType = materialTransferMode === "image" || materialTransferMode === "gif"
+          ? materialTransferMode
+          : materialTransferMode === "auto"
+            ? detectedRasterType
+            : null;
+        const selectedVideo = materialTransferMode === "video"
+          ? detectedVideo
+          : materialTransferMode === "auto" && detectedVideo;
+        const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
+        if (!capacity?.maxFrames) {
+          throw new Error("无法读取设备容量，请重新连接设备后重试");
+        }
+        const rotationDeg = await resolveMaterialRotation(file, materialRotation);
         let transferSource: Blob = file;
-        let preparedRaster: {
-          mediaType: "image" | "gif";
+        let preparedMedia: {
+          mediaType: "image" | "gif" | "video";
           maxFrames: number;
           frameCount: number;
+          fps?: number;
           note: string;
         } | null = null;
         if (selectedRasterType) {
-          const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
-          if (!capacity?.maxFrames) {
-            throw new Error("无法读取设备容量，请重新连接设备后重试");
-          }
           const converted = await convertBrowserRasterWithFfmpeg(file, {
             fileName: file.name,
             mediaType: selectedRasterType,
             maxFrames: capacity.maxFrames,
-            fitMode: "contain",
-            colorProfile: "normal",
+            fitMode: materialFitMode,
+            rotationDeg,
+            scalePercent: materialScale,
+            playbackSpeed: materialPlaybackSpeed,
+            colorProfile: materialColor,
             onStatus: setStatusText,
             onProgress: (ratio) => setProgress(Math.round(ratio * 25)),
           });
           transferSource = converted.blob;
-          preparedRaster = {
+          preparedMedia = {
             mediaType: selectedRasterType,
             maxFrames: capacity.maxFrames,
             frameCount: converted.frameCount,
+            note: converted.note,
+          };
+        } else if (selectedVideo) {
+          setStatusText("正在读取视频信息…");
+          const duration = await probeBrowserVideoDuration(file);
+          const plan = planBrowserFfmpegVideo(
+            duration,
+            capacity.maxFrames,
+            materialFps,
+            materialPlaybackSpeed,
+          );
+          const converted = await convertBrowserVideoWithFfmpeg(file, {
+            plan,
+            fileName: file.name,
+            fitMode: materialFitMode,
+            rotationDeg,
+            scalePercent: materialScale,
+            colorProfile: materialColor,
+            onStatus: setStatusText,
+            onProgress: (ratio) => setProgress(Math.round(ratio * 25)),
+          });
+          transferSource = converted.blob;
+          preparedMedia = {
+            mediaType: "video",
+            maxFrames: capacity.maxFrames,
+            frameCount: converted.frameCount,
+            fps: converted.fps,
             note: converted.note,
           };
         }
 
         const result = await client.transferFile(transferSource, {
           fileName: file.name,
-          mediaType: preparedRaster?.mediaType,
-          maxFrames: preparedRaster?.maxFrames,
-          prebuiltGfm1: preparedRaster ? {
-            frameCount: preparedRaster.frameCount,
-            note: preparedRaster.note,
+          mediaType: preparedMedia?.mediaType,
+          maxFrames: preparedMedia?.maxFrames,
+          prebuiltGfm1: preparedMedia ? {
+            frameCount: preparedMedia.frameCount,
+            fps: preparedMedia.fps,
+            note: preparedMedia.note,
           } : undefined,
           pingFirst: !client.connected || !client.deviceCapacity,
           onProgress: (info) => {
@@ -427,7 +524,7 @@ export default function WebUsbTransferTestPage() {
               setProgress(Math.max(5, Math.round((info.sent / info.frameCount) * 12)));
               return;
             }
-            const ratio = preparedRaster
+            const ratio = preparedMedia
               ? 0.25 + info.ratio * 0.75
               : 0.12 + info.ratio * 0.88;
             setStatusText(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
@@ -463,6 +560,13 @@ export default function WebUsbTransferTestPage() {
     [
       authorizedDevices,
       ensureClient,
+      materialColor,
+      materialFitMode,
+      materialFps,
+      materialPlaybackSpeed,
+      materialRotation,
+      materialScale,
+      materialTransferMode,
       refreshAuthorizedDevices,
       refreshConnectionState,
       sdkReady,
@@ -483,6 +587,8 @@ export default function WebUsbTransferTestPage() {
         : "border-[#e6e9f2] bg-[#fafbfe] text-[#6f7890]";
   const displayControlsDisabled =
     !connected || busy || displayControlBusy || displayControlSupported === false;
+  const selectClassName = "mt-1.5 h-10 w-full rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:opacity-50";
+  const advancedSettingsDisabled = busy || displayControlBusy;
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
@@ -648,22 +754,151 @@ export default function WebUsbTransferTestPage() {
                 <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材，完成后自动释放 USB</p>
               </div>
             </div>
-            <div className="flex flex-1 flex-col justify-center">
-              <WebUsbDropZone
-                disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || displayControlBusy}
-                busy={busy}
-                connected={connected}
-                selectedFileName={selectedFile?.name ?? null}
-                onFile={handleIncomingFile}
-                onInvalidFile={() => {
-                  setStatusText("仅支持 PNG、JPG、WebP、GIF 或 H.264 MP4 短视频（≤10 秒）");
-                  setStatusKind("error");
-                }}
-              />
+            <div className="mt-5 grid flex-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <aside className="rounded-[16px] border border-[#e2defe] bg-gradient-to-b from-[#faf9ff] to-[#f6f8ff] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-[14px] font-extrabold text-[#3f4660]">高级设置</h3>
+                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">参数会参与本地转换，与 GUI 高级模式一致</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={advancedSettingsDisabled}
+                    onClick={() => {
+                      setMaterialFps(30);
+                      setMaterialTransferMode("auto");
+                      setMaterialRotation("auto");
+                      setMaterialScale(100);
+                      setMaterialFitMode("contain");
+                      setMaterialColor("normal");
+                      setMaterialPlaybackSpeed(1);
+                    }}
+                    className="shrink-0 rounded-full border border-[#ded9ff] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#7c6cf0] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    恢复默认
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3">
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    下传模式
+                    <select
+                      value={materialTransferMode}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialTransferMode(event.target.value as MaterialTransferMode)}
+                      className={selectClassName}
+                      aria-label="下传模式"
+                    >
+                      <option value="auto">自动识别</option>
+                      <option value="image">图片</option>
+                      <option value="gif">GIF</option>
+                      <option value="video">视频</option>
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    视频帧率
+                    <select
+                      value={materialFps}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialFps(Number(event.target.value) as 20 | 25 | 30)}
+                      className={selectClassName}
+                      aria-label="视频帧率"
+                    >
+                      {[20, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    素材旋转
+                    <select
+                      value={materialRotation}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setMaterialRotation(value === "auto" ? "auto" : Number(value) as 0 | 90 | 180 | 270);
+                      }}
+                      className={selectClassName}
+                      aria-label="素材旋转"
+                    >
+                      <option value="auto">自动</option>
+                      {[0, 90, 180, 270].map((rotation) => <option key={rotation} value={rotation}>{rotation}°</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    画面缩放
+                    <select
+                      value={materialScale}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialScale(Number(event.target.value) as 50 | 75 | 100 | 125 | 150)}
+                      className={selectClassName}
+                      aria-label="画面缩放"
+                    >
+                      {[50, 75, 100, 125, 150].map((scale) => <option key={scale} value={scale}>{scale}%</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    铺满方式
+                    <select
+                      value={materialFitMode}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialFitMode(event.target.value as MaterialFitMode)}
+                      className={selectClassName}
+                      aria-label="铺满方式"
+                    >
+                      <option value="contain">留黑边</option>
+                      <option value="fill">铺满全屏</option>
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-bold text-[#69728a]">
+                    素材色彩
+                    <select
+                      value={materialColor}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialColor(event.target.value as MaterialColorProfile)}
+                      className={selectClassName}
+                      aria-label="素材色彩"
+                    >
+                      <option value="normal">普通</option>
+                      <option value="vivid">鲜艳</option>
+                      <option value="professional">专业</option>
+                    </select>
+                  </label>
+                  <label className="col-span-2 text-[11px] font-bold text-[#69728a]">
+                    播放倍速
+                    <select
+                      value={materialPlaybackSpeed}
+                      disabled={advancedSettingsDisabled}
+                      onChange={(event) => setMaterialPlaybackSpeed(Number(event.target.value))}
+                      className={selectClassName}
+                      aria-label="播放倍速"
+                    >
+                      {[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5, 6, 8, 10].map((speed) => (
+                        <option key={speed} value={speed}>{speed.toFixed(speed % 1 === 0 ? 1 : 2)}×</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="mt-3 rounded-[10px] bg-white/80 px-3 py-2 text-[10.5px] leading-5 text-[#8a93a8]">
+                  自动旋转会将竖屏素材转为横屏；倍速用于 GIF 和视频，空间不足时仍会自动提高倍速以适配设备容量。
+                </p>
+              </aside>
+
+              <div className="flex min-w-0 flex-col justify-center lg:-mt-5">
+                <WebUsbDropZone
+                  disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || displayControlBusy}
+                  busy={busy}
+                  connected={connected}
+                  selectedFileName={selectedFile?.name ?? null}
+                  onFile={handleIncomingFile}
+                  onInvalidFile={() => {
+                    setStatusText("仅支持 PNG、JPG、WebP、GIF 或 H.264 MP4 短视频");
+                    setStatusKind("error");
+                  }}
+                />
+              </div>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
               <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
-              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">最高 30 fps</span>
+              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFps} fps · {materialPlaybackSpeed}×</span>
               <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
             </div>
           </section>
