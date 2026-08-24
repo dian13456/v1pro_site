@@ -152,15 +152,17 @@ func ShareLimitMessageWithUnlimited(
 	return quota.ShareLimitMessage(serial, limit)
 }
 
-func ShareQuotaFields(count int, serial string, unlimited AIShareUnlimitedStore) map[string]interface{} {
+func ShareQuotaFields(quota AIShareQuotaStore, serial string, unlimited AIShareUnlimitedStore) map[string]interface{} {
+	count := quota.ShareCount(serial)
 	fields := map[string]interface{}{
 		"shareCount": count,
 	}
 	if unlimited.Has(serial) {
 		fields["shareUnlimited"] = true
 	} else {
-		fields["shareLimit"] = MaxAISharesPerDevice
-		fields["shareRemaining"] = RemainingAIShares(count, MaxAISharesPerDevice)
+		limit := quota.ShareLimit(serial, MaxAISharesPerDevice)
+		fields["shareLimit"] = limit
+		fields["shareRemaining"] = RemainingAIShares(count, limit)
 	}
 	return fields
 }

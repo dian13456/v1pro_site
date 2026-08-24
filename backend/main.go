@@ -1979,6 +1979,7 @@ func main() {
 		reloadAICreditsLocked()
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
+		shareQuotaBeforeRedeem := aiShareQuota.Clone()
 		result, redeemErr := service.RedeemShopItem(
 			service.ShopRedeemInput{
 				Serial: serial,
@@ -2012,6 +2013,7 @@ func main() {
 				}
 			}
 			aiCredits.RefundUnits(serial, service.CreditsToUnits(result.Cost))
+			aiShareQuota = shareQuotaBeforeRedeem
 			aiShareMu.Unlock()
 			aiCreditsMu.Unlock()
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分保存失败"})
@@ -2019,9 +2021,14 @@ func main() {
 		}
 		if item, found := shopCatalog.FindItem(strings.TrimSpace(req.ItemID)); found && item.Effect.Type == service.ShopEffectResetAIShare {
 			if saveShareErr := userDataRepo.SaveAIShareQuota(aiShareQuota); saveShareErr != nil {
+				aiShareQuota = shareQuotaBeforeRedeem
+				aiCredits.RefundUnits(serial, service.CreditsToUnits(result.Cost))
+				if refundErr := userDataRepo.SaveAICredits(aiCredits); refundErr != nil {
+					log.Printf("error: refund credits after share quota save failed: %v", refundErr)
+				}
 				aiShareMu.Unlock()
 				aiCreditsMu.Unlock()
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "分享次数保存失败"})
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传额度保存失败，积分已退回"})
 				return
 			}
 		}
@@ -2059,6 +2066,7 @@ func main() {
 			"rewardCredits":    result.RewardCredits,
 			"redeemCode":       result.RedeemCode,
 			"shareCount":       result.ShareCount,
+			"shareLimit":       result.ShareLimit,
 			"orderId":          result.OrderID,
 			"orderStatus":      result.OrderStatus,
 		}
@@ -2540,13 +2548,13 @@ func main() {
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
 		if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, serial, service.MaxAISharesPerDevice); limitMsg != "" {
-			shareCount := aiShareQuota.ShareCount(serial)
+			quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 			aiShareMu.Unlock()
 			resp := gin.H{
 				"success": false,
 				"message": limitMsg,
 			}
-			for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+			for key, value := range quotaFields {
 				resp[key] = value
 			}
 			c.JSON(http.StatusTooManyRequests, resp)
@@ -2580,8 +2588,9 @@ func main() {
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
-		shareCount := aiShareQuota.RecordShare(serial)
+		aiShareQuota.RecordShare(serial)
 		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save ai image share counts failed: %v", saveErr)
@@ -2595,7 +2604,7 @@ func main() {
 			"downloadUrl": result.DownloadURL,
 			"title":       result.Title,
 		}
-		for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+		for key, value := range quotaFields {
 			resp[key] = value
 		}
 		c.JSON(http.StatusOK, resp)
@@ -2623,13 +2632,13 @@ func main() {
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
 		if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, serial, service.MaxAISharesPerDevice); limitMsg != "" {
-			shareCount := aiShareQuota.ShareCount(serial)
+			quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 			aiShareMu.Unlock()
 			resp := gin.H{
 				"success": false,
 				"message": limitMsg,
 			}
-			for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+			for key, value := range quotaFields {
 				resp[key] = value
 			}
 			c.JSON(http.StatusTooManyRequests, resp)
@@ -2697,8 +2706,9 @@ func main() {
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
-		shareCount := aiShareQuota.RecordShare(serial)
+		aiShareQuota.RecordShare(serial)
 		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save user image share counts failed: %v", saveErr)
@@ -2712,7 +2722,7 @@ func main() {
 			"downloadUrl": result.DownloadURL,
 			"title":       result.Title,
 		}
-		for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+		for key, value := range quotaFields {
 			resp[key] = value
 		}
 		c.JSON(http.StatusOK, resp)
@@ -2857,13 +2867,13 @@ func main() {
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
 		if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, serial, service.MaxAISharesPerDevice); limitMsg != "" {
-			shareCount := aiShareQuota.ShareCount(serial)
+			quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 			aiShareMu.Unlock()
 			resp := gin.H{
 				"success": false,
 				"message": limitMsg,
 			}
-			for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+			for key, value := range quotaFields {
 				resp[key] = value
 			}
 			c.JSON(http.StatusTooManyRequests, resp)
@@ -2954,8 +2964,9 @@ func main() {
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
-		shareCount := aiShareQuota.RecordShare(serial)
+		aiShareQuota.RecordShare(serial)
 		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save user gif share counts failed: %v", saveErr)
@@ -2969,7 +2980,7 @@ func main() {
 			"downloadUrl": result.DownloadURL,
 			"title":       result.Title,
 		}
-		for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+		for key, value := range quotaFields {
 			resp[key] = value
 		}
 		c.JSON(http.StatusOK, resp)
@@ -3114,13 +3125,13 @@ func main() {
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
 		if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, serial, service.MaxAISharesPerDevice); limitMsg != "" {
-			shareCount := aiShareQuota.ShareCount(serial)
+			quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 			aiShareMu.Unlock()
 			resp := gin.H{
 				"success": false,
 				"message": limitMsg,
 			}
-			for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+			for key, value := range quotaFields {
 				resp[key] = value
 			}
 			c.JSON(http.StatusTooManyRequests, resp)
@@ -3233,8 +3244,9 @@ func main() {
 
 		aiShareMu.Lock()
 		reloadShareStoresLocked()
-		shareCount := aiShareQuota.RecordShare(serial)
+		aiShareQuota.RecordShare(serial)
 		saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+		quotaFields := service.ShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
 		aiShareMu.Unlock()
 		if saveErr != nil {
 			log.Printf("warn: save user video share counts failed: %v", saveErr)
@@ -3248,7 +3260,7 @@ func main() {
 			"downloadUrl": result.DownloadURL,
 			"title":       result.Title,
 		}
-		for key, value := range service.ShareQuotaFields(shareCount, serial, aiShareUnlimited) {
+		for key, value := range quotaFields {
 			resp[key] = value
 		}
 		c.JSON(http.StatusOK, resp)
@@ -3368,14 +3380,14 @@ func main() {
 			aiShareMu.Lock()
 			reloadShareStoresLocked()
 			if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
-				shareCount := aiShareQuota.ShareCount(item.Serial)
+				quotaFields := service.ShareQuotaFields(aiShareQuota, item.Serial, aiShareUnlimited)
 				aiShareMu.Unlock()
 				imageReviewMu.Unlock()
 				resp := gin.H{
 					"success": false,
 					"message": limitMsg,
 				}
-				for key, value := range service.ShareQuotaFields(shareCount, item.Serial, aiShareUnlimited) {
+				for key, value := range quotaFields {
 					resp[key] = value
 				}
 				c.JSON(http.StatusTooManyRequests, resp)
@@ -3428,13 +3440,14 @@ func main() {
 			item.Action == service.ReviewActionShareUserVideo {
 			aiShareMu.Lock()
 			reloadShareStoresLocked()
-			shareCount := aiShareQuota.RecordShare(item.Serial)
+			aiShareQuota.RecordShare(item.Serial)
 			saveErr := userDataRepo.SaveAIShareQuota(aiShareQuota)
+			quotaFields := service.ShareQuotaFields(aiShareQuota, item.Serial, aiShareUnlimited)
 			aiShareMu.Unlock()
 			if saveErr != nil {
 				log.Printf("warn: save ai image share counts after review approve failed: %v", saveErr)
 			} else {
-				for key, value := range service.ShareQuotaFields(shareCount, item.Serial, aiShareUnlimited) {
+				for key, value := range quotaFields {
 					response[key] = value
 				}
 			}

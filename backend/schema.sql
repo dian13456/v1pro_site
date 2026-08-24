@@ -148,7 +148,8 @@ CREATE TABLE IF NOT EXISTS credit_daily_reward_totals (
 
 CREATE TABLE IF NOT EXISTS ai_share_counts (
   serial VARCHAR(191) NOT NULL PRIMARY KEY,
-  share_count INT NOT NULL DEFAULT 0
+  share_count INT NOT NULL DEFAULT 0,
+  extra_quota INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS ai_share_unlimited_serials (

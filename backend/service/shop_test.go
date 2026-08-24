@@ -59,6 +59,39 @@ func TestRedeemGrantCode(t *testing.T) {
 	}
 }
 
+func TestRedeemAddsTenUploadQuota(t *testing.T) {
+	catalog := ShopCatalog{Items: []ShopItem{{
+		ID: "upload_quota_10", Title: "10 次素材上传额度", Cost: 100,
+		Effect: ShopEffect{Type: ShopEffectResetAIShare, Amount: 10},
+	}}}
+	credits := AICreditsStore{
+		UnitScale: CreditUnitScale,
+		Balances:  map[string]int{"SN001": CreditsToUnits(150)},
+	}
+	quota := newAIShareQuotaStore()
+	quota.Counts["SN001"] = 50
+
+	result, err := RedeemShopItem(
+		ShopRedeemInput{Serial: "SN001", ItemID: "upload_quota_10"},
+		catalog,
+		&credits,
+		&quota,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("redeem upload quota: %v", err)
+	}
+	if result.CreditsRemaining != 50 {
+		t.Fatalf("expected 50 credits remaining, got %v", result.CreditsRemaining)
+	}
+	if result.ShareLimit != 60 || result.ShareRemaining != 10 {
+		t.Fatalf("unexpected share quota result: %+v", result)
+	}
+	if quota.ExtraShareQuota("SN001") != 10 {
+		t.Fatalf("expected persisted extra quota 10, got %d", quota.ExtraShareQuota("SN001"))
+	}
+}
+
 func TestRedeemPhysicalCreatesPaidOrderAndDecrementsStock(t *testing.T) {
 	repo, err := NewMallRepo(t.TempDir())
 	if err != nil {

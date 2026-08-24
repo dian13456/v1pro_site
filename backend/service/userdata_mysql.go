@@ -115,6 +115,19 @@ func (m *mysqlStore) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate messages resource_id failed: %w", err)
 		}
 	}
+	var extraQuotaColumnCount int
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ai_share_counts' AND COLUMN_NAME = 'extra_quota'
+	`).Scan(&extraQuotaColumnCount); err != nil {
+		return fmt.Errorf("check ai_share_counts extra_quota column failed: %w", err)
+	}
+	if extraQuotaColumnCount == 0 {
+		if _, err := m.db.ExecContext(ctx, `ALTER TABLE ai_share_counts ADD COLUMN extra_quota INT NOT NULL DEFAULT 0 AFTER share_count`); err != nil {
+			return fmt.Errorf("migrate ai_share_counts extra_quota failed: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1003,19 +1016,22 @@ func (m *mysqlStore) saveCreditDailyRewards(ctx context.Context, store CreditDai
 }
 
 func (m *mysqlStore) loadAIShareQuota(ctx context.Context) (AIShareQuotaStore, error) {
-	store := AIShareQuotaStore{Counts: map[string]int{}}
-	rows, err := m.db.QueryContext(ctx, `SELECT serial, share_count FROM ai_share_counts`)
+	store := newAIShareQuotaStore()
+	rows, err := m.db.QueryContext(ctx, `SELECT serial, share_count, extra_quota FROM ai_share_counts`)
 	if err != nil {
 		return store, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var serial string
-		var count int
-		if err := rows.Scan(&serial, &count); err != nil {
+		var count, extraQuota int
+		if err := rows.Scan(&serial, &count, &extraQuota); err != nil {
 			return store, err
 		}
 		store.Counts[serial] = count
+		if extraQuota > 0 {
+			store.ExtraQuota[serial] = extraQuota
+		}
 	}
 	return store, rows.Err()
 }
@@ -1030,13 +1046,22 @@ func (m *mysqlStore) saveAIShareQuota(ctx context.Context, store AIShareQuotaSto
 	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_share_counts`); err != nil {
 		return err
 	}
-	for serial, count := range store.Counts {
-		if count <= 0 {
+	serials := make(map[string]struct{}, len(store.Counts)+len(store.ExtraQuota))
+	for serial := range store.Counts {
+		serials[serial] = struct{}{}
+	}
+	for serial := range store.ExtraQuota {
+		serials[serial] = struct{}{}
+	}
+	for serial := range serials {
+		count := store.ShareCount(serial)
+		extraQuota := store.ExtraShareQuota(serial)
+		if count <= 0 && extraQuota <= 0 {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO ai_share_counts (serial, share_count) VALUES (?, ?)`,
-			serial, count,
+			`INSERT INTO ai_share_counts (serial, share_count, extra_quota) VALUES (?, ?, ?)`,
+			serial, count, extraQuota,
 		); err != nil {
 			return err
 		}

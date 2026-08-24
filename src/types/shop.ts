@@ -40,6 +40,7 @@ export interface ShopRedeemResult {
   rewardCredits?: number;
   redeemCode?: string;
   shareCount?: number;
+  shareLimit?: number;
   shareRemaining?: number;
   orderId?: string;
   orderStatus?: string;

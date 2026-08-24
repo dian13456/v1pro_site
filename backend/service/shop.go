@@ -111,6 +111,7 @@ type ShopRedeemResult struct {
 	RewardCredits    int     `json:"rewardCredits,omitempty"`
 	RedeemCode       string  `json:"redeemCode,omitempty"`
 	ShareCount       int     `json:"shareCount,omitempty"`
+	ShareLimit       int     `json:"shareLimit,omitempty"`
 	ShareRemaining   int     `json:"shareRemaining,omitempty"`
 	OrderID          string  `json:"orderId,omitempty"`
 	OrderStatus      string  `json:"orderStatus,omitempty"`
@@ -158,14 +159,20 @@ func RedeemShopItem(
 		if shareQuota == nil {
 			return result, fmt.Errorf("分享配额未初始化")
 		}
-		if shareQuota.Counts == nil {
-			shareQuota.Counts = map[string]int{}
-		}
 		serial := strings.TrimSpace(input.Serial)
-		shareQuota.Counts[serial] = 0
-		result.ShareCount = 0
-		result.ShareRemaining = RemainingAIShares(0, MaxAISharesPerDevice)
-		result.Message = "兑换成功，AI 分享次数已重置"
+		if item.Effect.Amount > 0 {
+			shareQuota.AddShareQuota(serial, item.Effect.Amount)
+			result.Message = fmt.Sprintf("兑换成功，已增加 %d 次上传额度", item.Effect.Amount)
+		} else {
+			if shareQuota.Counts == nil {
+				shareQuota.Counts = map[string]int{}
+			}
+			shareQuota.Counts[serial] = 0
+			result.Message = "兑换成功，AI 分享次数已重置"
+		}
+		result.ShareCount = shareQuota.ShareCount(serial)
+		result.ShareLimit = shareQuota.ShareLimit(serial, MaxAISharesPerDevice)
+		result.ShareRemaining = shareQuota.ShareRemaining(serial, MaxAISharesPerDevice)
 	case ShopEffectGrantCode:
 		code := strings.TrimSpace(item.Effect.Code)
 		if code == "" {
