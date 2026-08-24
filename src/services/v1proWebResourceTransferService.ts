@@ -68,8 +68,11 @@ export function albumRequiredFrames(
 function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
   const output = new Uint8Array(from.length);
   for (let offset = 0; offset < from.length; offset += 2) {
-    const fromPixel = from[offset] | (from[offset + 1] << 8);
-    const toPixel = to[offset] | (to[offset + 1] << 8);
+    // GFM1 stores pixels as RGB565 big-endian (the FFmpeg converter emits
+    // rgb565be). Reading them as little-endian makes the transition frames
+    // jump through unrelated bright colours, which looks like panel flicker.
+    const fromPixel = (from[offset] << 8) | from[offset + 1];
+    const toPixel = (to[offset] << 8) | to[offset + 1];
     const fromR = (fromPixel >> 11) & 0x1f;
     const fromG = (fromPixel >> 5) & 0x3f;
     const fromB = fromPixel & 0x1f;
@@ -80,8 +83,8 @@ function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uin
     const green = Math.round(fromG + (toG - fromG) * ratio);
     const blue = Math.round(fromB + (toB - fromB) * ratio);
     const pixel = (red << 11) | (green << 5) | blue;
-    output[offset] = pixel & 0xff;
-    output[offset + 1] = pixel >> 8;
+    output[offset] = pixel >> 8;
+    output[offset + 1] = pixel & 0xff;
   }
   return output;
 }
