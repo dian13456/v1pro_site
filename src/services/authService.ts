@@ -181,7 +181,7 @@ function mapUsbError(error: unknown): Error {
   const domError = error as DOMException;
   switch (domError?.name) {
     case "NotFoundError":
-      return new Error("未检测到佳点授权设备，请确认设备已插入 USB 并重试");
+      return new Error("未选择设备。请在浏览器窗口中先点击设备名称，再点击右下角“连接”；若列表为空，请确认设备已插入 USB");
     case "NotAllowedError":
     case "AbortError":
       return new Error("浏览器取消了设备授权，请重试");

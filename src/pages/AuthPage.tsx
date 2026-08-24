@@ -15,6 +15,7 @@ import {
 import { acceptTerms } from "../services/termsService";
 
 const AUTO_CONNECT_TIMEOUT_MS = 12_000;
+const USB_PICKER_GUIDE_STORAGE_KEY = "jiadian_hub_usb_picker_guide_seen";
 
 type SilentConnectResult = "ok" | "timeout" | "failed";
 
@@ -50,6 +51,7 @@ export default function AuthPage() {
   const [autoConnecting, setAutoConnecting] = useState(false);
   const [canSilentConnect, setCanSilentConnect] = useState(false);
   const [error, setError] = useState("");
+  const [showUsbPickerGuide, setShowUsbPickerGuide] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const autoTriedRef = useRef(false);
@@ -97,6 +99,20 @@ export default function AuthPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openUsbPicker = () => {
+    localStorage.setItem(USB_PICKER_GUIDE_STORAGE_KEY, "1");
+    setShowUsbPickerGuide(false);
+    void handleVerify();
+  };
+
+  const handleConnectClick = () => {
+    if (localStorage.getItem(USB_PICKER_GUIDE_STORAGE_KEY) === "1") {
+      void handleVerify();
+      return;
+    }
+    setShowUsbPickerGuide(true);
   };
 
   useEffect(() => {
@@ -179,9 +195,19 @@ export default function AuthPage() {
             新设备首次进入网站并完成连接后，系统会自动关闭设备的“上电打开网站”，以后插入不会重复弹出。
           </p>
 
-          <SiteButton type="button" className="mt-8 w-full" disabled={busy} onClick={() => void handleVerify()}>
+          <SiteButton type="button" className="mt-8 w-full" disabled={busy} onClick={handleConnectClick}>
             {autoConnecting ? "正在自动连接设备…" : loading ? "连接中..." : "同意条款并连接"}
           </SiteButton>
+
+          {!busy ? (
+            <button
+              type="button"
+              className="mt-3 text-xs font-medium text-violet-600 underline-offset-4 hover:underline dark:text-violet-300"
+              onClick={() => setShowUsbPickerGuide(true)}
+            >
+              不会连接？查看连接步骤
+            </button>
+          ) : null}
 
           {!canSilentConnect && !autoConnecting ? (
             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
@@ -203,6 +229,67 @@ export default function AuthPage() {
           <SiteFooter />
         </div>
       </div>
+
+      {showUsbPickerGuide ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="presentation">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
+            aria-label="关闭连接引导"
+            onClick={() => setShowUsbPickerGuide(false)}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="usb-picker-guide-title"
+            className="relative z-10 w-full max-w-xl overflow-hidden rounded-[2rem] border border-white/60 bg-white p-5 shadow-2xl shadow-slate-950/25 dark:border-white/10 dark:bg-slate-900 sm:p-7"
+          >
+            <div className="text-center">
+              <p className="site-accent-text text-xs font-semibold uppercase tracking-[0.22em]">首次连接指引</p>
+              <h2 id="usb-picker-guide-title" className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+                浏览器弹窗打开后，只需两步
+              </h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                请先点设备，设备高亮后再点右下角“连接”。
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/60 sm:p-5">
+              <div className="flex items-center gap-3">
+                <span className="shrink-0 rounded-full bg-violet-600 px-3 py-1 text-sm font-bold text-white">1</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">点击设备名称这一行</span>
+              </div>
+              <div className="my-1 text-center text-6xl font-black leading-none text-violet-500 motion-safe:animate-bounce" aria-hidden="true">
+                ↓
+              </div>
+              <div className="rounded-2xl border-2 border-violet-500 bg-violet-50 px-4 py-4 text-left shadow-lg shadow-violet-500/15 dark:bg-violet-500/10">
+                <p className="font-semibold text-slate-900 dark:text-white">佳点V1PRO · 已配对</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  显示“来自 STMicroelectronics 的未知设备”时也点击这一行
+                </p>
+              </div>
+
+              <div className="mt-5 flex items-center gap-3">
+                <span className="shrink-0 rounded-full bg-cyan-600 px-3 py-1 text-sm font-bold text-white">2</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">再点击右下角“连接”</span>
+              </div>
+              <div className="mt-1 flex items-end justify-end gap-3">
+                <span className="text-6xl font-black leading-none text-cyan-500 motion-safe:animate-pulse" aria-hidden="true">↘</span>
+                <span className="rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/25">连接</span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row">
+              <SiteButton type="button" variant="secondary" className="w-full" onClick={() => setShowUsbPickerGuide(false)}>
+                暂不连接
+              </SiteButton>
+              <SiteButton type="button" className="w-full" onClick={openUsbPicker}>
+                我知道了，打开设备窗口
+              </SiteButton>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </SitePageShell>
   );
 }
