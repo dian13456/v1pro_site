@@ -1,5 +1,7 @@
 ﻿import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
 
+import { importWithRetry } from "../utils/dynamicImportRecovery";
+
 /** 与 public/webusb/v1pro-constants.js 中 WEBUSB_TRANSFER_VERSION 保持一致 */
 export const WEBUSB_TRANSFER_VERSION = "1.2.30";
 
@@ -23,11 +25,13 @@ export async function loadV1ProWebTransferSdk(): Promise<WebUsbSdkModule> {
   }
   if (!sdkPromise) {
     sdkLoadedVersion = WEBUSB_TRANSFER_VERSION;
-    sdkPromise = import("@v1pro-webusb/v1pro-web-transfer.js").catch((err: unknown) => {
-      sdkPromise = null;
-      sdkLoadedVersion = "";
-      throw err;
-    });
+    sdkPromise = importWithRetry(() => import("@v1pro-webusb/v1pro-web-transfer.js")).catch(
+      (err: unknown) => {
+        sdkPromise = null;
+        sdkLoadedVersion = "";
+        throw err;
+      },
+    );
   }
   return sdkPromise;
 }

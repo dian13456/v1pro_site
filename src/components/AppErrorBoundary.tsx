@@ -1,15 +1,11 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-
-const CHUNK_RELOAD_KEY = "jiadian_chunk_reload_attempted";
+import {
+  manuallyRetryPageLoad,
+  reloadOnceForDynamicImportError,
+} from "../utils/dynamicImportRecovery";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
-
-function isChunkLoadError(error: Error): boolean {
-  return /ChunkLoadError|Failed to fetch dynamically imported module|Importing a module script failed/i.test(
-    error.message,
-  );
-}
 
 export class AppErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
@@ -19,17 +15,14 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    if (isChunkLoadError(error) && sessionStorage.getItem(CHUNK_RELOAD_KEY) !== "1") {
-      sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
-      window.location.reload();
+    if (reloadOnceForDynamicImportError(error)) {
       return;
     }
     console.error("Uncaught application error", error, info.componentStack);
   }
 
   private reload = (): void => {
-    sessionStorage.removeItem(CHUNK_RELOAD_KEY);
-    window.location.reload();
+    manuallyRetryPageLoad();
   };
 
   render(): ReactNode {

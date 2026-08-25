@@ -1,5 +1,6 @@
 import type { ResourceItem } from "../types/resource";
 import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
+import { importWithRetry } from "../utils/dynamicImportRecovery";
 import { withApiSignature } from "./apiSign";
 import {
   getAuthState,
@@ -152,8 +153,14 @@ let browserGfm1Promise: Promise<BrowserGfm1Module> | null = null;
 
 function loadBrowserGfm1Module(): Promise<BrowserGfm1Module> {
   if (!browserGfm1Promise) {
-    // @ts-expect-error Browser SDK is maintained as a checked-in JavaScript module.
-    browserGfm1Promise = import("@v1pro-webusb/v1pro-gfm1.js") as Promise<BrowserGfm1Module>;
+    browserGfm1Promise = importWithRetry(
+      () =>
+        // @ts-expect-error Browser SDK is maintained as a checked-in JavaScript module.
+        import("@v1pro-webusb/v1pro-gfm1.js") as Promise<BrowserGfm1Module>,
+    ).catch((error: unknown) => {
+      browserGfm1Promise = null;
+      throw error;
+    });
   }
   return browserGfm1Promise;
 }
