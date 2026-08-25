@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import mimetypes
 import os
 from pathlib import Path
 
 from qcloud_cos import CosConfig, CosS3Client
+from qcloud_cos.cos_exception import CosServiceError
 
 
 NO_CACHE = "no-cache, no-store, must-revalidate"
@@ -43,8 +45,37 @@ def cache_control(key: str) -> str:
     return SHORT_CACHE
 
 
+def file_md5(path: Path) -> str:
+    digest = hashlib.md5(usedforsecurity=False)
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def remote_matches(client: CosS3Client, bucket: str, key: str, path: Path) -> bool:
+    try:
+        remote = client.head_object(Bucket=bucket, Key=key)
+    except CosServiceError as error:
+        if error.get_status_code() == 404:
+            return False
+        raise
+
+    remote_etag = str(remote.get("ETag", "")).strip('"').lower()
+    return (
+        remote_etag == file_md5(path)
+        and int(remote.get("Content-Length", -1)) == path.stat().st_size
+        and remote.get("Cache-Control", "") == cache_control(key)
+        and remote.get("Content-Type", "").lower() == content_type(path).lower()
+    )
+
+
 def upload_file(client: CosS3Client, bucket: str, root: Path, path: Path) -> None:
     key = path.relative_to(root).as_posix()
+    if remote_matches(client, bucket, key, path):
+        print(f"skipped {key} (unchanged)")
+        return
+
     with path.open("rb") as body:
         client.put_object(
             Bucket=bucket,
