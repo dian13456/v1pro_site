@@ -44,7 +44,6 @@ export function useResourcePreviewImage(
     }
     void createImageUrl(resourceId, fallbackImageUrl, {
       forceRefresh: retryVersion > 0,
-      preferOrigin: retryVersion > 0,
     })
       .then((result) => {
         if (active) setPreviewUrl(result.url || "");

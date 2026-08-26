@@ -40,7 +40,7 @@ def content_type(path: Path) -> str:
 def cache_control(key: str) -> str:
     if key == "index.html" or key.endswith(".html") or key in {"CNAME", "version.json"}:
         return NO_CACHE
-    if key.startswith("assets/"):
+    if key.startswith("assets/") or key.startswith("ffmpeg/"):
         return IMMUTABLE_CACHE
     return SHORT_CACHE
 

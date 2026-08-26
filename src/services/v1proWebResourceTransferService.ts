@@ -284,11 +284,11 @@ async function fetchDirectTransferUrl(resource: ResourceItem, signal?: AbortSign
   const signedResponse = await authorizedApiResponse(transferPath(resource, "direct"), signal);
   if (!signedResponse.ok) {
     await readBlobResponse(signedResponse);
-    throw new Error("COS 下载地址生成失败");
+    throw new Error("素材 CDN 地址生成失败");
   }
   const payload = (await signedResponse.json()) as { url?: string; error?: string };
   if (!payload.url) {
-    throw new Error(payload.error || "COS 下载地址生成失败");
+    throw new Error(payload.error || "素材 CDN 地址生成失败");
   }
   return toMaterialCdnUrl(payload.url);
 }
@@ -343,7 +343,7 @@ async function fetchTransferBlob(
       }
     }
 
-    let directHost = "COS";
+    let directHost = "素材 CDN";
     try {
       directHost = new URL(directUrl).hostname;
     } catch {
@@ -356,7 +356,7 @@ async function fetchTransferBlob(
       ? "浏览器网络或跨域请求被拦截"
       : errorDetail;
     const fallbackReason = `${directHost}：${readableError}`;
-    console.warn("[V1PRO] COS direct download failed, using API fallback", {
+    console.warn("[V1PRO] material CDN download failed, using API fallback", {
       resourceId: resource.id,
       host: directHost,
       reason: errorDetail,
@@ -382,7 +382,7 @@ async function fetchTransferBlob(
 
 function formatDownloadProgress(received: number, total: number, usingProxyFallback = false): string {
   const receivedMb = received / (1024 * 1024);
-  const sourceLabel = usingProxyFallback ? "服务器中转" : "COS 直链";
+  const sourceLabel = usingProxyFallback ? "服务器中转" : "素材 CDN";
   if (total > 0) {
     const totalMb = total / (1024 * 1024);
     const percent = Math.min(100, Math.round((received / total) * 100));
@@ -510,7 +510,7 @@ export async function transferAlbumResourcesViaWebUsb(
             const itemRatio = Math.min(1, received / total) * 0.4;
             reportProgress(5 + ((index + itemRatio) / resources.length) * 65);
           },
-          (reason) => callbacks.onStatus?.(`素材 ${index + 1}/${resources.length} COS 直连不可用（${reason}），已切换服务器下载…`),
+          (reason) => callbacks.onStatus?.(`素材 ${index + 1}/${resources.length} CDN 不可用（${reason}），已切换服务器下载…`),
         );
         await validateTransferBlob(resource, blob);
 
@@ -662,7 +662,7 @@ export async function transferResourceViaWebUsb(
         reportProgress(16);
         await client.beginPreparedVideoTransfer(prediction.totalBytes);
         preEraseStarted = true;
-        callbacks.onStatus?.("设备正在预擦除，同时从 COS 直链下载视频…");
+        callbacks.onStatus?.("设备正在预擦除，同时从素材 CDN 下载视频…");
         reportProgress(18);
         let usingProxyFallback = false;
         const blob = await fetchTransferBlob(
@@ -673,7 +673,7 @@ export async function transferResourceViaWebUsb(
           },
           (reason) => {
             usingProxyFallback = true;
-            callbacks.onStatus?.(`COS 直连不可用（${reason}），已切换服务器中转下载…`);
+            callbacks.onStatus?.(`素材 CDN 不可用（${reason}），已切换服务器中转下载…`);
           },
           directUrl,
         );
@@ -775,7 +775,7 @@ export async function transferResourceViaWebUsb(
         (received, total) => {
           if (total > 0) reportProgress(5 + (received / total) * 30);
         },
-        (reason) => callbacks.onStatus?.(`COS 直连不可用（${reason}），已切换服务器下载…`),
+        (reason) => callbacks.onStatus?.(`素材 CDN 不可用（${reason}），已切换服务器下载…`),
       ).then((blob) => {
         downloadDone = true;
         if (!connected) {

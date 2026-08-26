@@ -39,11 +39,10 @@ export async function pushResourceImageToDevice(
   try {
     raw = await convert(signed.url);
   } catch {
-    const origin = await createImageUrl(resourceId, fallbackImageUrl, {
+    const refreshed = await createImageUrl(resourceId, fallbackImageUrl, {
       forceRefresh: true,
-      preferOrigin: true,
     });
-    raw = await convert(origin.url);
+    raw = await convert(refreshed.url);
   }
   if (DESKTOP_IMAGE_TRANSFER.swapRgb565) {
     raw = swapRgb565Bytes(raw);

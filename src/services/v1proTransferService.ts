@@ -96,10 +96,7 @@ const TRUSTED_TRANSFER_CDN_HOSTS = new Set(["media.jadot.cn", "media.jadot.club"
 function isTrustedTransferHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
   if (!normalized) return false;
-  return (
-    /\.(?:myqcloud\.com|tencentcos\.cn)$/i.test(normalized) ||
-    TRUSTED_TRANSFER_CDN_HOSTS.has(normalized)
-  );
+  return TRUSTED_TRANSFER_CDN_HOSTS.has(normalized);
 }
 
 function isBlockedTransferHost(host: string): boolean {
@@ -129,7 +126,7 @@ export function fileNameFromTransferUrl(fileUrl: string): string {
   return "material.bin";
 }
 
-/** 传输到设备只允许 download=1 返回的 COS/COS CDN 签名 HTTPS 直链。禁止网站/API/base64 预览地址。 */
+/** 传输到设备只允许 download=1 返回的素材 CDN HTTPS 地址。禁止 COS 源站、网站/API 和 base64 地址。 */
 export function assertCosTransferUrl(url: string): void {
   const trimmed = url.trim();
   if (!trimmed) {
@@ -152,9 +149,9 @@ export function assertCosTransferUrl(url: string): void {
     return;
   }
   if (isBlockedTransferHost(parsed.hostname)) {
-    throw new Error("传输链接不能使用网站或 API 地址，请使用 COS 下载直链");
+    throw new Error("传输链接不能使用网站或 API 地址，请使用素材 CDN 地址");
   }
-  throw new Error("传输链接必须是 COS 或受信任 CDN 签名地址");
+  throw new Error("传输链接必须使用受信任的素材 CDN 地址");
 }
 
 export function buildV1ProUrl(fileUrl: string, options: V1ProOpenOptions = {}): string {

@@ -39,7 +39,6 @@ import {
   planBrowserFfmpegVideo,
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
-import { scheduleFfmpegAssetPreload } from "../services/ffmpegAssetCache";
 import { validateShareCoverFile } from "../services/shareCoverService";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
 import type { ResourceTransferDefaults } from "../types/resource";
@@ -139,10 +138,6 @@ export default function SharePage() {
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
   const [videoColorProfile, setVideoColorProfile] = useState<VideoColorProfile>("normal");
-
-  useEffect(() => {
-    scheduleFfmpegAssetPreload();
-  }, []);
 
   useEffect(() => {
     if (!selectedFile) {

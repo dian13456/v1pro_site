@@ -58,10 +58,9 @@ export function prefetchPlayUrl(resourceId: number, fallbackDownloadUrl?: string
 export async function createDownloadUrl(
   resourceId: number,
   fallbackDownloadUrl?: string,
-  options: { forDownload?: boolean; preferOrigin?: boolean; forceRefresh?: boolean } = {}
+  options: { forDownload?: boolean; forceRefresh?: boolean } = {}
 ): Promise<SignedDownloadResult> {
   const forDownload = options.forDownload === true;
-  const preferOrigin = options.preferOrigin === true;
   const forceRefresh = options.forceRefresh === true;
   const auth = getAuthState();
   if (!hasValidLocalAuth() || !auth?.token) {
@@ -74,7 +73,7 @@ export async function createDownloadUrl(
     if (!valid) {
       throw new Error("认证已失效，请重新验证设备");
     }
-  } else if (!preferOrigin && !forceRefresh) {
+  } else if (!forceRefresh) {
     const cached = getCachedPlayUrl(resourceId);
     if (cached) {
       return { url: cached };
@@ -102,7 +101,7 @@ export async function createDownloadUrl(
   });
 
   if (signed.url) {
-    const resolvedUrl = preferOrigin ? signed.url : toMaterialCdnUrl(signed.url);
+    const resolvedUrl = toMaterialCdnUrl(signed.url);
     if (!forDownload) {
       rememberPlayUrl(resourceId, resolvedUrl);
     }

@@ -49,11 +49,10 @@ export async function probeResourceMedia(resource: ResourceItem): Promise<{
   url: string;
   metrics: ResourceMediaMetrics;
 }> {
-  const probe = async (preferOrigin: boolean) => {
+  const probe = async (forceRefresh: boolean) => {
     const result = await createDownloadUrl(resource.id, resource.download, {
       forDownload: false,
-      preferOrigin,
-      forceRefresh: preferOrigin,
+      forceRefresh,
     });
     if (!result.url) throw new Error("素材预览地址生成失败");
     if (resource.materialType === "video") {
@@ -71,8 +70,8 @@ export async function probeResourceMedia(resource: ResourceItem): Promise<{
   try {
     return await probe(false);
   } catch {
-    // Keep previews available if the CDN or a regional route is temporarily
-    // unavailable. The refreshed source URL remains signed and short-lived.
+    // Refresh the signed URL and retry the CDN. Never expose or fetch the COS
+    // origin directly, otherwise previews become billable COS downlink traffic.
     return probe(true);
   }
 }
