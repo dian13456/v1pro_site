@@ -214,6 +214,14 @@ function colorFilters(profile: BrowserVideoColorProfile): string[] {
   return filters;
 }
 
+function flattenRasterAlphaToBlack(): string[] {
+  // RGB565 has no alpha channel. GIF/PNG palette entries may keep white RGB
+  // values under fully transparent pixels; dropping alpha directly therefore
+  // produces a white rectangle on the panel. Premultiplying onto black before
+  // resizing matches the desktop converter's transparent-black canvas.
+  return ["format=rgba", "premultiply=inplace=1", "format=rgb24"];
+}
+
 function buildFilterChain(options: ConvertBrowserVideoOptions): string {
   const { plan } = options;
   const filters = [
@@ -436,6 +444,7 @@ export async function convertBrowserRasterWithFfmpeg(
         : "正在使用 FFmpeg 解码、缩放、调色图片…",
     );
     const filters = [
+      ...flattenRasterAlphaToBlack(),
       ...rotationFilters(options.rotationDeg ?? 0),
       ...resizeFilters(options.fitMode ?? "fill", options.scalePercent),
       ...colorFilters(options.colorProfile ?? "normal"),
