@@ -21,6 +21,7 @@ export const USB_CHUNK = 64 * 1024;
 export const USBDL_MAGIC0 = 0xa5;
 export const USBDL_MAGIC1 = 0x5a;
 export const USBDL_CMD_START = 0x01;
+export const USBDL_CMD_START_COMPRESSED = 0x02;
 export const USBDL_CMD_ERASE = 0x04;
 export const USBDL_CMD_JEDEC = 0x07;
 export const USBDL_CMD_DISPLAY = 0x08;
@@ -29,6 +30,8 @@ export const USBDL_DISPLAY_SUB_ROTATE = 0xfe;
 export const USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF = 0xfd;
 export const USBDL_DISPLAY_SUB_QUERY = 0xfc;
 export const USBDL_CMD_PING = 0x09;
+export const USBDL_CMD_FW = 0x0c;
+export const USBDL_FW_SUB_INFO = 0x01;
 export const USBDL_CMD_URL = 0x0d;
 export const USBDL_URL_SUB_COMMIT = 0xfa;
 export const USBDL_URL_SUB_CHUNK = 0xfb;
@@ -67,7 +70,7 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.30";
+export const WEBUSB_TRANSFER_VERSION = "1.2.31";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
 export const PREFETCH_CHUNKS_BEFORE_START = 6;

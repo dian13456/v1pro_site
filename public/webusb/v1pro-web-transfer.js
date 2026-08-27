@@ -7,11 +7,11 @@ import {
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.30";
+} from "./v1pro-constants.js?v=1.2.31";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.30";
+} from "./v1pro-gfm1.js?v=1.2.31";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -29,7 +29,7 @@ import {
   setFollowScreenOff,
   setBootWebsiteConfig,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.30";
+} from "./v1pro-usb.js?v=1.2.31";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -99,6 +99,12 @@ async function planPrebuiltGfm1(blob, metadata = {}) {
 export function formatDeviceCapacityLabel(capacity) {
   if (!capacity?.maxFrames) return "";
   return `${capacity.maxFrames}帧`;
+}
+
+function formatTransportNote(transport) {
+  if (!transport?.compressed) return "";
+  const saved = Math.max(0, Math.round((1 - transport.ratio) * 100));
+  return `USB LZ4 压缩传输 · 节省 ${saved}%`;
 }
 
 export class V1ProWebTransfer {
@@ -402,38 +408,46 @@ export class V1ProWebTransfer {
         );
       }
 
-      const note = [capacityNote, plan.note, probeNote].filter(Boolean).join("；") || undefined;
-      const streamTotal = 8 + plan.totalBytes;
+      const baseNote = [capacityNote, plan.note, probeNote].filter(Boolean).join("；") || undefined;
 
-      await sendGfm1PayloadStream(this.device, plan.totalBytes, plan.payloadChunks(), {
-        maxPayloadBytes,
-        /* Prepared mode performs only sized erase. Send START immediately
-         * before the already encoded payload so firmware RX cannot time out. */
-        startAlreadySent: false,
-        prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
-        onProgress: (sent, total) => {
-          if (!onProgress) return;
-          const encodeWeight = 0.12;
-          const transferRatio = total > 0 ? sent / total : 0;
-          onProgress({
-            // Encoding has already completed before sendGfm1PayloadStream starts.
-            // Treat every callback here as transfer progress; classifying the
-            // first packets as encode makes the combined UI jump backwards.
-            phase: "transfer",
-            sent,
-            total,
-            ratio: Math.min(1, encodeWeight + transferRatio * (1 - encodeWeight)),
-            frameCount: plan.frameCount,
-            note,
-          });
+      const transport = await sendGfm1PayloadStream(
+        this.device,
+        plan.totalBytes,
+        plan.payloadChunks(),
+        {
+          maxPayloadBytes,
+          /* Prepared mode performs only sized erase. Send START immediately
+           * before the already encoded payload so firmware RX cannot time out. */
+          startAlreadySent: false,
+          prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
+          onProgress: (sent, total, currentTransport) => {
+            if (!onProgress) return;
+            const transferRatio = total > 0 ? sent / total : 0;
+            const progressNote = [baseNote, formatTransportNote(currentTransport)]
+              .filter(Boolean)
+              .join("；") || undefined;
+            onProgress({
+              // Encoding has already completed before sendGfm1PayloadStream starts.
+              // Treat every callback here as transfer progress; classifying the
+              // first packets as encode makes the combined UI jump backwards.
+              phase: "transfer",
+              sent,
+              total,
+              ratio: Math.min(1, transferRatio),
+              frameCount: plan.frameCount,
+              note: progressNote,
+            });
+          },
         },
-      });
+      );
+
+      const note = [baseNote, formatTransportNote(transport)].filter(Boolean).join("；") || undefined;
 
       if (onProgress) {
         onProgress({
           phase: "transfer",
-          sent: streamTotal,
-          total: streamTotal,
+          sent: transport.streamBytes,
+          total: transport.streamBytes,
           ratio: 1,
           frameCount: plan.frameCount,
           note,

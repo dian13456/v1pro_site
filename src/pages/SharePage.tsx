@@ -42,6 +42,12 @@ import {
 import { validateShareCoverFile } from "../services/shareCoverService";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
 import type { ResourceTransferDefaults } from "../types/resource";
+import {
+  COMPATIBLE_VIDEO_FPS,
+  parseVideoFpsSelection,
+  resolveVideoFps,
+  type VideoFpsSelection,
+} from "../utils/resourceCapacity";
 
 type ShareMediaKind = "image" | "gif" | "video";
 type VideoColorProfile = "normal" | "vivid" | "professional";
@@ -134,7 +140,8 @@ export default function SharePage() {
   const [shareUnlimited, setShareUnlimited] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [targetFrameOptions, setTargetFrameOptions] = useState<number[]>([77, 154, 308]);
-  const [videoFps, setVideoFps] = useState<ResourceTransferDefaults["videoFps"]>(25);
+  const [videoFpsSelection, setVideoFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
+  const videoFps = resolveVideoFps(videoFpsSelection);
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
   const [videoColorProfile, setVideoColorProfile] = useState<VideoColorProfile>("normal");
@@ -588,7 +595,8 @@ export default function SharePage() {
             <div className="mb-4 grid grid-cols-2 gap-3.5">
               <div>
                 <label className={fieldLabelClass}>视频帧率</label>
-                <select className={fieldClass} value={videoFps} onChange={(event) => setVideoFps(Number(event.target.value) as ResourceTransferDefaults["videoFps"])}>
+                <select className={fieldClass} value={videoFpsSelection} onChange={(event) => setVideoFpsSelection(parseVideoFpsSelection(event.target.value))}>
+                  <option value={COMPATIBLE_VIDEO_FPS}>兼容模式（20 / 25 / 30 fps）</option>
                   <option value={20}>20 fps</option><option value={25}>25 fps</option><option value={30}>30 fps</option>
                 </select>
               </div>
@@ -624,7 +632,7 @@ export default function SharePage() {
                 fitMode={fitMode}
                 rotationDeg={rotationDeg}
                 colorProfile={videoColorProfile}
-                videoFps={videoFps}
+                videoFpsLabel={videoFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${videoFps} fps` : `${videoFps} fps`}
                 targetFrameOptions={targetFrameOptions}
               />
             </div>

@@ -14,6 +14,9 @@ import {
   USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
   USBDL_CMD_START,
+  USBDL_CMD_START_COMPRESSED,
+  USBDL_CMD_FW,
+  USBDL_FW_SUB_INFO,
   USBDL_CMD_URL,
   USBDL_DISPLAY_SUB_BRIGHTNESS,
   USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF,
@@ -29,7 +32,12 @@ import {
   USBDL_URL_SUB_WRITE,
   USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.30";
+} from "./v1pro-constants.js?v=1.2.31";
+import {
+  prepareTransportPayload,
+  TRANSPORT_BLOCK_SIZE,
+  TRANSPORT_VERSION,
+} from "./v1pro-transport-codec.js?v=1.2.31";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -39,6 +47,8 @@ const TRANSFER_DRAIN_BYTES = 1024 * 1024;
 const PROBE_POLL_TIMEOUT_MS = 4000;
 const JEDEC_PROBE_TIMEOUT_MS = 3000;
 const DISPLAY_COMMAND_TIMEOUT_MS = 2000;
+const FIRMWARE_INFO_TIMEOUT_MS = 1800;
+const MIN_COMPRESSED_TRANSPORT_VERSION_WORD = 0x00002300; // V0.0.35
 
 /**
  * @typedef {{
@@ -46,6 +56,7 @@ const DISPLAY_COMMAND_TIMEOUT_MS = 2000;
  *   inEndpoint: number,
  *   outEndpoint: number,
  *   pendingIn: Promise<USBInTransferResult>|null,
+ *   firmwareInfo?: ReturnType<typeof parseFirmwareInfoReply>,
  * }} DeviceSession
  */
 
@@ -259,6 +270,7 @@ function getSession(device) {
     outEndpoint: EP_OUT,
     inEndpoint: EP_IN,
     pendingIn: null,
+    firmwareInfo: undefined,
   };
 }
 
@@ -795,6 +807,7 @@ async function openClaimed(device) {
     const session = {
       ...endpoints,
       pendingIn: null,
+      firmwareInfo: undefined,
     };
     deviceSessions.set(device, session);
     await device.claimInterface(session.interfaceNumber);
@@ -882,6 +895,72 @@ export function parseJedecReply(text) {
     maxPayloadBytes,
     maxFrames,
   };
+}
+
+/** Parse `FW,1,info,MMMMmmPP,...,app,...` returned by APP firmware. */
+export function parseFirmwareInfoReply(text) {
+  if (!text) return null;
+  const parts = text.replace(/\0/g, "").trim().split(",");
+  if (
+    parts.length < 6 ||
+    parts[0].toUpperCase() !== "FW" ||
+    parts[1] !== "1" ||
+    parts[2].toLowerCase() !== "info"
+  ) {
+    return null;
+  }
+  const versionWord = Number.parseInt(parts[3], 16);
+  if (!Number.isFinite(versionWord)) return null;
+  const packed = versionWord >>> 0;
+  const major = (packed >>> 24) & 0xff;
+  const minor = (packed >>> 16) & 0xff;
+  const patch = (packed >>> 8) & 0xff;
+  const mode = parts[5].trim().toLowerCase();
+  return {
+    versionWord: packed,
+    version: `V${major}.${minor}.${patch}`,
+    major,
+    minor,
+    patch,
+    mode,
+    supportsCompressedTransport:
+      mode === "app" && packed >= MIN_COMPRESSED_TRANSPORT_VERSION_WORD,
+  };
+}
+
+/**
+ * Best-effort APP version query. It is read-only and safe on old firmware;
+ * unsupported devices simply time out and remain on the legacy raw protocol.
+ */
+export async function queryFirmwareInfo(device) {
+  const session = getSession(device);
+  if (session.firmwareInfo !== undefined) return session.firmwareInfo;
+
+  try {
+    await drainInQuick(device);
+    const command = new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_FW,
+      USBDL_FW_SUB_INFO,
+    ]);
+    await transferOutWithRetry(
+      device,
+      session.outEndpoint,
+      command,
+      IO_TIMEOUT_MS,
+      2,
+    );
+    const reply = await readTextReply(
+      device,
+      ["FW,1,info,"],
+      FIRMWARE_INFO_TIMEOUT_MS,
+    );
+    session.firmwareInfo = parseFirmwareInfoReply(reply);
+  } catch {
+    session.firmwareInfo = null;
+  }
+  return session.firmwareInfo;
 }
 
 /**
@@ -1051,41 +1130,10 @@ export async function sendGfm1(device, gfm1, opts = {}) {
     );
   }
 
-  await drainInQuick(device);
-
-  const total = gfm1.length;
-  const preamble = new Uint8Array(8);
-  preamble[0] = USBDL_MAGIC0;
-  preamble[1] = USBDL_MAGIC1;
-  preamble[2] = USBDL_CMD_START;
-  preamble[3] = total & 0xff;
-  preamble[4] = (total >>> 8) & 0xff;
-  preamble[5] = (total >>> 16) & 0xff;
-  preamble[6] = (total >>> 24) & 0xff;
-  preamble[7] = 0x00;
-
-  const streamLen = preamble.length + total;
-  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
-  let sent = 0;
-  const drainTracker = createDrainTracker();
-
-  const writeChunk = async (chunk) => {
-    await bulkOut(device, chunk);
-    sent += chunk.length;
-    await drainTracker.maybeDrain(device, chunk.length);
-    if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
-  };
-
-  await writeChunk(preamble);
-
-  for (let i = 0; i < gfm1.length; i += USB_CHUNK) {
-    await writeChunk(gfm1.subarray(i, Math.min(i + USB_CHUNK, gfm1.length)));
+  async function* chunks() {
+    yield gfm1;
   }
-
-  /* A successful PONG is a FIFO barrier: firmware can only process this PING
-   * after every preceding GFM1 packet has been written, validated and switched
-   * to playback. Do not close WebUSB before this confirmation. */
-  await ping(device, { requireAnimation: true });
+  return sendGfm1PayloadStream(device, gfm1.length, chunks(), opts);
 }
 
 function buildStartPreamble(totalBytes) {
@@ -1098,6 +1146,21 @@ function buildStartPreamble(totalBytes) {
   preamble[5] = (totalBytes >>> 16) & 0xff;
   preamble[6] = (totalBytes >>> 24) & 0xff;
   preamble[7] = 0x00;
+  return preamble;
+}
+
+export function buildCompressedStartPreamble(wireBytes, rawBytes) {
+  const preamble = new Uint8Array(16);
+  const view = new DataView(preamble.buffer);
+  preamble[0] = USBDL_MAGIC0;
+  preamble[1] = USBDL_MAGIC1;
+  preamble[2] = USBDL_CMD_START_COMPRESSED;
+  view.setUint32(3, wireBytes, true);
+  view.setUint32(7, rawBytes, true);
+  view.setUint16(11, TRANSPORT_BLOCK_SIZE, true);
+  preamble[13] = TRANSPORT_VERSION;
+  preamble[14] = 0x00;
+  preamble[15] = 0x00;
   return preamble;
 }
 
@@ -1134,23 +1197,57 @@ export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
 }
 
 /**
- * Send START (device begins flash erase) then stream GFM1 payload chunks as they are encoded.
+ * Send START then a legacy raw or V0.0.35+ LZ4 block stream. Compression is
+ * selected only after the complete one-shot encoder output is ready, ensuring
+ * there is no pause after START and allowing an exact no-benefit fallback.
  * @param {USBDevice} device
  * @param {number} totalBytes GFM1 payload size (excluding 8-byte START header)
  * @param {AsyncIterable<Uint8Array>} payloadChunks
- * @param {{ onProgress?: (sent: number, total: number) => void }} [opts]
+ * @param {{ onProgress?: (sent: number, total: number, transport?: object) => void }} [opts]
  */
 export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   validateStreamSize(totalBytes, maxPayloadBytes);
 
   const startAlreadySent = opts.startAlreadySent === true;
+  let prepared = null;
+  let firmwareInfo = null;
+  if (!startAlreadySent) {
+    firmwareInfo = await queryFirmwareInfo(device);
+    if (firmwareInfo?.supportsCompressedTransport) {
+      try {
+        prepared = await prepareTransportPayload(payloadChunks, totalBytes);
+      } catch (err) {
+        throw new V1ProUsbError(
+          "invalid_gfm1",
+          err instanceof Error ? err.message : "GFM1 压缩流准备失败。",
+          err,
+        );
+      }
+    }
+  }
+
   if (!startAlreadySent) {
     await drainInQuick(device);
   }
-  const preamble = buildStartPreamble(totalBytes);
+  const compressed = prepared?.compressed === true;
+  const preamble = compressed
+    ? buildCompressedStartPreamble(prepared.wireBytes, totalBytes)
+    : buildStartPreamble(totalBytes);
+  const payloadWireBytes = compressed ? prepared.wireBytes : totalBytes;
+  const transport = {
+    compressed,
+    protocol: compressed ? "lz4-block-v1" : "raw",
+    firmwareVersion: firmwareInfo?.version,
+    rawBytes: totalBytes,
+    wireBytes: payloadWireBytes,
+    streamBytes: preamble.length + payloadWireBytes,
+    blockCount: prepared?.blockCount ?? 0,
+    compressedBlocks: compressed ? prepared.compressedBlocks : 0,
+    ratio: compressed ? prepared.ratio : 1,
+  };
 
-  const streamLen = preamble.length + totalBytes;
+  const streamLen = transport.streamBytes;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   let sent = startAlreadySent ? preamble.length : 0;
   const drainTracker = createDrainTracker();
@@ -1164,10 +1261,15 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
     await bulkOut(device, chunk);
     sent += chunk.length;
     await drainTracker.maybeDrain(device, chunk.length);
-    if (onProgress) onProgress(Math.min(sent, streamLen), streamLen);
+    if (onProgress) onProgress(Math.min(sent, streamLen), streamLen, transport);
   };
 
-  const iter = payloadChunks[Symbol.asyncIterator]();
+  const source = prepared
+    ? (async function* preparedChunks() {
+        for (const chunk of prepared.chunks) yield chunk;
+      })()
+    : payloadChunks;
+  const iter = source[Symbol.asyncIterator]();
   const queue = [];
   let producerDone = false;
   let producerError = null;
@@ -1198,7 +1300,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   if (!startAlreadySent) {
     await writeChunk(preamble);
   } else if (onProgress) {
-    onProgress(sent, streamLen);
+    onProgress(sent, streamLen, transport);
   }
 
   while (!producerDone || queue.length > 0) {
@@ -1225,7 +1327,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   if (sent !== streamLen) {
     throw new V1ProUsbError(
       "invalid_gfm1",
-      `GFM1 流长度错误：已发送 ${sent - preamble.length} 字节，期望 ${totalBytes} 字节。`
+      `GFM1 传输流长度错误：已发送 ${sent - preamble.length} 字节，期望 ${payloadWireBytes} 字节。`
     );
   }
 
@@ -1233,4 +1335,5 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
    * Closing the interface immediately after transferOut can otherwise make the
    * firmware classify an otherwise complete browser transfer as interrupted. */
   await ping(device, { requireAnimation: true });
+  return transport;
 }

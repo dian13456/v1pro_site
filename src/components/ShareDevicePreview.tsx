@@ -21,7 +21,7 @@ interface ShareDevicePreviewProps {
   fitMode: "fill" | "contain";
   rotationDeg: 0 | 90 | 180 | 270;
   colorProfile: SharePreviewColorProfile;
-  videoFps: 20 | 25 | 30;
+  videoFpsLabel: string;
   targetFrameOptions: number[];
 }
 
@@ -31,7 +31,7 @@ export function ShareDevicePreview({
   fitMode,
   rotationDeg,
   colorProfile,
-  videoFps,
+  videoFpsLabel,
   targetFrameOptions,
 }: ShareDevicePreviewProps) {
   const sideways = rotationDeg === 90 || rotationDeg === 270;
@@ -96,7 +96,7 @@ export function ShareDevicePreview({
         <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{rotationDeg}°</span>
         <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{fitMode === "fill" ? "铺满全屏" : "适应屏幕"}</span>
         <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{COLOR_PROFILE_LABEL[colorProfile]}色彩</span>
-        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{videoFps} fps</span>
+        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{videoFpsLabel}</span>
         <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{capacityLabel}</span>
       </div>
       <p className="mt-2 text-center text-[10.5px] leading-5 text-[#8a93a8]">

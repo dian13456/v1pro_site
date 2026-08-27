@@ -9,11 +9,15 @@ import {
   assessDeviceCapacities,
   formatMediaDuration,
   mergeResourceMetrics,
+  COMPATIBLE_VIDEO_FPS,
+  parseVideoFpsSelection,
   requiredFramesForResource,
+  resolveVideoFps,
   resourceMetricsFromCatalog,
   VIDEO_FPS_OPTIONS,
   type ResourceMediaMetrics,
   type VideoFpsOption,
+  type VideoFpsSelection,
 } from "../utils/resourceCapacity";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
 import { useDeviceFeatureAccess } from "../services/featureAccessService";
@@ -72,7 +76,8 @@ export function ResourceDetailModal({
   const { access } = useDeviceFeatureAccess();
   const featureEnabled = access?.enabled === true;
   const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
-  const [fps, setFps] = useState<VideoFpsOption>(() => resource.transferDefaults?.videoFps ?? 20);
+  const [fpsSelection, setFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
+  const fps: VideoFpsOption = resolveVideoFps(fpsSelection, resource.transferDefaults?.videoFps);
   const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
     resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind),
   );
@@ -90,7 +95,7 @@ export function ResourceDetailModal({
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    setFps(resource.transferDefaults?.videoFps ?? 20);
+    setFpsSelection(COMPATIBLE_VIDEO_FPS);
     setFitMode(resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind));
     setRotationDeg(resource.transferDefaults?.rotationDeg ?? 0);
     setColorProfile(resource.transferDefaults?.colorProfile ?? "normal");
@@ -251,18 +256,28 @@ export function ResourceDetailModal({
           {isAnimated ? (
             <>
               <p className="text-xs font-bold tracking-[1px] text-[#8a93a8]">下传设备帧率（实际编码）</p>
+              <button
+                type="button"
+                onClick={() => setFpsSelection(COMPATIBLE_VIDEO_FPS)}
+                className={`mt-2 w-full rounded-[10px] border-[1.5px] px-3 py-[9px] text-[12.5px] font-semibold transition ${fpsSelection === COMPATIBLE_VIDEO_FPS ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
+              >
+                兼容模式（20 / 25 / 30 fps）
+              </button>
               <div className="mt-2 grid grid-cols-3 gap-2">
                 {VIDEO_FPS_OPTIONS.map((value) => (
                   <button
                     key={value}
                     type="button"
-                    onClick={() => setFps(value)}
-                    className={`rounded-[10px] border-[1.5px] px-2 py-[9px] text-[12.5px] font-semibold transition ${fps === value ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
+                    onClick={() => setFpsSelection(parseVideoFpsSelection(String(value)))}
+                    className={`rounded-[10px] border-[1.5px] px-2 py-[9px] text-[12.5px] font-semibold transition ${fpsSelection === value ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
                   >
                     {value} fps
                   </button>
                 ))}
               </div>
+              {fpsSelection === COMPATIBLE_VIDEO_FPS ? (
+                <p className="mt-2 text-[11px] leading-5 text-[#8a93a8]">当前兼容编码为 {fps} fps；优先沿用分享者参数，无参数时按 GUI 新手模式 20 fps。</p>
+              ) : null}
             </>
           ) : null}
 

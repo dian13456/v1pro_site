@@ -2,10 +2,36 @@ import type { ResourceItem } from "../types/resource";
 
 export const DEVICE_FRAME_CAPACITIES = [77, 154, 308] as const;
 export const VIDEO_FPS_OPTIONS = [20, 25, 30] as const;
+export const COMPATIBLE_VIDEO_FPS = "compatible" as const;
+export const COMPATIBLE_VIDEO_FPS_FALLBACK = 20 as const;
 export const MAX_AUTOMATIC_SPEED = 5;
 
 export type DeviceFrameCapacity = (typeof DEVICE_FRAME_CAPACITIES)[number];
 export type VideoFpsOption = (typeof VIDEO_FPS_OPTIONS)[number];
+export type VideoFpsSelection = typeof COMPATIBLE_VIDEO_FPS | VideoFpsOption;
+
+export function isVideoFpsOption(value: unknown): value is VideoFpsOption {
+  return VIDEO_FPS_OPTIONS.some((fps) => fps === value);
+}
+
+export function parseVideoFpsSelection(value: string): VideoFpsSelection {
+  if (value === COMPATIBLE_VIDEO_FPS) return COMPATIBLE_VIDEO_FPS;
+  const parsed = Number(value);
+  return isVideoFpsOption(parsed) ? parsed : COMPATIBLE_VIDEO_FPS;
+}
+
+/**
+ * Compatibility mode keeps old 20/25/30 fps recommendations working. New or
+ * local material without a recommendation follows the GUI beginner-mode 20 fps
+ * baseline, while an explicit manual selection always wins.
+ */
+export function resolveVideoFps(
+  selection: VideoFpsSelection,
+  recommended?: number | null,
+): VideoFpsOption {
+  if (selection !== COMPATIBLE_VIDEO_FPS) return selection;
+  return isVideoFpsOption(recommended) ? recommended : COMPATIBLE_VIDEO_FPS_FALLBACK;
+}
 
 export interface ResourceMediaMetrics {
   durationSec: number | null;

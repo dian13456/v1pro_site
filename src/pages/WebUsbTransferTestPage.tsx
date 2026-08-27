@@ -23,6 +23,12 @@ import type {
   V1ProTransferResult,
   V1ProWebTransferClient,
 } from "../types/v1proWebTransfer";
+import {
+  COMPATIBLE_VIDEO_FPS,
+  parseVideoFpsSelection,
+  resolveVideoFps,
+  type VideoFpsSelection,
+} from "../utils/resourceCapacity";
 
 type StatusKind = "idle" | "ok" | "error";
 type MaterialTransferMode = "auto" | "image" | "gif" | "video";
@@ -141,7 +147,8 @@ export default function WebUsbTransferTestPage() {
   const [bootWebsiteSupported, setBootWebsiteSupported] = useState<boolean | null>(null);
   const [bootWebsiteMessage, setBootWebsiteMessage] = useState("连接设备后自动读取上电打开网页设置。");
   const [materialTransferMode, setMaterialTransferMode] = useState<MaterialTransferMode>("auto");
-  const [materialFps, setMaterialFps] = useState<20 | 25 | 30>(30);
+  const [materialFpsSelection, setMaterialFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
+  const materialFps = resolveVideoFps(materialFpsSelection);
   const [materialRotation, setMaterialRotation] = useState<MaterialRotation>("auto");
   const [materialScale, setMaterialScale] = useState<50 | 75 | 100 | 125 | 150>(100);
   const [materialFitMode, setMaterialFitMode] = useState<MaterialFitMode>("contain");
@@ -312,7 +319,7 @@ export default function WebUsbTransferTestPage() {
       const capacityLabel = client.getCapacityLabel?.() ?? "";
       setMetaText(
         capacityLabel
-          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（视频最高 30fps，必要时自动倍速）。`
+          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（默认兼容 20/25/30fps，必要时自动倍速）。`
           : "设备已连接，将图片、GIF 或视频拖入下方区域即可自动传输。",
       );
     } catch (err) {
@@ -879,7 +886,7 @@ export default function WebUsbTransferTestPage() {
                     type="button"
                     disabled={advancedSettingsDisabled}
                     onClick={() => {
-                      setMaterialFps(30);
+                      setMaterialFpsSelection(COMPATIBLE_VIDEO_FPS);
                       setMaterialTransferMode("auto");
                       setMaterialRotation("auto");
                       setMaterialScale(100);
@@ -912,12 +919,13 @@ export default function WebUsbTransferTestPage() {
                   <label className="text-[11px] font-bold text-[#69728a]">
                     视频帧率
                     <select
-                      value={materialFps}
+                      value={materialFpsSelection}
                       disabled={advancedSettingsDisabled}
-                      onChange={(event) => setMaterialFps(Number(event.target.value) as 20 | 25 | 30)}
+                      onChange={(event) => setMaterialFpsSelection(parseVideoFpsSelection(event.target.value))}
                       className={selectClassName}
                       aria-label="视频帧率"
                     >
+                      <option value={COMPATIBLE_VIDEO_FPS}>兼容模式（20/25/30 fps）</option>
                       {[20, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}
                     </select>
                   </label>
@@ -1012,7 +1020,7 @@ export default function WebUsbTransferTestPage() {
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
               <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
-              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFps} fps · {materialPlaybackSpeed}×</span>
+              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${materialFps} fps` : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
               <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
             </div>
           </section>
