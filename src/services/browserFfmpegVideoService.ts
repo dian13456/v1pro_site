@@ -1,5 +1,6 @@
 import { FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
 import { acquireBrowserFfmpeg } from "./ffmpegRuntime";
+import { readGifFrameDelays } from "./gifFrameTiming";
 
 const LCD_WIDTH = 320;
 const LCD_HEIGHT = 170;
@@ -396,6 +397,7 @@ export async function convertBrowserRasterWithFfmpeg(
   const lease = await acquireBrowserFfmpeg(options.onStatus);
   const ffmpeg = lease.ffmpeg;
   let probeFrames: GifProbeFrame[] = [];
+  let sourceGifDelays: number[] = [];
   try {
     ffmpeg.on("progress", onProgress);
     await ffmpeg.createDir(inputDir);
@@ -407,33 +409,37 @@ export async function convertBrowserRasterWithFfmpeg(
 
     options.onProgress?.(0);
     if (options.mediaType === "gif") {
-      options.onStatus?.("正在使用 FFmpeg 读取 GIF 帧时序…");
+      options.onStatus?.("正在读取 GIF 原始帧时序…");
       try {
-        const probeExitCode = await ffmpeg.ffprobe([
-          "-v",
-          "error",
-          "-select_streams",
-          "v:0",
-          "-show_entries",
-          "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
-          "-of",
-          "json",
-          inputPath,
-          "-o",
-          probePath,
-        ]);
-        if (probeExitCode === 0) {
-          const probeOutput = await ffmpeg.readFile(probePath, "utf8");
-          const probeText = typeof probeOutput === "string"
-            ? probeOutput
-            : new TextDecoder().decode(probeOutput);
-          const parsed = JSON.parse(probeText) as { frames?: GifProbeFrame[] };
-          probeFrames = Array.isArray(parsed.frames) ? parsed.frames : [];
-        }
+        sourceGifDelays = await readGifFrameDelays(source);
       } catch {
-        // Some GIFs omit packet duration metadata. Conversion can continue
-        // with timestamp-derived or default delays.
-        probeFrames = [];
+        // Keep FFprobe as a compatibility fallback for unusual GIF containers.
+        try {
+          const probeExitCode = await ffmpeg.ffprobe([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+            "-of",
+            "json",
+            inputPath,
+            "-o",
+            probePath,
+          ]);
+          if (probeExitCode === 0) {
+            const probeOutput = await ffmpeg.readFile(probePath, "utf8");
+            const probeText = typeof probeOutput === "string"
+              ? probeOutput
+              : new TextDecoder().decode(probeOutput);
+            const parsed = JSON.parse(probeText) as { frames?: GifProbeFrame[] };
+            probeFrames = Array.isArray(parsed.frames) ? parsed.frames : [];
+          }
+        } catch {
+          // Conversion can continue with timestamp-derived or default delays.
+          probeFrames = [];
+        }
       }
       options.onProgress?.(0.08);
     }
@@ -497,7 +503,9 @@ export async function convertBrowserRasterWithFfmpeg(
     }
     const decodedPixels = output.slice(0, decodedFrameCount * FRAME_BYTES);
     const decodedDelays = options.mediaType === "gif"
-      ? gifDelaysFromProbe(probeFrames, decodedFrameCount)
+      ? sourceGifDelays.length >= decodedFrameCount
+        ? sourceGifDelays.slice(0, decodedFrameCount)
+        : gifDelaysFromProbe(probeFrames, decodedFrameCount)
       : [100];
     const adjusted = applyRasterPlaybackSpeed(decodedPixels, decodedDelays, options.playbackSpeed);
     const frameCount = Math.min(maxFrames, adjusted.delaysMs.length);
@@ -509,7 +517,8 @@ export async function convertBrowserRasterWithFfmpeg(
       packed.byteOffset + packed.byteLength,
     ) as ArrayBuffer;
     const blob = new Blob([packedBuffer], { type: "application/x-v1pro-gfm1" });
-    const wasTruncated = options.mediaType === "gif" && probeFrames.length > decodedFrameCount;
+    const sourceFrameCount = sourceGifDelays.length || probeFrames.length;
+    const wasTruncated = options.mediaType === "gif" && sourceFrameCount > decodedFrameCount;
     const speed = Math.max(0.5, Math.min(MAX_VIDEO_SPEED, options.playbackSpeed ?? 1));
     const speedNote = Math.abs(speed - 1) < 0.0001 ? "" : ` · ${speed.toFixed(2)}×`;
     const note = options.mediaType === "gif"
