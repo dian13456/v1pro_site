@@ -943,7 +943,7 @@ export default function WebUsbTransferTestPage() {
     !connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting || displayControlSupported === false;
   const bootWebsiteControlsDisabled =
     !connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting || bootWebsiteSupported === false;
-  const selectClassName = "mt-1.5 h-10 w-full rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:opacity-50";
+  const selectClassName = "mt-1.5 h-10 min-w-0 w-full max-w-full truncate rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:opacity-50";
   const advancedSettingsDisabled = busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting;
 
   return (
@@ -1342,7 +1342,7 @@ export default function WebUsbTransferTestPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3">
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     下传模式
                     <select
                       value={materialTransferMode}
@@ -1357,7 +1357,7 @@ export default function WebUsbTransferTestPage() {
                       <option value="video">视频</option>
                     </select>
                   </label>
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     视频帧率
                     <select
                       value={materialFpsSelection}
@@ -1370,7 +1370,7 @@ export default function WebUsbTransferTestPage() {
                       {[20, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}
                     </select>
                   </label>
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     素材旋转
                     <select
                       value={materialRotation}
@@ -1386,7 +1386,7 @@ export default function WebUsbTransferTestPage() {
                       {[0, 90, 180, 270].map((rotation) => <option key={rotation} value={rotation}>{rotation}°</option>)}
                     </select>
                   </label>
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     画面缩放
                     <select
                       value={materialScale}
@@ -1398,7 +1398,7 @@ export default function WebUsbTransferTestPage() {
                       {[50, 75, 100, 125, 150].map((scale) => <option key={scale} value={scale}>{scale}%</option>)}
                     </select>
                   </label>
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     铺满方式
                     <select
                       value={materialFitMode}
@@ -1411,7 +1411,7 @@ export default function WebUsbTransferTestPage() {
                       <option value="fill">铺满全屏</option>
                     </select>
                   </label>
-                  <label className="text-[11px] font-bold text-[#69728a]">
+                  <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
                     素材色彩
                     <select
                       value={materialColor}
@@ -1425,7 +1425,7 @@ export default function WebUsbTransferTestPage() {
                       <option value="professional">专业</option>
                     </select>
                   </label>
-                  <label className="col-span-2 text-[11px] font-bold text-[#69728a]">
+                  <label className="col-span-2 min-w-0 text-[11px] font-bold text-[#69728a]">
                     播放倍速
                     <select
                       value={materialPlaybackSpeed}

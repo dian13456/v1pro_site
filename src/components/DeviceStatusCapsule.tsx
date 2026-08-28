@@ -6,7 +6,13 @@ import { ThemeIcon } from "./ThemeIcon";
 
 type DevicePresence = "checking" | "online" | "offline" | "unsupported";
 
-export function DeviceStatusCapsule() {
+export function DeviceStatusCapsule({
+  open,
+  onOpenChange,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const auth = getAuthState();
   const [presence, setPresence] = useState<DevicePresence>("checking");
 
@@ -54,7 +60,11 @@ export function DeviceStatusCapsule() {
   const displayName = auth.displayName?.trim() || getDisplayName(auth.serial);
 
   return (
-    <details className="group/device-status relative hidden shrink-0 lg:block">
+    <details
+      className="group/device-status relative hidden shrink-0 lg:block"
+      open={open}
+      onToggle={(event) => onOpenChange?.(event.currentTarget.open)}
+    >
       <summary className="flex h-10 max-w-[190px] cursor-pointer list-none items-center gap-2 rounded-full border border-black/[.06] bg-white/72 px-3 text-[12px] font-medium text-slate-600 transition hover:bg-white dark:border-white/10 dark:bg-white/[.06] dark:text-slate-200 [&::-webkit-details-marker]:hidden">
         <span className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,.12)]" : "bg-slate-300"}`} />
         <span className="truncate">{displayName}</span>
@@ -76,7 +86,7 @@ export function DeviceStatusCapsule() {
           <p className="text-[10px] uppercase tracking-[.14em] text-slate-400">Serial Number</p>
           <p className="mt-1 break-all font-mono text-[11px] text-slate-600 dark:text-slate-300">{auth.serial}</p>
         </div>
-        <Link to="/webusb-test" className="mt-3 flex h-10 items-center justify-center rounded-full bg-[#0071e3] text-sm font-semibold text-white shadow-[0_7px_18px_rgba(0,113,227,.22)] transition hover:bg-[#0878e8]">
+        <Link to="/webusb-test" onClick={() => onOpenChange?.(false)} className="mt-3 flex h-10 items-center justify-center rounded-full bg-[#0071e3] text-sm font-semibold text-white shadow-[0_7px_18px_rgba(0,113,227,.22)] transition hover:bg-[#0878e8]">
           打开设备控制
         </Link>
       </div>

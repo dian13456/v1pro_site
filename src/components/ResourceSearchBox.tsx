@@ -17,14 +17,24 @@ export function ResourceSearchBox({
   keyword,
   onSearch,
   placeholder,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   keyword: string;
   onSearch: (value: string) => void;
   placeholder: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [draft, setDraft] = useState(keyword);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [recent, setRecent] = useState(readRecentSearches);
+  const open = controlledOpen ?? internalOpen;
+
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   useEffect(() => setDraft(keyword), [keyword]);
 

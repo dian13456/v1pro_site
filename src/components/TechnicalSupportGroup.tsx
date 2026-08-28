@@ -8,6 +8,8 @@ const VIEWPORT_GAP = 12;
 
 interface TechnicalSupportGroupProps {
   compact?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface PopupPosition {
@@ -15,12 +17,18 @@ interface PopupPosition {
   right: number;
 }
 
-export function TechnicalSupportGroup({ compact = false }: TechnicalSupportGroupProps) {
+export function TechnicalSupportGroup({ compact = false, open: controlledOpen, onOpenChange }: TechnicalSupportGroupProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const popupId = useId();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [position, setPosition] = useState<PopupPosition | null>(null);
+  const open = controlledOpen ?? internalOpen;
+
+  const setOpen = useCallback((nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }, [controlledOpen, onOpenChange]);
 
   const updatePosition = useCallback(() => {
     const button = buttonRef.current;
@@ -76,7 +84,7 @@ export function TechnicalSupportGroup({ compact = false }: TechnicalSupportGroup
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, updatePosition]);
+  }, [open, setOpen, updatePosition]);
 
   const popup = open && position
     ? createPortal(
@@ -129,8 +137,8 @@ export function TechnicalSupportGroup({ compact = false }: TechnicalSupportGroup
         aria-controls={popupId}
       >
         <span aria-hidden="true" className="text-base leading-none">QQ</span>
-        <span className="hidden whitespace-nowrap sm:inline">技术支持QQ群</span>
-        <span className={`${compact ? "hidden sm:inline" : "whitespace-nowrap"} tabular-nums`}>
+        <span className={`hidden whitespace-nowrap ${compact ? "2xl:inline" : "sm:inline"}`}>技术支持QQ群</span>
+        <span className={`${compact ? "hidden min-[1800px]:inline" : "whitespace-nowrap"} tabular-nums`}>
           {SUPPORT_QQ_GROUP}
         </span>
         <span aria-hidden="true" className={`text-[10px] transition ${open ? "rotate-180" : ""}`}>▼</span>
