@@ -103,6 +103,12 @@ export interface V1ProWebTransferClient {
   setFollowScreenOff(enabled: boolean): Promise<boolean>;
   getBootWebsiteConfig(): Promise<V1ProBootWebsiteConfig>;
   setBootWebsiteConfig(enabled: boolean, url: string): Promise<V1ProBootWebsiteConfig>;
+  startMusicSpectrum(heights?: readonly number[]): Promise<void>;
+  sendMusicSpectrumFrame(heights: readonly number[]): Promise<void>;
+  stopMusicSpectrum(): Promise<void>;
+  startLiveFrame(pixels: Uint8Array): Promise<void>;
+  sendLiveFrame(pixels: Uint8Array): Promise<void>;
+  stopLiveMode(): Promise<void>;
   getCapacityLabel(): string;
   predictVideoUrl(
     url: string,

@@ -6,12 +6,13 @@ import {
   MAX_VIDEO_FPS,
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
+  SPECTRUM_BANDS,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.31";
+} from "./v1pro-constants.js?v=1.2.33";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.31";
+} from "./v1pro-gfm1.js?v=1.2.33";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -28,8 +29,12 @@ import {
   setDisplayRotation,
   setFollowScreenOff,
   setBootWebsiteConfig,
+  sendSpectrumFrame,
+  stopSpectrum,
+  sendLiveRgb565,
+  exitLiveMode,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.31";
+} from "./v1pro-usb.js?v=1.2.33";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -117,6 +122,9 @@ export class V1ProWebTransfer {
     this.preparedTransferBytes = null;
     /** @type {string|null} */
     this.capacityError = null;
+    this.spectrumActive = false;
+    this.spectrumSequence = 0;
+    this.liveModeActive = false;
   }
 
   /** @returns {boolean} */
@@ -180,10 +188,27 @@ export class V1ProWebTransfer {
 
   async disconnect() {
     const d = this.device;
+    if (d?.opened && this.spectrumActive) {
+      try {
+        await stopSpectrum(d);
+      } catch {
+        // Closing the interface below remains the final cleanup path.
+      }
+    }
+    if (d?.opened && this.liveModeActive) {
+      try {
+        await exitLiveMode(d);
+      } catch {
+        // Closing the interface below remains the final cleanup path.
+      }
+    }
     this.device = null;
     this.deviceCapacity = null;
     this.capacityError = null;
     this.preparedTransferBytes = null;
+    this.spectrumActive = false;
+    this.spectrumSequence = 0;
+    this.liveModeActive = false;
     await closeDevice(d);
   }
 
@@ -224,6 +249,76 @@ export class V1ProWebTransfer {
 
   async setBootWebsiteConfig(enabled, url) {
     return this.runDisplayControl((device) => setBootWebsiteConfig(device, enabled, url));
+  }
+
+  async startMusicSpectrum(heights = new Array(SPECTRUM_BANDS).fill(0)) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "请先连接设备。");
+    }
+    if (this.busy) {
+      throw new V1ProUsbError("busy", "当前有设备任务正在进行，请稍后重试。");
+    }
+    this.spectrumSequence = 0;
+    await sendSpectrumFrame(this.device, heights, {
+      start: true,
+      sequence: this.spectrumSequence,
+    });
+    this.spectrumActive = true;
+    this.spectrumSequence = (this.spectrumSequence + 1) & 0xff;
+  }
+
+  async sendMusicSpectrumFrame(heights) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "设备已断开。");
+    }
+    if (!this.spectrumActive) {
+      await this.startMusicSpectrum(heights);
+      return;
+    }
+    await sendSpectrumFrame(this.device, heights, {
+      start: false,
+      sequence: this.spectrumSequence,
+    });
+    this.spectrumSequence = (this.spectrumSequence + 1) & 0xff;
+  }
+
+  async stopMusicSpectrum() {
+    const device = this.device;
+    this.spectrumActive = false;
+    this.spectrumSequence = 0;
+    if (device?.opened) {
+      await stopSpectrum(device);
+    }
+  }
+
+  async startLiveFrame(pixels) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "请先连接设备。");
+    }
+    if (this.busy || this.spectrumActive) {
+      throw new V1ProUsbError("busy", "当前有设备任务正在进行，请先停止后重试。");
+    }
+    await sendLiveRgb565(this.device, pixels);
+    this.liveModeActive = true;
+  }
+
+  async sendLiveFrame(pixels) {
+    if (!this.device || !this.device.opened) {
+      throw new V1ProUsbError("not_connected", "设备已断开。");
+    }
+    if (!this.liveModeActive) {
+      await this.startLiveFrame(pixels);
+      return;
+    }
+    await sendLiveRgb565(this.device, pixels);
+  }
+
+  async stopLiveMode() {
+    const device = this.device;
+    this.liveModeActive = false;
+    if (device?.opened) {
+      await exitLiveMode(device);
+    }
   }
 
   async predictVideoUrl(url, opts = {}) {

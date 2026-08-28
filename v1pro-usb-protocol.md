@@ -189,6 +189,29 @@ A5 5A 01 <total_u32_le> [payload...]
 | CAP | `A5 5A 0A 00` | 能力查询 → IN: `AUTH,2,cap,hmac-sha256-v1` |
 | SIGN | `A5 5A 0A 02` + 32B challenge | 签名 → IN: 34B 二进制块（`0xAB` 头 + 32B HMAC） |
 
+### 4.6 实时音乐频谱 `SPECTRUM` — `CMD = 0x0E`
+
+频谱由 Host 进行 FFT 分析，设备只接收 32 个柱状高度并由 MCU 绘制，不写入外置 Flash。频谱帧不返回 ACK，Host 应只保留最新帧，默认按约 30fps 发送。
+
+| 子命令 | 格式 | 说明 |
+|--------|------|------|
+| STOP `0x00` | `A5 5A 0E 00` | 退出频谱并恢复已存储动画 |
+| START `0x01` | `A5 5A 0E 01 <seq> 20 <32B heights>` | 进入频谱并提交首帧 |
+| FRAME `0x02` | `A5 5A 0E 02 <seq> 20 <32B heights>` | 提交后续频谱帧 |
+
+其中 `seq` 为循环递增的 `uint8`；高度范围为 `0..140`，每个频段占 1 字节。完整 START/FRAME 包固定为 38 字节。
+
+### 4.7 实时画面 `LIVE` — `CMD = 0x0B`
+
+网页歌词模式复用 GUI 的 LIVE 通道，不擦除也不写入外置 Flash。
+
+| 操作 | 格式 | 应答 |
+|------|------|------|
+| 全屏画面 | `A5 5A 0B <108800:u32le> 00 <320×170 RGB565>` | `LIVE,ok` |
+| 退出实时模式 | `A5 5A 0B 00 00 00 00 00` | `LIVE,exit` |
+
+Host 必须等待当前帧应答后再发送下一帧；USB 忙时丢弃中间 Canvas 帧，禁止堆积实时画面。
+
 ---
 
 ## 5. GFM1 载荷格式
@@ -321,6 +344,11 @@ Host:  A5 5A 08 FF 255      → Dev: DSP,255
 #define USBDL_DISPLAY_SUB_BRIGHTNESS 0xFF
 #define USBDL_CMD_PING    0x09
 #define USBDL_CMD_AUTH    0x0A   // 见 v1pro-device-auth-spec.md
+#define USBDL_CMD_LIVE    0x0B
+#define USBDL_CMD_SPECTRUM 0x0E
+#define USBDL_SPECTRUM_SUB_STOP  0x00
+#define USBDL_SPECTRUM_SUB_START 0x01
+#define USBDL_SPECTRUM_SUB_FRAME 0x02
 
 #define ANIM_MAGIC    "GFM1"
 #define ANIM_VERSION  1

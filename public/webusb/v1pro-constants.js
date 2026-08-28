@@ -30,9 +30,16 @@ export const USBDL_DISPLAY_SUB_ROTATE = 0xfe;
 export const USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF = 0xfd;
 export const USBDL_DISPLAY_SUB_QUERY = 0xfc;
 export const USBDL_CMD_PING = 0x09;
+export const USBDL_CMD_LIVE = 0x0b;
 export const USBDL_CMD_FW = 0x0c;
 export const USBDL_FW_SUB_INFO = 0x01;
 export const USBDL_CMD_URL = 0x0d;
+export const USBDL_CMD_SPECTRUM = 0x0e;
+export const SPECTRUM_SUB_STOP = 0x00;
+export const SPECTRUM_SUB_START = 0x01;
+export const SPECTRUM_SUB_FRAME = 0x02;
+export const SPECTRUM_BANDS = 32;
+export const SPECTRUM_MAX_HEIGHT = 140;
 export const USBDL_URL_SUB_COMMIT = 0xfa;
 export const USBDL_URL_SUB_CHUNK = 0xfb;
 export const USBDL_URL_SUB_QUERY = 0xfc;
@@ -70,7 +77,7 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.31";
+export const WEBUSB_TRANSFER_VERSION = "1.2.33";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
 export const PREFETCH_CHUNKS_BEFORE_START = 6;

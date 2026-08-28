@@ -13,11 +13,18 @@ import {
   USBDL_CMD_DISPLAY,
   USBDL_CMD_JEDEC,
   USBDL_CMD_PING,
+  USBDL_CMD_LIVE,
   USBDL_CMD_START,
   USBDL_CMD_START_COMPRESSED,
   USBDL_CMD_FW,
   USBDL_FW_SUB_INFO,
   USBDL_CMD_URL,
+  USBDL_CMD_SPECTRUM,
+  SPECTRUM_BANDS,
+  SPECTRUM_MAX_HEIGHT,
+  SPECTRUM_SUB_FRAME,
+  SPECTRUM_SUB_START,
+  SPECTRUM_SUB_STOP,
   USBDL_DISPLAY_SUB_BRIGHTNESS,
   USBDL_DISPLAY_SUB_FOLLOW_SCREEN_OFF,
   USBDL_DISPLAY_SUB_QUERY,
@@ -32,12 +39,12 @@ import {
   USBDL_URL_SUB_WRITE,
   USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.31";
+} from "./v1pro-constants.js?v=1.2.33";
 import {
   prepareTransportPayload,
   TRANSPORT_BLOCK_SIZE,
   TRANSPORT_VERSION,
-} from "./v1pro-transport-codec.js?v=1.2.31";
+} from "./v1pro-transport-codec.js?v=1.2.33";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -48,6 +55,7 @@ const PROBE_POLL_TIMEOUT_MS = 4000;
 const JEDEC_PROBE_TIMEOUT_MS = 3000;
 const DISPLAY_COMMAND_TIMEOUT_MS = 2000;
 const FIRMWARE_INFO_TIMEOUT_MS = 1800;
+const LIVE_COMMAND_TIMEOUT_MS = 4000;
 const MIN_COMPRESSED_TRANSPORT_VERSION_WORD = 0x00002300; // V0.0.35
 
 /**
@@ -461,6 +469,116 @@ export async function bulkIn(device, length = 64) {
     if (err instanceof V1ProUsbError) throw err;
     throw new V1ProUsbError("transfer_in_failed", formatUsbOpenHint(err), err);
   }
+}
+
+/**
+ * Build the low-bandwidth 32-band packet rendered directly by V1PRO firmware.
+ * @param {readonly number[]} heights
+ * @param {{ start?: boolean, sequence?: number }} [opts]
+ */
+export function buildSpectrumPacket(heights, opts = {}) {
+  if (!Array.isArray(heights) && !(heights instanceof Uint8Array)) {
+    throw new V1ProUsbError("spectrum_data_invalid", "音乐频谱数据格式不正确。");
+  }
+  if (heights.length !== SPECTRUM_BANDS) {
+    throw new V1ProUsbError(
+      "spectrum_data_invalid",
+      `音乐频谱需要 ${SPECTRUM_BANDS} 个频段，当前为 ${heights.length} 个。`
+    );
+  }
+  const packet = new Uint8Array(6 + SPECTRUM_BANDS);
+  packet[0] = USBDL_MAGIC0;
+  packet[1] = USBDL_MAGIC1;
+  packet[2] = USBDL_CMD_SPECTRUM;
+  packet[3] = opts.start ? SPECTRUM_SUB_START : SPECTRUM_SUB_FRAME;
+  packet[4] = Math.max(0, Math.round(Number(opts.sequence) || 0)) & 0xff;
+  packet[5] = SPECTRUM_BANDS;
+  for (let index = 0; index < SPECTRUM_BANDS; index += 1) {
+    packet[6 + index] = Math.max(
+      0,
+      Math.min(SPECTRUM_MAX_HEIGHT, Math.round(Number(heights[index]) || 0))
+    );
+  }
+  return packet;
+}
+
+/** Send one spectrum frame. Firmware intentionally does not ACK these frames. */
+export async function sendSpectrumFrame(device, heights, opts = {}) {
+  requireOpenDisplayDevice(device);
+  const packet = buildSpectrumPacket(heights, opts);
+  await bulkOut(device, packet, { timeoutMs: 1000, retries: 2 });
+}
+
+/** Exit MCU spectrum mode and return to the stored animation. */
+export async function stopSpectrum(device) {
+  requireOpenDisplayDevice(device);
+  await bulkOut(
+    device,
+    new Uint8Array([
+      USBDL_MAGIC0,
+      USBDL_MAGIC1,
+      USBDL_CMD_SPECTRUM,
+      SPECTRUM_SUB_STOP,
+    ]),
+    { timeoutMs: 1000, retries: 2 }
+  );
+}
+
+/**
+ * Build one firmware-compatible full-screen LIVE packet.
+ * Layout: A5 5A 0B + payload length (u32 LE) + mode 00 + RGB565 bytes.
+ * @param {Uint8Array} pixels
+ */
+export function buildLiveFramePacket(pixels) {
+  if (!(pixels instanceof Uint8Array) || pixels.byteLength !== FRAME_PIXEL_BYTES) {
+    throw new V1ProUsbError(
+      "live_frame_invalid",
+      `LIVE 画面必须为 ${FRAME_PIXEL_BYTES} 字节 RGB565 数据。`
+    );
+  }
+  const packet = new Uint8Array(8 + pixels.byteLength);
+  packet[0] = USBDL_MAGIC0;
+  packet[1] = USBDL_MAGIC1;
+  packet[2] = USBDL_CMD_LIVE;
+  new DataView(packet.buffer).setUint32(3, pixels.byteLength, true);
+  packet[7] = 0x00;
+  packet.set(pixels, 8);
+  return packet;
+}
+
+function parseLiveReply(reply) {
+  if (!reply) {
+    throw new V1ProUsbError("live_timeout", "设备未返回 LIVE 应答，请重新连接后重试。");
+  }
+  if (reply.startsWith("LIVE,ok") || reply.startsWith("LIVE,exit")) return reply;
+  if (reply.startsWith("LIVE,err,")) {
+    throw new V1ProUsbError("live_rejected", `设备拒绝实时画面：${reply.slice(9) || "unknown"}`);
+  }
+  throw new V1ProUsbError("live_reply_invalid", `设备返回了未知 LIVE 应答：${reply}`);
+}
+
+/** Push one 320x170 RGB565 frame without writing SPI flash. */
+export async function sendLiveRgb565(device, pixels) {
+  requireOpenDisplayDevice(device);
+  await bulkOut(device, buildLiveFramePacket(pixels), {
+    timeoutMs: LIVE_COMMAND_TIMEOUT_MS,
+    retries: 2,
+  });
+  return parseLiveReply(
+    await readTextReply(device, ["LIVE,"], LIVE_COMMAND_TIMEOUT_MS)
+  );
+}
+
+/** Leave LIVE hold and resume the animation stored in the device. */
+export async function exitLiveMode(device) {
+  requireOpenDisplayDevice(device);
+  const packet = new Uint8Array(8);
+  packet[0] = USBDL_MAGIC0;
+  packet[1] = USBDL_MAGIC1;
+  packet[2] = USBDL_CMD_LIVE;
+  // payload length remains zero; packet[7] is full-frame mode 0.
+  await bulkOut(device, packet, { timeoutMs: 2000, retries: 2 });
+  return parseLiveReply(await readTextReply(device, ["LIVE,"], 2500));
 }
 
 function requireOpenDisplayDevice(device) {

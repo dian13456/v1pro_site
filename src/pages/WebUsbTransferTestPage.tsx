@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { WebUsbDropZone } from "../components/WebUsbDropZone";
+import { WebLyricsModePanel } from "../components/WebLyricsModePanel";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
 import {
@@ -18,6 +19,12 @@ import {
 } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
 import { markBootWebsiteEntryHandled } from "../services/bootWebsiteService";
+import {
+  BrowserMusicSpectrumAnalyzer,
+  MUSIC_SPECTRUM_BANDS,
+  MUSIC_SPECTRUM_MAX_HEIGHT,
+  type MusicSpectrumSource,
+} from "../services/browserMusicSpectrumService";
 import type {
   V1ProDisplayStatus,
   V1ProTransferResult,
@@ -122,6 +129,21 @@ export default function WebUsbTransferTestPage() {
   const transferLockRef = useRef(false);
   const displayControlLockRef = useRef(false);
   const brightnessTimerRef = useRef<number | null>(null);
+  const spectrumAnalyzerRef = useRef<BrowserMusicSpectrumAnalyzer | null>(null);
+  const spectrumAudioRef = useRef<HTMLAudioElement | null>(null);
+  const spectrumAudioUrlRef = useRef("");
+  const spectrumActiveRef = useRef(false);
+  const spectrumSendBusyRef = useRef(false);
+  const spectrumSendPromiseRef = useRef<Promise<void> | null>(null);
+  const spectrumStoppingRef = useRef(false);
+  const spectrumGenerationRef = useRef(0);
+  const spectrumLatestHeightsRef = useRef<number[]>(new Array(MUSIC_SPECTRUM_BANDS).fill(0));
+  const spectrumPreviewAtRef = useRef(0);
+  const spectrumFrameCountRef = useRef(0);
+  const stopSpectrumHandlerRef = useRef<(message?: string) => Promise<void>>(async () => undefined);
+  const lyricsActiveRef = useRef(false);
+  const lyricsStartingRef = useRef(false);
+  const stopLyricsHandlerRef = useRef<(message?: string) => Promise<void>>(async () => undefined);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkVersion, setSdkVersion] = useState(WEBUSB_TRANSFER_VERSION);
@@ -154,6 +176,17 @@ export default function WebUsbTransferTestPage() {
   const [materialFitMode, setMaterialFitMode] = useState<MaterialFitMode>("contain");
   const [materialColor, setMaterialColor] = useState<MaterialColorProfile>("normal");
   const [materialPlaybackSpeed, setMaterialPlaybackSpeed] = useState(1);
+  const [spectrumSource, setSpectrumSource] = useState<MusicSpectrumSource>("system");
+  const [spectrumLocalFile, setSpectrumLocalFile] = useState<File | null>(null);
+  const [spectrumAudioUrl, setSpectrumAudioUrl] = useState("");
+  const [spectrumSensitivity, setSpectrumSensitivity] = useState(125);
+  const [spectrumSmoothing, setSpectrumSmoothing] = useState(62);
+  const [spectrumActive, setSpectrumActive] = useState(false);
+  const [spectrumStarting, setSpectrumStarting] = useState(false);
+  const [spectrumMessage, setSpectrumMessage] = useState("选择音频来源，连接设备后即可开启实时频谱。");
+  const [spectrumHeights, setSpectrumHeights] = useState<number[]>(new Array(MUSIC_SPECTRUM_BANDS).fill(0));
+  const [lyricsActive, setLyricsActive] = useState(false);
+  const [lyricsStarting, setLyricsStarting] = useState(false);
 
   const webUsbSupported = isWebUsbSupported();
 
@@ -196,8 +229,26 @@ export default function WebUsbTransferTestPage() {
         window.clearTimeout(brightnessTimerRef.current);
         brightnessTimerRef.current = null;
       }
-      void clientRef.current?.disconnect();
+      spectrumActiveRef.current = false;
+      lyricsActiveRef.current = false;
+      lyricsStartingRef.current = false;
+      spectrumGenerationRef.current += 1;
+      spectrumAnalyzerRef.current?.stop(true);
+      void spectrumAnalyzerRef.current?.dispose();
+      spectrumAnalyzerRef.current = null;
+      const client = clientRef.current;
+      const pendingSpectrumSend = spectrumSendPromiseRef.current;
       clientRef.current = null;
+      void (async () => {
+        await pendingSpectrumSend?.catch(() => undefined);
+        try { await client?.stopMusicSpectrum(); } catch { /* USB close is final cleanup. */ }
+        try { await client?.stopLiveMode(); } catch { /* USB close is final cleanup. */ }
+        await client?.disconnect();
+      })();
+      if (spectrumAudioUrlRef.current) {
+        URL.revokeObjectURL(spectrumAudioUrlRef.current);
+        spectrumAudioUrlRef.current = "";
+      }
     };
   }, [refreshAuthorizedDevices]);
 
@@ -224,6 +275,220 @@ export default function WebUsbTransferTestPage() {
     }
     return clientRef.current;
   }, []);
+
+  const handleLyricsModeStateChange = useCallback((active: boolean, starting: boolean) => {
+    lyricsActiveRef.current = active;
+    lyricsStartingRef.current = starting;
+    setLyricsActive(active);
+    setLyricsStarting(starting);
+  }, []);
+
+  const acquireLyricsClient = useCallback(async (): Promise<V1ProWebTransferClient> => {
+    if (spectrumActiveRef.current || transferLockRef.current || displayControlLockRef.current) {
+      throw new Error("当前有其他设备任务正在运行，请先停止后重试。");
+    }
+    const selectedDevice = authorizedDevices.find(
+      (device) => deviceKey(device) === selectedDeviceKey,
+    );
+    if (!selectedDevice) throw new Error("请先从设备列表选择对应 SN 的 V1PRO。");
+    const client = await ensureClient();
+    if (!client.connected) await client.connect({ device: selectedDevice });
+    setConnected(true);
+    setBusy(false);
+    setStatusText(`已连接：${deviceLabel(client)}`);
+    setStatusKind("ok");
+    if (client.device) setSelectedDeviceKey(deviceKey(client.device as USBDevice));
+    return client;
+  }, [authorizedDevices, ensureClient, selectedDeviceKey]);
+
+  const releaseLyricsClient = useCallback(async (client: V1ProWebTransferClient) => {
+    if (clientRef.current === client) clientRef.current = null;
+    await client.disconnect();
+    setConnected(false);
+    setBusy(false);
+    setStatusText("歌词模式已停止，设备句柄已释放");
+    setStatusKind("idle");
+    void refreshAuthorizedDevices();
+  }, [refreshAuthorizedDevices]);
+
+  const stopMusicSpectrum = useCallback(async (
+    message = "音乐频谱已停止，USB 已释放，可打开本地 GUI。",
+  ) => {
+    if (spectrumStoppingRef.current) return;
+    spectrumStoppingRef.current = true;
+    spectrumGenerationRef.current += 1;
+    spectrumActiveRef.current = false;
+    spectrumAnalyzerRef.current?.stop(true);
+    setSpectrumActive(false);
+    setSpectrumStarting(false);
+    setSpectrumHeights(new Array(MUSIC_SPECTRUM_BANDS).fill(0));
+    const client = clientRef.current;
+    clientRef.current = null;
+    let stopError = "";
+    try {
+      await spectrumSendPromiseRef.current?.catch(() => undefined);
+      spectrumSendPromiseRef.current = null;
+      spectrumSendBusyRef.current = false;
+      await client?.stopMusicSpectrum();
+    } catch (err) {
+      stopError = formatError(err);
+    } finally {
+      await client?.disconnect();
+      setConnected(false);
+      setBusy(false);
+      spectrumStoppingRef.current = false;
+      setSpectrumMessage(stopError ? `${message}（停止命令：${stopError}）` : message);
+      void refreshAuthorizedDevices();
+    }
+  }, [refreshAuthorizedDevices]);
+
+  useEffect(() => {
+    stopSpectrumHandlerRef.current = stopMusicSpectrum;
+  }, [stopMusicSpectrum]);
+
+  const submitSpectrumFrame = useCallback((heights: readonly number[], levels: readonly number[]) => {
+    spectrumLatestHeightsRef.current = Array.from(heights);
+    const now = performance.now();
+    if (now - spectrumPreviewAtRef.current >= 66) {
+      spectrumPreviewAtRef.current = now;
+      setSpectrumHeights(Array.from(heights));
+    }
+    if (!spectrumActiveRef.current || spectrumSendBusyRef.current) return;
+    const client = clientRef.current;
+    if (!client?.connected) return;
+    spectrumSendBusyRef.current = true;
+    const pending = client.sendMusicSpectrumFrame(heights);
+    spectrumSendPromiseRef.current = pending;
+    void pending
+      .then(() => {
+        spectrumFrameCountRef.current += 1;
+        if (spectrumFrameCountRef.current % 15 === 0) {
+          const peak = Math.round(Math.max(0, ...levels) * 100);
+          setSpectrumMessage(`实时频谱运行中 · 30 fps · 峰值 ${peak}%`);
+        }
+      })
+      .catch((err) => {
+        setSpectrumMessage(`音乐频谱 USB 失败：${formatError(err)}`);
+        void stopSpectrumHandlerRef.current("音乐频谱因 USB 通信失败而停止，句柄已释放。");
+      })
+      .finally(() => {
+        if (spectrumSendPromiseRef.current === pending) {
+          spectrumSendPromiseRef.current = null;
+        }
+        spectrumSendBusyRef.current = false;
+      });
+  }, []);
+
+  const handleStartMusicSpectrum = async () => {
+    if (
+      spectrumStarting
+      || spectrumActiveRef.current
+      || lyricsActiveRef.current
+      || lyricsStartingRef.current
+      || transferLockRef.current
+      || displayControlLockRef.current
+    ) return;
+    const selectedDevice = authorizedDevices.find(
+      (device) => deviceKey(device) === selectedDeviceKey,
+    );
+    if (!selectedDevice) {
+      setSpectrumMessage("请先从设备列表选择对应 SN 的 V1PRO。");
+      return;
+    }
+    if (spectrumSource === "local" && !spectrumLocalFile) {
+      setSpectrumMessage("请先选择本地音乐文件。");
+      return;
+    }
+
+    setSpectrumStarting(true);
+    const generation = spectrumGenerationRef.current + 1;
+    spectrumGenerationRef.current = generation;
+    setSpectrumMessage(
+      spectrumSource === "system"
+        ? "请选择要共享的屏幕，并勾选“共享系统音频”…"
+        : spectrumSource === "microphone"
+          ? "正在请求麦克风权限…"
+          : "正在启动本地音乐与频谱分析…",
+    );
+    const analyzer = spectrumAnalyzerRef.current ?? new BrowserMusicSpectrumAnalyzer();
+    spectrumAnalyzerRef.current = analyzer;
+    try {
+      // Capture first so getDisplayMedia remains directly associated with the
+      // user's button click; WebUSB is claimed only after capture succeeds.
+      await analyzer.start({
+        source: spectrumSource,
+        audioElement: spectrumAudioRef.current,
+        sensitivity: spectrumSensitivity / 100,
+        smoothing: spectrumSmoothing / 100,
+        frameRate: 30,
+        onFrame: submitSpectrumFrame,
+        onEnded: (reason) => {
+          const message = reason === "audio-ended"
+            ? "本地音乐播放结束，频谱已停止并释放 USB。"
+            : spectrumSource === "microphone"
+              ? "麦克风采集已结束，频谱已停止并释放 USB。"
+              : "系统音频共享已结束，频谱已停止并释放 USB。";
+          void stopSpectrumHandlerRef.current(message);
+        },
+      });
+      if (spectrumGenerationRef.current !== generation) {
+        throw new Error("音乐频谱启动已取消");
+      }
+
+      setSpectrumMessage("音频采集已启动，正在连接设备…");
+      const client = await ensureClient();
+      if (!client.connected) {
+        await client.connect({ device: selectedDevice });
+      }
+      if (spectrumGenerationRef.current !== generation) {
+        throw new Error("音乐频谱启动已取消");
+      }
+      setConnected(true);
+      setBusy(false);
+      if (client.device) setSelectedDeviceKey(deviceKey(client.device as USBDevice));
+      spectrumFrameCountRef.current = 0;
+      await client.startMusicSpectrum(spectrumLatestHeightsRef.current);
+      if (spectrumGenerationRef.current !== generation) {
+        throw new Error("音乐频谱启动已取消");
+      }
+      spectrumActiveRef.current = true;
+      setSpectrumActive(true);
+      setStatusText(`已连接：${deviceLabel(client)}`);
+      setStatusKind("ok");
+      setSpectrumMessage("实时频谱已启动 · 32 段 · 30 fps");
+    } catch (err) {
+      analyzer.stop(true);
+      spectrumActiveRef.current = false;
+      const client = clientRef.current;
+      clientRef.current = null;
+      await client?.disconnect();
+      setConnected(false);
+      setBusy(false);
+      if (spectrumGenerationRef.current === generation) {
+        setSpectrumMessage(formatError(err));
+      }
+    } finally {
+      setSpectrumStarting(false);
+      void refreshAuthorizedDevices();
+    }
+  };
+
+  const handleSpectrumLocalFile = (file: File | null) => {
+    if (spectrumAudioUrlRef.current) {
+      URL.revokeObjectURL(spectrumAudioUrlRef.current);
+      spectrumAudioUrlRef.current = "";
+    }
+    setSpectrumLocalFile(file);
+    if (!file) {
+      setSpectrumAudioUrl("");
+      setSpectrumMessage("请选择本地音乐文件。");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    spectrumAudioUrlRef.current = url;
+    setSpectrumAudioUrl(url);
+    setSpectrumMessage(`已选择：${file.name}，点击“开启频谱”后播放。`);
+  };
 
   const applyDisplayStatus = useCallback((status: V1ProDisplayStatus) => {
     const percent = Math.round((Math.max(0, Math.min(255, status.brightness)) * 100) / 255);
@@ -279,7 +544,14 @@ export default function WebUsbTransferTestPage() {
       setDisplayControlMessage("请先连接设备后再调整显示设置。");
       return;
     }
-    if (displayControlLockRef.current || transferLockRef.current) return;
+    if (
+      displayControlLockRef.current
+      || transferLockRef.current
+      || spectrumActiveRef.current
+      || spectrumStarting
+      || lyricsActiveRef.current
+      || lyricsStartingRef.current
+    ) return;
     displayControlLockRef.current = true;
     setDisplayControlBusy(true);
     setDisplayControlMessage("正在写入设备设置…");
@@ -294,10 +566,10 @@ export default function WebUsbTransferTestPage() {
       setDisplayControlBusy(false);
       refreshConnectionState();
     }
-  }, [refreshConnectionState]);
+  }, [refreshConnectionState, spectrumStarting]);
 
   const handleConnect = async () => {
-    if (!webUsbSupported) return;
+    if (!webUsbSupported || spectrumActiveRef.current || spectrumStarting || lyricsActiveRef.current || lyricsStartingRef.current) return;
     setStatusText("正在请求设备…");
     setStatusKind("idle");
     setProgress(0);
@@ -335,7 +607,13 @@ export default function WebUsbTransferTestPage() {
       window.clearTimeout(brightnessTimerRef.current);
       brightnessTimerRef.current = null;
     }
-    await clientRef.current?.disconnect();
+    if (lyricsActiveRef.current || lyricsStartingRef.current) {
+      await stopLyricsHandlerRef.current("已断开设备并停止歌词模式，USB 已释放。");
+    } else if (spectrumActiveRef.current || spectrumStarting) {
+      await stopMusicSpectrum("已断开设备并停止音乐频谱，USB 已释放。");
+    } else {
+      await clientRef.current?.disconnect();
+    }
     clientRef.current = null;
     setConnected(false);
     setBusy(false);
@@ -351,7 +629,7 @@ export default function WebUsbTransferTestPage() {
   };
 
   const handleReadCapacity = async () => {
-    if (!webUsbSupported || !sdkReady || busy || displayControlLockRef.current) return;
+    if (!webUsbSupported || !sdkReady || busy || displayControlLockRef.current || spectrumActiveRef.current || spectrumStarting || lyricsActiveRef.current || lyricsStartingRef.current) return;
     setStatusKind("idle");
     setProgress(0);
     setLastResult(null);
@@ -385,7 +663,7 @@ export default function WebUsbTransferTestPage() {
 
   const handleRefreshDeviceStatus = async () => {
     const client = clientRef.current;
-    if (!client?.connected || displayControlLockRef.current || transferLockRef.current) return;
+    if (!client?.connected || displayControlLockRef.current || transferLockRef.current || spectrumActiveRef.current || spectrumStarting || lyricsActiveRef.current || lyricsStartingRef.current) return;
     displayControlLockRef.current = true;
     setDisplayControlBusy(true);
     try {
@@ -436,7 +714,7 @@ export default function WebUsbTransferTestPage() {
       setBootWebsiteMessage("请先连接设备后再设置上电打开网页。");
       return;
     }
-    if (displayControlLockRef.current || transferLockRef.current) return;
+    if (displayControlLockRef.current || transferLockRef.current || spectrumActiveRef.current || spectrumStarting || lyricsActiveRef.current || lyricsStartingRef.current) return;
     const enabled = !bootWebsiteEnabled;
     const url = bootWebsiteUrl.trim();
     if (enabled && !url) {
@@ -467,7 +745,7 @@ export default function WebUsbTransferTestPage() {
 
   const runTransfer = useCallback(
     async (file: File, options: { connectIfNeeded?: boolean } = {}) => {
-      if (!webUsbSupported || !sdkReady || transferLockRef.current || displayControlLockRef.current) return;
+      if (!webUsbSupported || !sdkReady || transferLockRef.current || displayControlLockRef.current || spectrumActiveRef.current || lyricsActiveRef.current || lyricsStartingRef.current) return;
       transferLockRef.current = true;
       setSelectedFile(file);
       setLastResult(null);
@@ -662,11 +940,11 @@ export default function WebUsbTransferTestPage() {
         ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]"
         : "border-[#e6e9f2] bg-[#fafbfe] text-[#6f7890]";
   const displayControlsDisabled =
-    !connected || busy || displayControlBusy || displayControlSupported === false;
+    !connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting || displayControlSupported === false;
   const bootWebsiteControlsDisabled =
-    !connected || busy || displayControlBusy || bootWebsiteSupported === false;
+    !connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting || bootWebsiteSupported === false;
   const selectClassName = "mt-1.5 h-10 w-full rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:opacity-50";
-  const advancedSettingsDisabled = busy || displayControlBusy;
+  const advancedSettingsDisabled = busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting;
 
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
@@ -706,7 +984,7 @@ export default function WebUsbTransferTestPage() {
               <select
                 className="mt-2 w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-2.5 text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-60"
                 value={selectedDeviceKey}
-                disabled={busy || connected}
+                disabled={busy || connected || spectrumStarting || lyricsStarting}
                 onChange={(event) => setSelectedDeviceKey(event.target.value)}
               >
                 {authorizedDevices.length === 0 ? <option value="">尚无已授权设备，请点击连接设备授权</option> : null}
@@ -724,10 +1002,10 @@ export default function WebUsbTransferTestPage() {
             {lastResult?.note ? <p className="mt-2 text-xs text-amber-600">提示：{lastResult.note}</p> : null}
 
             <div className="mt-5 flex flex-wrap gap-2.5">
-              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy || displayControlBusy} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
-              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
+              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
+              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
               <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">断开</button>
-              {selectedFile && connected && !busy && !displayControlBusy ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
+              {selectedFile && connected && !busy && !displayControlBusy && !spectrumActive && !spectrumStarting && !lyricsActive && !lyricsStarting ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
             </div>
           </section>
 
@@ -859,7 +1137,7 @@ export default function WebUsbTransferTestPage() {
             </div>
             <button
               type="button"
-              disabled={!connected || busy || displayControlBusy}
+              disabled={!connected || busy || displayControlBusy || spectrumActive || spectrumStarting}
               onClick={() => void handleRefreshDeviceStatus()}
               className="mt-3 text-[11.5px] font-semibold text-[#7c6cf0] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -867,9 +1145,172 @@ export default function WebUsbTransferTestPage() {
             </button>
           </section>
 
+          <section className="rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6 lg:col-span-2">
+            <div className="flex items-start gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e7f8ff] text-sm font-extrabold text-[#129bc4]">3</span>
+              <div>
+                <h2 className="text-[17px] font-extrabold">实时音乐频谱</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">32 段频率分析，设备端实时绘制；停止后自动释放 USB</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+              <div className="rounded-[16px] border border-[#dce9f4] bg-gradient-to-b from-[#f8fcff] to-[#f6f8ff] p-4">
+                <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[#7f8ba3]">音频来源</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {([
+                    ["system", "系统声音", "推荐"],
+                    ["local", "本地音乐", "无上传"],
+                    ["microphone", "麦克风", "兼容"],
+                  ] as const).map(([value, label, tip]) => {
+                    const active = spectrumSource === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={spectrumActive || spectrumStarting || lyricsActive || lyricsStarting}
+                        onClick={() => {
+                          setSpectrumSource(value);
+                          setSpectrumMessage(
+                            value === "system"
+                              ? "开启时请选择屏幕，并勾选“共享系统音频”。"
+                              : value === "local"
+                                ? "本地音乐只在浏览器播放，不会上传服务器。"
+                                : "麦克风模式适合浏览器无法共享系统声音的电脑。",
+                          );
+                        }}
+                        className={`rounded-[11px] border px-2 py-2.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${active ? "border-[#25a9d6] bg-white text-[#168fb7] shadow-[0_4px_12px_rgba(18,155,196,.12)]" : "border-[#e1e7f0] bg-white/60 text-[#69728a] hover:border-[#85cde4]"}`}
+                      >
+                        <span className="block text-[11.5px] font-extrabold">{label}</span>
+                        <span className="mt-0.5 block text-[9.5px] opacity-70">{tip}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {spectrumSource === "local" ? (
+                  <div className="mt-3 rounded-[12px] border border-[#dfe7f2] bg-white p-3">
+                    <label className="block cursor-pointer rounded-[9px] border border-dashed border-[#9acfe0] bg-[#f5fcff] px-3 py-2.5 text-center text-[11.5px] font-bold text-[#168fb7] transition hover:bg-[#edfaff]">
+                      {spectrumLocalFile ? "更换本地音乐" : "选择本地音乐"}
+                      <input
+                        type="file"
+                        accept="audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg"
+                        disabled={spectrumActive || spectrumStarting || lyricsActive || lyricsStarting}
+                        className="sr-only"
+                        onChange={(event) => handleSpectrumLocalFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    <p className="mt-2 truncate text-[10.5px] text-[#7f8ba3]">{spectrumLocalFile?.name ?? "尚未选择音乐"}</p>
+                    {spectrumAudioUrl ? (
+                      <audio
+                        ref={spectrumAudioRef}
+                        src={spectrumAudioUrl}
+                        controls
+                        preload="metadata"
+                        className="mt-2 h-9 w-full"
+                      />
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-3 rounded-[10px] bg-white/75 px-3 py-2 text-[10.5px] leading-5 text-[#7f8ba3]">
+                    {spectrumSource === "system"
+                      ? "可跟随网易云、汽水音乐、QQ 音乐等软件。浏览器弹窗中必须勾选共享音频。"
+                      : "使用电脑麦克风采集环境声音，建议关闭降噪并让音乐靠近麦克风。"}
+                  </p>
+                )}
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <label className="text-[10.5px] font-bold text-[#69728a]">
+                    灵敏度 · {spectrumSensitivity}%
+                    <input
+                      type="range"
+                      min={50}
+                      max={250}
+                      step={5}
+                      value={spectrumSensitivity}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setSpectrumSensitivity(value);
+                        spectrumAnalyzerRef.current?.setSensitivity(value / 100);
+                      }}
+                      className="mt-2 h-1.5 w-full cursor-pointer accent-[#19a6d1]"
+                    />
+                  </label>
+                  <label className="text-[10.5px] font-bold text-[#69728a]">
+                    平滑度 · {spectrumSmoothing}%
+                    <input
+                      type="range"
+                      min={0}
+                      max={95}
+                      step={1}
+                      value={spectrumSmoothing}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setSpectrumSmoothing(value);
+                        spectrumAnalyzerRef.current?.setSmoothing(value / 100);
+                      }}
+                      className="mt-2 h-1.5 w-full cursor-pointer accent-[#7c6cf0]"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex min-h-[260px] flex-col overflow-hidden rounded-[16px] border border-[#dbe7f1] bg-[radial-gradient(circle_at_top,#173c5a_0%,#0f2238_45%,#091522_100%)] p-4 text-white shadow-inner sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[.2em] text-cyan-300">V1PRO Spectrum</p>
+                    <p className="mt-1 text-sm font-extrabold">实时频谱预览</p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-[10.5px] font-bold ${spectrumActive ? "border-emerald-300/50 bg-emerald-400/15 text-emerald-200" : "border-white/15 bg-white/[.06] text-slate-300"}`}>
+                    {spectrumStarting ? "启动中" : spectrumActive ? "运行中" : "待机"}
+                  </span>
+                </div>
+                <div className="mt-5 flex min-h-[142px] flex-1 items-end gap-[3px] rounded-[12px] border border-white/[.08] bg-black/20 px-3 pb-3 pt-5 sm:gap-1">
+                  {spectrumHeights.map((height, index) => (
+                    <span
+                      key={index}
+                      className="min-w-0 flex-1 rounded-t-full bg-gradient-to-t from-[#29e586] via-[#18c9dd] to-[#7c7cff] shadow-[0_0_10px_rgba(24,201,221,.22)] transition-[height] duration-75"
+                      style={{ height: `${Math.max(2, (height / MUSIC_SPECTRUM_MAX_HEIGHT) * 100)}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className={`min-h-[1.25rem] text-[11px] leading-5 ${/失败|不支持|没有获取/.test(spectrumMessage) ? "text-rose-300" : "text-slate-300"}`}>{spectrumMessage}</p>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting}
+                      onClick={() => void handleStartMusicSpectrum()}
+                      className="rounded-full bg-gradient-to-r from-[#18bada] to-[#746cf2] px-5 py-2.5 text-[12px] font-bold text-white shadow-[0_5px_16px_rgba(24,186,218,.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {spectrumStarting ? "正在启动…" : "开启频谱"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!spectrumActive && !spectrumStarting}
+                      onClick={() => void stopMusicSpectrum()}
+                      className="rounded-full border border-white/20 bg-white/[.08] px-5 py-2.5 text-[12px] font-bold text-white transition hover:bg-white/[.14] disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      停止并释放
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <WebLyricsModePanel
+            disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy || spectrumActive || spectrumStarting}
+            hasSelectedDevice={Boolean(selectedDeviceKey)}
+            acquireClient={acquireLyricsClient}
+            releaseClient={releaseLyricsClient}
+            onModeStateChange={handleLyricsModeStateChange}
+            stopHandlerRef={stopLyricsHandlerRef}
+          />
+
           <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6 lg:col-span-2">
             <div className="flex items-start gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">3</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">5</span>
               <div>
                 <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
                 <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材，完成后自动释放 USB</p>
@@ -1006,7 +1447,7 @@ export default function WebUsbTransferTestPage() {
 
               <div className="flex min-w-0 flex-col justify-center lg:-mt-5">
                 <WebUsbDropZone
-                  disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || displayControlBusy}
+                   disabled={!webUsbSupported || !sdkReady || !selectedDeviceKey || displayControlBusy || spectrumActive || spectrumStarting}
                   busy={busy}
                   connected={connected}
                   selectedFileName={selectedFile?.name ?? null}
