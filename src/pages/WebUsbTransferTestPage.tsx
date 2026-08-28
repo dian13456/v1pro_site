@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { WebUsbDropZone } from "../components/WebUsbDropZone";
+import { WebUsbAlbumComposer } from "../components/WebUsbAlbumComposer";
 import { WebLyricsModePanel } from "../components/WebLyricsModePanel";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { SiteFooter } from "../components/SiteFooter";
@@ -19,6 +20,10 @@ import {
 } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
 import { markBootWebsiteEntryHandled } from "../services/bootWebsiteService";
+import {
+  prepareLocalAlbumGfm1,
+  type LocalAlbumTransferItem,
+} from "../services/localAlbumGfm1Service";
 import {
   BrowserMusicSpectrumAnalyzer,
   MUSIC_SPECTRUM_BANDS,
@@ -39,6 +44,7 @@ import {
 
 type StatusKind = "idle" | "ok" | "error";
 type MaterialTransferMode = "auto" | "image" | "gif" | "video";
+type MaterialWorkspaceMode = "single" | "album";
 type MaterialRotation = "auto" | 0 | 90 | 180 | 270;
 type MaterialFitMode = "fill" | "contain";
 type MaterialColorProfile = "normal" | "vivid" | "professional";
@@ -169,6 +175,8 @@ export default function WebUsbTransferTestPage() {
   const [bootWebsiteSupported, setBootWebsiteSupported] = useState<boolean | null>(null);
   const [bootWebsiteMessage, setBootWebsiteMessage] = useState("连接设备后自动读取上电打开网页设置。");
   const [materialTransferMode, setMaterialTransferMode] = useState<MaterialTransferMode>("auto");
+  const [materialWorkspaceMode, setMaterialWorkspaceMode] = useState<MaterialWorkspaceMode>("single");
+  const [deviceFrameCapacity, setDeviceFrameCapacity] = useState<number | null>(null);
   const [materialFpsSelection, setMaterialFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
   const materialFps = resolveVideoFps(materialFpsSelection);
   const [materialRotation, setMaterialRotation] = useState<MaterialRotation>("auto");
@@ -267,6 +275,9 @@ export default function WebUsbTransferTestPage() {
     const client = clientRef.current;
     setConnected(Boolean(client?.connected));
     setBusy(Boolean(client?.busy));
+    if (client?.deviceCapacity?.maxFrames) {
+      setDeviceFrameCapacity(client.deviceCapacity.maxFrames);
+    }
   }, []);
 
   const ensureClient = useCallback(async (): Promise<V1ProWebTransferClient> => {
@@ -589,6 +600,7 @@ export default function WebUsbTransferTestPage() {
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
       const capacityLabel = client.getCapacityLabel?.() ?? "";
+      if (client.deviceCapacity?.maxFrames) setDeviceFrameCapacity(client.deviceCapacity.maxFrames);
       setMetaText(
         capacityLabel
           ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（默认兼容 20/25/30fps，必要时自动倍速）。`
@@ -650,6 +662,7 @@ export default function WebUsbTransferTestPage() {
         return;
       }
       const label = client.getCapacityLabel?.() || `${capacity.maxFrames}帧`;
+      setDeviceFrameCapacity(capacity.maxFrames);
       setStatusText(`容量读取成功：${label}`);
       setStatusKind("ok");
       setMetaText(label);
@@ -800,6 +813,7 @@ export default function WebUsbTransferTestPage() {
         if (!capacity?.maxFrames) {
           throw new Error("无法读取设备容量，请重新连接设备后重试");
         }
+        setDeviceFrameCapacity(capacity.maxFrames);
         const rotationDeg = await resolveMaterialRotation(file, materialRotation);
         let transferSource: Blob = file;
         let preparedMedia: {
@@ -923,6 +937,108 @@ export default function WebUsbTransferTestPage() {
       materialTransferMode,
       refreshAuthorizedDevices,
       refreshConnectionState,
+      sdkReady,
+      selectedDeviceKey,
+      webUsbSupported,
+    ],
+  );
+
+  const runAlbumTransfer = useCallback(
+    async (items: LocalAlbumTransferItem[]) => {
+      if (
+        !webUsbSupported
+        || !sdkReady
+        || transferLockRef.current
+        || displayControlLockRef.current
+        || spectrumActiveRef.current
+        || lyricsActiveRef.current
+        || lyricsStartingRef.current
+      ) return;
+      if (!items.length) {
+        setStatusText("请先向相册添加素材");
+        setStatusKind("error");
+        return;
+      }
+
+      transferLockRef.current = true;
+      setBusy(true);
+      setSelectedFile(null);
+      setLastResult(null);
+      setStatusText("正在准备相册…");
+      setStatusKind("idle");
+      setMetaText(`相册已选择 ${items.length} 个素材，正在按播放顺序处理。`);
+      setProgress(0);
+
+      try {
+        const client = await ensureClient();
+        if (!client.connected) {
+          setStatusText("正在连接设备…");
+          const selectedDevice = authorizedDevices.find(
+            (device) => deviceKey(device) === selectedDeviceKey,
+          );
+          if (!selectedDevice) throw new Error("请先从设备列表中选择要同步相册的 V1PRO（SN）");
+          await client.connect({ device: selectedDevice });
+        }
+
+        const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
+        if (!capacity?.maxFrames) throw new Error("无法读取设备容量，请重新连接设备后重试");
+        setDeviceFrameCapacity(capacity.maxFrames);
+
+        const prepared = await prepareLocalAlbumGfm1(items, {
+          maxFrames: capacity.maxFrames,
+          fitMode: materialFitMode,
+          scalePercent: materialScale,
+          colorProfile: materialColor,
+          resolveRotation: (file) => resolveMaterialRotation(file, materialRotation),
+          onStatus: setStatusText,
+          onProgress: (ratio) => setProgress(Math.round(5 + ratio * 55)),
+        });
+
+        setStatusText("正在通过 USB 同步相册…");
+        const result = await client.transferFile(prepared.blob, {
+          fileName: "v1pro-local-album.gfm1",
+          mediaType: "image",
+          maxFrames: capacity.maxFrames,
+          pingFirst: false,
+          prebuiltGfm1: {
+            frameCount: prepared.frameCount,
+            fps: 20,
+            note: prepared.note,
+          },
+          onProgress: (info) => {
+            setStatusText(`正在同步相册… ${Math.round(info.ratio * 100)}%`);
+            setProgress(Math.round(60 + info.ratio * 40));
+          },
+        });
+
+        const message = `相册同步完成：${prepared.itemCount} 个素材 · ${result.frameCount} 张画面`;
+        setProgress(100);
+        setStatusText(message);
+        setStatusKind("ok");
+        setMetaText("设备已按清单顺序开始循环播放，相册素材仍保留在当前页面，可继续调整后重新同步。");
+        setLastResult({ ...result, note: prepared.note });
+      } catch (err) {
+        setStatusText(formatError(err));
+        setStatusKind("error");
+        setProgress(0);
+      } finally {
+        const client = clientRef.current;
+        clientRef.current = null;
+        await client?.disconnect();
+        transferLockRef.current = false;
+        setConnected(false);
+        setBusy(false);
+        void refreshAuthorizedDevices();
+      }
+    },
+    [
+      authorizedDevices,
+      ensureClient,
+      materialColor,
+      materialFitMode,
+      materialRotation,
+      materialScale,
+      refreshAuthorizedDevices,
       sdkReady,
       selectedDeviceKey,
       webUsbSupported,
@@ -1309,14 +1425,42 @@ export default function WebUsbTransferTestPage() {
           />
 
           <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6 lg:col-span-2">
-            <div className="flex items-start gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">5</span>
-              <div>
-                <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">拖入文件或点击区域选择本地素材，完成后自动释放 USB</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">5</span>
+                <div>
+                  <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
+                  <p className="mt-1 text-xs text-[#8a93a8]">
+                    {materialWorkspaceMode === "single"
+                      ? "拖入文件或点击区域选择本地素材，完成后自动释放 USB"
+                      : "一次拖入多个素材，调整顺序后同步为循环播放相册"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex rounded-[12px] border border-[#e2defe] bg-[#f7f6ff] p-1 text-xs font-bold text-[#7a849b]">
+                {([
+                  ["single", "单素材"],
+                  ["album", "相册模式"],
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting}
+                    onClick={() => setMaterialWorkspaceMode(mode)}
+                    className={`rounded-[9px] px-4 py-2 transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      materialWorkspaceMode === mode
+                        ? "bg-white text-[#7060ee] shadow-[0_3px_10px_rgba(83,70,180,.12)]"
+                        : "hover:text-[#7060ee]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="mt-5 grid flex-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+            {materialWorkspaceMode === "single" ? (
+              <>
+                <div className="mt-5 grid flex-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
               <aside className="rounded-[16px] border border-[#e2defe] bg-gradient-to-b from-[#faf9ff] to-[#f6f8ff] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1458,12 +1602,35 @@ export default function WebUsbTransferTestPage() {
                   }}
                 />
               </div>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
-              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
-              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${materialFps} fps` : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
-              <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
-            </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${materialFps} fps` : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
+                </div>
+              </>
+            ) : (
+              <WebUsbAlbumComposer
+                busy={busy}
+                canTransfer={Boolean(
+                  webUsbSupported
+                    && sdkReady
+                    && selectedDeviceKey
+                    && !displayControlBusy
+                    && !spectrumActive
+                    && !spectrumStarting
+                    && !lyricsActive
+                    && !lyricsStarting
+                )}
+                capacityFrames={deviceFrameCapacity}
+                onTransfer={runAlbumTransfer}
+                onNotice={(message, isError) => {
+                  setStatusText(message);
+                  setStatusKind(isError ? "error" : "idle");
+                  setProgress(0);
+                }}
+              />
+            )}
           </section>
         </div>
       </main>
