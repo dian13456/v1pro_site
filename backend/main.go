@@ -235,6 +235,21 @@ func (r *runtimeResourceMap) get(id string) (string, bool) {
 	return value, ok
 }
 
+func (r *runtimeResourceMap) remove(id string) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	r.mu.Lock()
+	delete(r.data, id)
+	if info, err := os.Stat(r.path); err == nil {
+		r.lastModTime = info.ModTime()
+	} else {
+		r.lastModTime = time.Now()
+	}
+	r.mu.Unlock()
+}
+
 func loadResourceMap(path string) (resourceMap, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -1777,6 +1792,73 @@ func main() {
 		})
 	})
 
+	deleteSigners := service.UploadDeleteSigners{
+		Image:      imageSigner,
+		Gif:        gifSigner,
+		Video:      videoSigner,
+		GifCover:   gifCoverSigner,
+		VideoCover: videoCoverSigner,
+	}
+	cleanupDeletedResource := func(resourceID string) []string {
+		resourceID = strings.TrimSpace(resourceID)
+		if resourceID == "" {
+			return nil
+		}
+		warnings := make([]string, 0)
+		resourceMapStore.remove(resourceID)
+		imageMapStore.remove(resourceID)
+		imageURLCacheMu.Lock()
+		clear(imageURLCache)
+		imageURLCacheMu.Unlock()
+
+		favoritesMu.Lock()
+		service.RemoveResourceFromAllFavorites(&favorites, resourceID)
+		if err := userDataRepo.SaveFavorites(favorites); err != nil {
+			warnings = append(warnings, "收藏记录清理失败")
+			log.Printf("warn: favorites cleanup after resource delete failed: %v", err)
+		}
+		favoritesMu.Unlock()
+
+		likesMu.Lock()
+		service.RemoveResourceFromAllLikes(&likes, resourceID)
+		if err := userDataRepo.SaveLikes(likes); err != nil {
+			warnings = append(warnings, "点赞记录清理失败")
+			log.Printf("warn: likes cleanup after resource delete failed: %v", err)
+		}
+		likesMu.Unlock()
+
+		downloadsMu.Lock()
+		service.RemoveResourceFromDownloads(&downloads, resourceID)
+		if err := userDataRepo.SaveDownloads(downloads); err != nil {
+			warnings = append(warnings, "下载统计清理失败")
+			log.Printf("warn: downloads cleanup after resource delete failed: %v", err)
+		}
+		downloadsMu.Unlock()
+
+		messagesMu.Lock()
+		service.RemoveResourceMessages(&messages, resourceID)
+		if err := userDataRepo.SaveMessages(messages); err != nil {
+			warnings = append(warnings, "评论清理失败")
+			log.Printf("warn: messages cleanup after resource delete failed: %v", err)
+		}
+		messagesMu.Unlock()
+
+		aiCreditsMu.Lock()
+		reloadCreditRewardStoresLocked()
+		creditLikeGrants.RemoveResource(resourceID)
+		if err := userDataRepo.SaveCreditLikeGrants(creditLikeGrants); err != nil {
+			warnings = append(warnings, "点赞积分授权清理失败")
+			log.Printf("warn: credit like grants cleanup after resource delete failed: %v", err)
+		}
+		aiCreditsMu.Unlock()
+
+		if err := userDataRepo.DeleteResourceInteractions(resourceID); err != nil {
+			warnings = append(warnings, "推荐行为记录清理失败")
+			log.Printf("warn: resource interactions cleanup after resource delete failed: %v", err)
+		}
+		return warnings
+	}
+
 	router.POST("/api/profile/uploads/delete", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
@@ -1792,14 +1874,6 @@ func main() {
 		}
 
 		kind := strings.TrimSpace(strings.ToLower(req.Kind))
-		deleteSigners := service.UploadDeleteSigners{
-			Image:      imageSigner,
-			Gif:        gifSigner,
-			Video:      videoSigner,
-			GifCover:   gifCoverSigner,
-			VideoCover: videoCoverSigner,
-		}
-
 		switch kind {
 		case "published":
 			resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(req.ResourceID), 10, 64)
@@ -1826,11 +1900,16 @@ func main() {
 				status := http.StatusBadRequest
 				if strings.Contains(err.Error(), "不存在") {
 					status = http.StatusNotFound
+				} else if strings.Contains(err.Error(), "无权") {
+					status = http.StatusForbidden
+				} else if strings.Contains(err.Error(), "COS") {
+					status = http.StatusBadGateway
 				}
 				c.JSON(status, gin.H{"success": false, "message": err.Error()})
 				return
 			}
 
+			cleanupWarnings := make([]string, 0)
 			if hasSnapshot {
 				imageReviewMu.Lock()
 				service.RemoveReviewEntriesForPublishedResource(
@@ -1843,29 +1922,19 @@ func main() {
 				)
 				if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
 					log.Printf("warn: cleanup review entries after published delete failed: %v", saveErr)
+					cleanupWarnings = append(cleanupWarnings, "审核记录清理失败")
 				}
 				imageReviewMu.Unlock()
 			}
-
-			favoritesMu.Lock()
-			service.RemoveResourceFromAllFavorites(&favorites, idKey)
-			if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
-				log.Printf("warn: favorites cleanup after published delete failed: %v", saveErr)
-			}
-			favoritesMu.Unlock()
-
-			likesMu.Lock()
-			service.RemoveResourceFromAllLikes(&likes, idKey)
-			if saveErr := userDataRepo.SaveLikes(likes); saveErr != nil {
-				log.Printf("warn: likes cleanup after published delete failed: %v", saveErr)
-			}
-			likesMu.Unlock()
+			cleanupWarnings = append(cleanupWarnings, cleanupDeletedResource(idKey)...)
 
 			c.JSON(http.StatusOK, gin.H{
-				"success":    true,
-				"message":    "素材已删除",
-				"kind":       kind,
-				"resourceId": resourceID,
+				"success":         true,
+				"message":         "素材已删除",
+				"kind":            kind,
+				"resourceId":      resourceID,
+				"cleanupComplete": len(cleanupWarnings) == 0,
+				"cleanupWarnings": cleanupWarnings,
 			})
 		case "review":
 			reviewID := strings.TrimSpace(req.ReviewID)
@@ -1888,6 +1957,10 @@ func main() {
 				status := http.StatusBadRequest
 				if strings.Contains(deleteErr.Error(), "不存在") {
 					status = http.StatusNotFound
+				} else if strings.Contains(deleteErr.Error(), "无权") {
+					status = http.StatusForbidden
+				} else if strings.Contains(deleteErr.Error(), "COS") {
+					status = http.StatusBadGateway
 				}
 				c.JSON(status, gin.H{"success": false, "message": deleteErr.Error()})
 				return
@@ -1901,12 +1974,20 @@ func main() {
 
 			if deleteResult.DeletedResourceID > 0 {
 				idKey := strconv.FormatInt(deleteResult.DeletedResourceID, 10)
-				favoritesMu.Lock()
-				service.RemoveResourceFromAllFavorites(&favorites, idKey)
-				if saveErr := userDataRepo.SaveFavorites(favorites); saveErr != nil {
-					log.Printf("warn: favorites cleanup after review delete failed: %v", saveErr)
+				cleanupWarnings := cleanupDeletedResource(idKey)
+				if len(cleanupWarnings) > 0 {
+					log.Printf("warn: review delete cleanup incomplete: %s", strings.Join(cleanupWarnings, ", "))
 				}
-				favoritesMu.Unlock()
+				c.JSON(http.StatusOK, gin.H{
+					"success":         true,
+					"message":         "上传记录及已发布素材已删除",
+					"kind":            kind,
+					"reviewId":        reviewID,
+					"resourceId":      deleteResult.DeletedResourceID,
+					"cleanupComplete": len(cleanupWarnings) == 0,
+					"cleanupWarnings": cleanupWarnings,
+				})
+				return
 			}
 
 			c.JSON(http.StatusOK, gin.H{
@@ -1918,6 +1999,70 @@ func main() {
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "kind 无效"})
 		}
+	})
+
+	router.DELETE("/api/admin/resources/:id", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if parseErr != nil || resourceID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+			return
+		}
+
+		deletedEntry, deletedResourceMap, deletedImageMap, idKey, hasSnapshot := service.LoadPublishedUploadSnapshot(
+			resourcesPath,
+			resourceMapPath,
+			imageMapPath,
+			resourceID,
+		)
+		if err := service.DeleteOwnPublishedUpload(c.Request.Context(), service.DeleteOwnPublishedUploadInput{
+			ResourceID:      resourceID,
+			ResourcesPath:   resourcesPath,
+			ResourceMapPath: resourceMapPath,
+			ImageMapPath:    imageMapPath,
+			Signers:         deleteSigners,
+			AllowAnyOwner:   true,
+		}); err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "不存在") {
+				status = http.StatusNotFound
+			} else if strings.Contains(err.Error(), "COS") {
+				status = http.StatusBadGateway
+			}
+			c.JSON(status, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		cleanupWarnings := make([]string, 0)
+		if hasSnapshot {
+			if uploaderSerial := service.PublishedUploadUploaderSerial(deletedEntry); uploaderSerial != "" {
+				imageReviewMu.Lock()
+				service.RemoveReviewEntriesForPublishedResource(
+					&imageReviewStore,
+					uploaderSerial,
+					deletedEntry,
+					deletedResourceMap,
+					deletedImageMap,
+					idKey,
+				)
+				if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+					log.Printf("warn: admin cleanup review entries after resource delete failed: %v", saveErr)
+					cleanupWarnings = append(cleanupWarnings, "审核记录清理失败")
+				}
+				imageReviewMu.Unlock()
+			}
+		}
+		cleanupWarnings = append(cleanupWarnings, cleanupDeletedResource(idKey)...)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":         true,
+			"message":         "管理员已永久删除素材",
+			"resourceId":      resourceID,
+			"cleanupComplete": len(cleanupWarnings) == 0,
+			"cleanupWarnings": cleanupWarnings,
+		})
 	})
 
 	router.GET("/api/shop/items", func(c *gin.Context) {

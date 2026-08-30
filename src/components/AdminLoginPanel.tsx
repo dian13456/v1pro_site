@@ -13,18 +13,19 @@ export function AdminLoginPanel({
   description = "请输入后台密码进入管理页面。",
   onLoggedIn,
 }: AdminLoginPanelProps) {
+  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const handleLogin = async () => {
-    if (!password.trim() || submitting) {
+    if (!username.trim() || !password.trim() || submitting) {
       return;
     }
     setSubmitting(true);
     setErrorMessage("");
     try {
-      await loginAdmin(password);
+      await loginAdmin(username, password);
       setPassword("");
       onLoggedIn();
     } catch (err) {
@@ -37,9 +38,15 @@ export function AdminLoginPanel({
   return (
     <SitePanel>
       <SiteSectionTitle title={title} description={description} />
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(180px,.65fr)_minmax(240px,1fr)_auto]">
         <SiteInput
-          className="min-w-[240px] flex-1"
+          type="text"
+          autoComplete="username"
+          placeholder="管理员账号"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+        <SiteInput
           type="password"
           autoComplete="current-password"
           placeholder="管理员密码"
@@ -51,7 +58,7 @@ export function AdminLoginPanel({
             }
           }}
         />
-        <SiteButton type="button" disabled={!password.trim() || submitting} onClick={() => void handleLogin()}>
+        <SiteButton type="button" disabled={!username.trim() || !password.trim() || submitting} onClick={() => void handleLogin()}>
           {submitting ? "验证中…" : "进入后台"}
         </SiteButton>
       </div>

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -295,12 +296,16 @@ func AttachReviewPreviewURLs(
 	}
 }
 
+type COSObjectDeleter interface {
+	DeleteObject(context.Context, string) error
+}
+
 type UploadDeleteSigners struct {
-	Image      *COSSigner
-	Gif        *COSSigner
-	Video      *COSSigner
-	GifCover   *COSSigner
-	VideoCover *COSSigner
+	Image      COSObjectDeleter
+	Gif        COSObjectDeleter
+	Video      COSObjectDeleter
+	GifCover   COSObjectDeleter
+	VideoCover COSObjectDeleter
 }
 
 type DeleteOwnPublishedUploadInput struct {
@@ -310,6 +315,7 @@ type DeleteOwnPublishedUploadInput struct {
 	ResourceMapPath string
 	ImageMapPath    string
 	Signers         UploadDeleteSigners
+	AllowAnyOwner   bool
 }
 
 func findCatalogEntryByID(resources []map[string]any, resourceID int64) (map[string]any, int, bool) {
@@ -366,15 +372,27 @@ func catalogEntryOwnedBySerial(entry map[string]any, serial string) bool {
 	return uploader != "" && uploader == target
 }
 
-func tryDeleteObject(ctx context.Context, signer *COSSigner, objectKey string) {
+// PublishedUploadUploaderSerial returns the private owner key from a catalog
+// snapshot. It is used only by trusted server-side cleanup paths.
+func PublishedUploadUploaderSerial(entry map[string]any) string {
+	if entry == nil {
+		return ""
+	}
+	return normalizeUploaderSerial(stringifyCatalogValue(entry[catalogUploaderSerialKey]))
+}
+
+func tryDeleteObject(ctx context.Context, signer COSObjectDeleter, objectKey string) error {
 	if signer == nil {
-		return
+		return nil
 	}
 	objectKey = StripPublicObjectURL(objectKey)
 	if objectKey == "" {
-		return
+		return nil
 	}
-	_ = signer.DeleteObject(ctx, objectKey)
+	if err := signer.DeleteObject(ctx, objectKey); err != nil {
+		return fmt.Errorf("删除 COS 对象 %q 失败: %w", objectKey, err)
+	}
+	return nil
 }
 
 func deletePublishedCatalogObjects(
@@ -384,7 +402,7 @@ func deletePublishedCatalogObjects(
 	imageMap map[string]string,
 	idKey string,
 	signers UploadDeleteSigners,
-) {
+) error {
 	materialType := strings.ToLower(stringifyCatalogValue(entry["materialType"]))
 	downloadKey := strings.TrimSpace(resourceMap[idKey])
 	if downloadKey == "" {
@@ -394,24 +412,35 @@ func deletePublishedCatalogObjects(
 	if imageKey == "" {
 		imageKey = StripPublicObjectURL(stringifyCatalogValue(entry["image"]))
 	}
-	switch materialType {
-	case "gif":
-		tryDeleteObject(ctx, signers.Gif, downloadKey)
-		tryDeleteObject(ctx, signers.GifCover, imageKey)
-	case "video":
-		tryDeleteObject(ctx, signers.Video, downloadKey)
-		tryDeleteObject(ctx, signers.VideoCover, imageKey)
-	default:
-		tryDeleteObject(ctx, signers.Image, downloadKey)
-		if imageKey != "" && imageKey != downloadKey {
-			tryDeleteObject(ctx, signers.Image, imageKey)
+	var deleteErrs []error
+	deleteOnce := func(signer COSObjectDeleter, key string) {
+		key = StripPublicObjectURL(key)
+		if key == "" {
+			return
+		}
+		if err := tryDeleteObject(ctx, signer, key); err != nil {
+			deleteErrs = append(deleteErrs, err)
 		}
 	}
+	switch materialType {
+	case "gif":
+		deleteOnce(signers.Gif, downloadKey)
+		deleteOnce(signers.GifCover, imageKey)
+	case "video":
+		deleteOnce(signers.Video, downloadKey)
+		deleteOnce(signers.VideoCover, imageKey)
+	default:
+		deleteOnce(signers.Image, downloadKey)
+		if imageKey != "" && imageKey != downloadKey {
+			deleteOnce(signers.Image, imageKey)
+		}
+	}
+	return errors.Join(deleteErrs...)
 }
 
 func DeleteOwnPublishedUpload(ctx context.Context, input DeleteOwnPublishedUploadInput) error {
 	serial := normalizeUploaderSerial(input.Serial)
-	if serial == "" {
+	if !input.AllowAnyOwner && serial == "" {
 		return fmt.Errorf("设备 SN 无效")
 	}
 	if input.ResourceID <= 0 {
@@ -429,7 +458,7 @@ func DeleteOwnPublishedUpload(ctx context.Context, input DeleteOwnPublishedUploa
 	if !ok {
 		return fmt.Errorf("素材不存在")
 	}
-	if !catalogEntryOwnedBySerial(entry, serial) {
+	if !input.AllowAnyOwner && !catalogEntryOwnedBySerial(entry, serial) {
 		return fmt.Errorf("无权删除该素材")
 	}
 
@@ -443,7 +472,9 @@ func DeleteOwnPublishedUpload(ctx context.Context, input DeleteOwnPublishedUploa
 	}
 
 	idKey := strconv.FormatInt(input.ResourceID, 10)
-	deletePublishedCatalogObjects(ctx, entry, resourceMap, imageMap, idKey, input.Signers)
+	if err := deletePublishedCatalogObjects(ctx, entry, resourceMap, imageMap, idKey, input.Signers); err != nil {
+		return err
+	}
 	delete(resourceMap, idKey)
 	delete(imageMap, idKey)
 	resources = append(resources[:idx], resources[idx+1:]...)
@@ -597,17 +628,24 @@ func RemoveReviewEntriesForPublishedResource(
 	store.Items = filtered
 }
 
-func deleteReviewObjects(ctx context.Context, item PendingImageReview, signers UploadDeleteSigners) {
+func deleteReviewObjects(ctx context.Context, item PendingImageReview, signers UploadDeleteSigners) error {
+	var deleteErrs []error
+	deleteOne := func(signer COSObjectDeleter, key string) {
+		if err := tryDeleteObject(ctx, signer, key); err != nil {
+			deleteErrs = append(deleteErrs, err)
+		}
+	}
 	switch strings.TrimSpace(item.Action) {
 	case ReviewActionShareUserGif:
-		tryDeleteObject(ctx, signers.Gif, item.GifObjectKey)
-		tryDeleteObject(ctx, signers.GifCover, reviewCoverObjectKey(item))
+		deleteOne(signers.Gif, item.GifObjectKey)
+		deleteOne(signers.GifCover, reviewCoverObjectKey(item))
 	case ReviewActionShareUserVideo:
-		tryDeleteObject(ctx, signers.Video, reviewVideoObjectKey(item))
-		tryDeleteObject(ctx, signers.VideoCover, reviewCoverObjectKey(item))
+		deleteOne(signers.Video, reviewVideoObjectKey(item))
+		deleteOne(signers.VideoCover, reviewCoverObjectKey(item))
 	default:
-		tryDeleteObject(ctx, signers.Image, item.ImageObjectKey)
+		deleteOne(signers.Image, item.ImageObjectKey)
 	}
+	return errors.Join(deleteErrs...)
 }
 
 func RemoveDeviceReviewUpload(store *ImageReviewStore, reviewID, serial string) (PendingImageReview, error) {
@@ -659,9 +697,24 @@ type DeleteOwnReviewUploadResult struct {
 }
 
 func DeleteOwnReviewUpload(ctx context.Context, input DeleteOwnReviewUploadInput) (DeleteOwnReviewUploadResult, error) {
-	item, err := RemoveDeviceReviewUpload(input.Store, input.ReviewID, input.Serial)
-	if err != nil {
-		return DeleteOwnReviewUploadResult{}, err
+	if input.Store == nil {
+		return DeleteOwnReviewUploadResult{}, fmt.Errorf("复核队列未配置")
+	}
+	item, _, ok := input.Store.Find(strings.TrimSpace(input.ReviewID))
+	if !ok {
+		return DeleteOwnReviewUploadResult{}, fmt.Errorf("上传记录不存在")
+	}
+	if normalizeUploaderSerial(item.Serial) != normalizeUploaderSerial(input.Serial) {
+		return DeleteOwnReviewUploadResult{}, fmt.Errorf("无权删除该素材")
+	}
+	if !isShareReviewAction(item.Action) {
+		return DeleteOwnReviewUploadResult{}, fmt.Errorf("该记录不可删除")
+	}
+	status := strings.TrimSpace(strings.ToLower(item.Status))
+	if status != ImageReviewStatusPending &&
+		status != ImageReviewStatusRejected &&
+		status != ImageReviewStatusApproved {
+		return DeleteOwnReviewUploadResult{}, fmt.Errorf("当前状态不可删除")
 	}
 
 	result := DeleteOwnReviewUploadResult{Item: item}
@@ -686,7 +739,9 @@ func DeleteOwnReviewUpload(ctx context.Context, input DeleteOwnReviewUploadInput
 							ResourceMapPath: input.ResourceMapPath,
 							ImageMapPath:    input.ImageMapPath,
 							Signers:         input.Signers,
-						}); deleteErr == nil {
+						}); deleteErr != nil {
+							return DeleteOwnReviewUploadResult{}, deleteErr
+						} else {
 							result.DeletedResourceID = resourceID
 						}
 					}
@@ -695,6 +750,14 @@ func DeleteOwnReviewUpload(ctx context.Context, input DeleteOwnReviewUploadInput
 		}
 	}
 
-	deleteReviewObjects(ctx, item, input.Signers)
+	// Published deletion already removed the same media and cover objects.
+	if result.DeletedResourceID == 0 {
+		if err := deleteReviewObjects(ctx, item, input.Signers); err != nil {
+			return DeleteOwnReviewUploadResult{}, err
+		}
+	}
+	if _, err := RemoveDeviceReviewUpload(input.Store, input.ReviewID, input.Serial); err != nil {
+		return DeleteOwnReviewUploadResult{}, err
+	}
 	return result, nil
 }

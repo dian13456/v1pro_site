@@ -316,6 +316,33 @@ func (store *DownloadsStore) recordDownload(resourceID string, now time.Time) {
 	store.WeeklyCounts[resourceID] = store.WeeklyCounts[resourceID] + 1
 }
 
+func RemoveResourceFromDownloads(store *DownloadsStore, resourceID string) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || store == nil {
+		return
+	}
+	if store.TotalCounts != nil {
+		delete(store.TotalCounts, resourceID)
+	}
+	if store.WeeklyCounts != nil {
+		delete(store.WeeklyCounts, resourceID)
+	}
+}
+
+func RemoveResourceMessages(store *MessagesStore, resourceID string) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || store == nil || len(store.Messages) == 0 {
+		return
+	}
+	filtered := store.Messages[:0]
+	for _, entry := range store.Messages {
+		if strings.TrimSpace(entry.ResourceID) != resourceID {
+			filtered = append(filtered, entry)
+		}
+	}
+	store.Messages = filtered
+}
+
 func NewEmptyLikesStore() LikesStore {
 	return LikesStore{
 		Counts:      map[string]int{},

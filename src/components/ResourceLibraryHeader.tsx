@@ -23,6 +23,7 @@ const MORE_LINKS = [
   { to: "/shop", label: "积分商城", icon: "◇" },
   { to: "/mall", label: "实物商城", icon: "▢" },
   { to: "/board", label: "留言板", icon: "···" },
+  { to: "/admin/materials", label: "素材管理", icon: "⚙" },
 ];
 
 type HeaderMenu = "search" | "device" | "more" | "support";

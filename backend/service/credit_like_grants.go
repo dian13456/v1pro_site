@@ -91,6 +91,21 @@ func (store *CreditLikeGrantStore) Release(resourceID, likerSerial string) {
 	delete(store.Grants, likeGrantKey(resourceID, likerSerial))
 }
 
+func (store *CreditLikeGrantStore) RemoveResource(resourceID string) {
+	if store == nil || store.Grants == nil {
+		return
+	}
+	prefix := strings.TrimSpace(resourceID) + "|"
+	if prefix == "|" {
+		return
+	}
+	for key := range store.Grants {
+		if strings.HasPrefix(key, prefix) {
+			delete(store.Grants, key)
+		}
+	}
+}
+
 func DefaultCreditLikeGrantsPath(configDir string) string {
 	if strings.TrimSpace(configDir) == "" {
 		configDir = "config"

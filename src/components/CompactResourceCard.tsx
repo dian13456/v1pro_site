@@ -42,6 +42,8 @@ export function CompactResourceCard({
   followed = false,
   following = false,
   onFollow,
+  adminDeleting = false,
+  onAdminDelete,
   selectionMode = false,
   selected = false,
   onToggleSelection,
@@ -62,6 +64,8 @@ export function CompactResourceCard({
   followed?: boolean;
   following?: boolean;
   onFollow?: (resource: ResourceItem, followed: boolean) => void;
+  adminDeleting?: boolean;
+  onAdminDelete?: (resource: ResourceItem) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelection?: (resource: ResourceItem) => void;
@@ -200,7 +204,7 @@ export function CompactResourceCard({
               <span>{liking ? "…" : likeCount}</span>
             </button>
             <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {downloadCount}</span>
-            {onFollow || onHiddenChange ? (
+            {onFollow || onHiddenChange || onAdminDelete ? (
               <details className="group/card-menu relative" onClick={(event) => event.stopPropagation()}>
                 <summary className="grid h-5 w-5 cursor-pointer list-none place-items-center rounded-full text-[11px] font-bold tracking-[-1px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white [&::-webkit-details-marker]:hidden" aria-label="更多素材操作">
                   •••
@@ -226,6 +230,17 @@ export function CompactResourceCard({
                     >
                       <ThemeIcon name={hidden ? "restore" : "block"} size={14} />
                       {hiding ? "处理中…" : hidden ? "恢复该用户" : "屏蔽该用户"}
+                    </button>
+                  ) : null}
+                  {onAdminDelete ? (
+                    <button
+                      type="button"
+                      disabled={adminDeleting}
+                      onClick={() => onAdminDelete(resource)}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    >
+                      <span className="w-4 text-center" aria-hidden="true">⌫</span>
+                      {adminDeleting ? "删除中…" : "永久删除素材"}
                     </button>
                   ) : null}
                 </div>

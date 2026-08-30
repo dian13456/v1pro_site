@@ -26,11 +26,11 @@ export function clearAdminSession(): void {
   sessionStorage.removeItem(LEGACY_ADMIN_SESSION_KEY);
 }
 
-export async function loginAdmin(password: string): Promise<void> {
+export async function loginAdmin(username: string, password: string): Promise<void> {
   const payload = await apiFetch<{ success: boolean; token?: string; message?: string }>("/api/admin/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: password.trim() }),
+    body: JSON.stringify({ username: username.trim(), password: password.trim() }),
   });
   if (!payload.success || !payload.token) {
     throw new Error(payload.message || "登录失败");

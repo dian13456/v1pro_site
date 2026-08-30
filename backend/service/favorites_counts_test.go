@@ -53,3 +53,38 @@ func TestRemoveResourceFromAllFavoritesClearsCount(t *testing.T) {
 		t.Fatal("expected count entry removed")
 	}
 }
+
+func TestRemoveResourceAuxiliaryData(t *testing.T) {
+	downloads := DownloadsStore{
+		TotalCounts:  map[string]int{"9": 12, "10": 3},
+		WeeklyCounts: map[string]int{"9": 4, "10": 1},
+	}
+	RemoveResourceFromDownloads(&downloads, "9")
+	if _, ok := downloads.TotalCounts["9"]; ok {
+		t.Fatal("expected total download count removed")
+	}
+	if _, ok := downloads.WeeklyCounts["9"]; ok {
+		t.Fatal("expected weekly download count removed")
+	}
+	if downloads.TotalCounts["10"] != 3 {
+		t.Fatal("unrelated download count changed")
+	}
+
+	messages := MessagesStore{Messages: []MessageEntry{
+		{ID: "m1", ResourceID: "9"},
+		{ID: "m2", ResourceID: "10"},
+		{ID: "m3"},
+	}}
+	RemoveResourceMessages(&messages, "9")
+	if len(messages.Messages) != 2 || messages.Messages[0].ID != "m2" || messages.Messages[1].ID != "m3" {
+		t.Fatalf("unexpected messages after cleanup: %#v", messages.Messages)
+	}
+
+	grants := CreditLikeGrantStore{Grants: map[string]bool{
+		"9|SN1": true, "9|SN2": true, "10|SN1": true,
+	}}
+	grants.RemoveResource("9")
+	if len(grants.Grants) != 1 || !grants.Grants["10|SN1"] {
+		t.Fatalf("unexpected grants after cleanup: %#v", grants.Grants)
+	}
+}

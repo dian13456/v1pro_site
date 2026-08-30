@@ -188,3 +188,10 @@ export function fetchResources(): Promise<ResourceItem[]> {
   }
   return resourceCatalogPromise;
 }
+
+export function removeResourceFromCachedCatalog(resourceId: number): void {
+  if (!Number.isSafeInteger(resourceId) || resourceId <= 0 || !resourceCatalogPromise) return;
+  resourceCatalogPromise = resourceCatalogPromise.then((resources) =>
+    resources.filter((resource) => resource.id !== resourceId),
+  );
+}

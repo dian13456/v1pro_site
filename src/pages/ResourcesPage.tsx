@@ -6,6 +6,7 @@ import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
 import { ResourceLibrarySidebar } from "../components/ResourceLibrarySidebar";
 import { CompactResourceCard, CompactResourceCardSkeleton } from "../components/CompactResourceCard";
 import { AlbumSelectionPanel } from "../components/AlbumSelectionPanel";
+import { AdminLoginPanel } from "../components/AdminLoginPanel";
 import { DeviceAuthenticationDialog } from "../components/DeviceAuthenticationDialog";
 import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../components/ResourceDetailModal";
 import { SiteAlert } from "../components/SiteUi";
@@ -24,6 +25,8 @@ import {
   type ResourceRecommendation,
 } from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
+import { adminDeleteResource } from "../services/adminResourceService";
+import { useAdminSession } from "../hooks/useAdminSession";
 import type { ResourceItem } from "../types/resource";
 import {
   requiredFramesForResource,
@@ -89,11 +92,17 @@ function fallbackRecommendationRank(resourceId: number, seed: string): number {
   return hash >>> 0;
 }
 
-export default function ResourcesPage() {
+interface ResourcesPageProps {
+  adminMode?: boolean;
+}
+
+export default function ResourcesPage({ adminMode = false }: ResourcesPageProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const authenticated = hasValidLocalAuth();
+  const adminSession = useAdminSession();
+  const [adminDeletingId, setAdminDeletingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
@@ -149,6 +158,7 @@ export default function ResourcesPage() {
     columnTagFilterOptions,
     sortMode,
     setSortMode,
+    removeResource,
   } = useResourceCatalog();
 
   useEffect(() => {
@@ -800,6 +810,36 @@ export default function ResourcesPage() {
       });
   };
 
+  const handleAdminDelete = async (resource: ResourceItem) => {
+    const adminToken = adminSession.adminToken;
+    if (!adminMode || !adminToken || adminDeletingId != null) return;
+    const confirmed = window.confirm(
+      `确定永久删除素材「${resource.title || resource.description}」吗？\n\n将同时删除 COS 原文件、封面及相关点赞、收藏、评论记录，此操作不可撤销。`,
+    );
+    if (!confirmed) return;
+    setAdminDeletingId(resource.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const result = await adminDeleteResource(adminToken, resource.id);
+      removeResource(resource.id);
+      setSelectedResource((current) => current?.id === resource.id ? null : current);
+      setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
+      const warningText = result.cleanupWarnings.length > 0
+        ? `；注意：${result.cleanupWarnings.join("、")}`
+        : "";
+      setStatusMessage(`${result.message}${warningText}`);
+    } catch (error) {
+      const message = (error as Error)?.message || "管理员删除素材失败";
+      if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
+        adminSession.handleUnauthorized();
+      }
+      setErrorMessage(message);
+    } finally {
+      setAdminDeletingId(null);
+    }
+  };
+
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
@@ -811,7 +851,29 @@ export default function ResourcesPage() {
         }}
       />
       <main className="mx-auto max-w-[1488px] px-4 py-6 sm:px-6">
-        {!authenticated ? (
+        {adminMode ? (
+          <div className="mb-5">
+            {!adminSession.authenticated ? (
+              <AdminLoginPanel
+                title="素材库管理员登录"
+                description="登录后可永久删除素材库中的任意素材。所有删除请求均由服务器验证管理员权限。"
+                onLoggedIn={adminSession.refreshSession}
+              />
+            ) : (
+              <SiteAlert variant="success" className="flex flex-wrap items-center justify-between gap-3">
+                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以永久删除素材。</span>
+                <button
+                  type="button"
+                  onClick={adminSession.logout}
+                  className="shrink-0 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-slate-900 dark:text-emerald-300"
+                >
+                  退出管理员
+                </button>
+              </SiteAlert>
+            )}
+          </div>
+        ) : null}
+        {!authenticated && !adminMode ? (
           <SiteAlert variant="info" className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <span>当前为公开浏览模式，仅加载静态封面；打开详情、点赞、收藏、下载和设备传输需要连接佳点设备。</span>
             <button
@@ -1052,6 +1114,10 @@ export default function ResourcesPage() {
                     hiding={hidingId === resource.id}
                     onHiddenChange={authenticated && resource.uploaderBlockable
                       ? (item, hidden) => void handleHiddenChange(item, hidden)
+                      : undefined}
+                    adminDeleting={adminDeletingId === resource.id}
+                    onAdminDelete={adminMode && adminSession.authenticated
+                      ? (item) => void handleAdminDelete(item)
                       : undefined}
                     selectionMode={albumMode}
                     selected={albumSelectedIds.includes(resource.id)}

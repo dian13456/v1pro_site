@@ -59,6 +59,7 @@ export default function App() {
             path="/"
             element={<ResourcesPage />}
           />
+          <Route path="/admin/materials" element={<ResourcesPage adminMode />} />
           <Route
             path="/favorites"
             element={

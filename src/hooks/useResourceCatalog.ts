@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnTagFilter, MaterialTypeFilter, ResourceCategory, ResourceItem } from "../types/resource";
-import { fetchResources } from "../services/resourceService";
+import { fetchResources, removeResourceFromCachedCatalog } from "../services/resourceService";
 import { useColumnTags } from "./useColumnTags";
 import { resourceMatchesColumn } from "../utils/columnMatch";
 
@@ -65,6 +65,11 @@ export function useResourceCatalog() {
     return result;
   }, [resources, keyword, category, materialType, columnTag, columnTagOptions, sortMode]);
 
+  const removeResource = useCallback((resourceId: number) => {
+    removeResourceFromCachedCatalog(resourceId);
+    setResources((current) => current.filter((resource) => resource.id !== resourceId));
+  }, []);
+
   return {
     resources,
     filtered,
@@ -81,5 +86,6 @@ export function useResourceCatalog() {
     columnTagFilterOptions,
     sortMode,
     setSortMode,
+    removeResource,
   };
 }

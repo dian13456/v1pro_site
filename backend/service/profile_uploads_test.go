@@ -3,11 +3,22 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type testObjectDeleter struct {
+	keys []string
+	err  error
+}
+
+func (d *testObjectDeleter) DeleteObject(_ context.Context, key string) error {
+	d.keys = append(d.keys, key)
+	return d.err
+}
 
 func TestFilterCatalogByUploaderSerial(t *testing.T) {
 	items := []map[string]any{
@@ -139,14 +150,26 @@ func TestDeleteOwnPublishedUploadVideo(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	videoDeleter := &testObjectDeleter{}
+	coverDeleter := &testObjectDeleter{}
 	if err := DeleteOwnPublishedUpload(context.Background(), DeleteOwnPublishedUploadInput{
 		Serial:          "abc123",
 		ResourceID:      2607031234567890,
 		ResourcesPath:   resourcesPath,
 		ResourceMapPath: resourceMapPath,
 		ImageMapPath:    imageMapPath,
+		Signers: UploadDeleteSigners{
+			Video:      videoDeleter,
+			VideoCover: coverDeleter,
+		},
 	}); err != nil {
 		t.Fatalf("delete failed: %v", err)
+	}
+	if len(videoDeleter.keys) != 1 || videoDeleter.keys[0] != "vid_260703.mp4" {
+		t.Fatalf("unexpected deleted video keys: %#v", videoDeleter.keys)
+	}
+	if len(coverDeleter.keys) != 1 || coverDeleter.keys[0] != "cover_260703.jpg" {
+		t.Fatalf("unexpected deleted cover keys: %#v", coverDeleter.keys)
 	}
 
 	remaining, err := loadResourceCatalogFile(resourcesPath)
@@ -155,6 +178,63 @@ func TestDeleteOwnPublishedUploadVideo(t *testing.T) {
 	}
 	if len(remaining) != 0 {
 		t.Fatalf("expected empty catalog, got %#v", remaining)
+	}
+}
+
+func TestDeleteOwnPublishedUploadKeepsCatalogWhenCOSDeleteFails(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resourceMapPath := filepath.Join(dir, "resource_map.json")
+	imageMapPath := filepath.Join(dir, "image_map.json")
+	resources := []map[string]any{{
+		"id": 1001, "title": "mine", "image": "img.jpg", "download": "img.jpg",
+		"materialType": "image", "uploaderSerial": "SN1",
+	}}
+	raw, _ := json.Marshal(resources)
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourceMapPath, []byte(`{"1001":"img.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imageMapPath, []byte(`{"1001":"img.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deleter := &testObjectDeleter{err: errors.New("cos unavailable")}
+	err := DeleteOwnPublishedUpload(context.Background(), DeleteOwnPublishedUploadInput{
+		Serial: "SN1", ResourceID: 1001, ResourcesPath: resourcesPath,
+		ResourceMapPath: resourceMapPath, ImageMapPath: imageMapPath,
+		Signers: UploadDeleteSigners{Image: deleter},
+	})
+	if err == nil || !strings.Contains(err.Error(), "COS") {
+		t.Fatalf("expected COS error, got %v", err)
+	}
+	remaining, loadErr := loadResourceCatalogFile(resourcesPath)
+	if loadErr != nil || len(remaining) != 1 {
+		t.Fatalf("catalog changed after failed COS delete: %#v, %v", remaining, loadErr)
+	}
+	resourceMap, _ := loadStringMapFile(resourceMapPath)
+	imageMap, _ := loadStringMapFile(imageMapPath)
+	if resourceMap["1001"] != "img.jpg" || imageMap["1001"] != "img.jpg" {
+		t.Fatalf("maps changed after failed COS delete: %#v %#v", resourceMap, imageMap)
+	}
+}
+
+func TestDeleteOwnReviewUploadKeepsRecordWhenCOSDeleteFails(t *testing.T) {
+	store := ImageReviewStore{Items: []PendingImageReview{{
+		ID: "r1", Serial: "SN1", Action: ReviewActionShareUser,
+		Status: ImageReviewStatusPending, ImageObjectKey: "pending.jpg",
+	}}}
+	deleter := &testObjectDeleter{err: errors.New("cos unavailable")}
+	_, err := DeleteOwnReviewUpload(context.Background(), DeleteOwnReviewUploadInput{
+		Store: &store, ReviewID: "r1", Serial: "SN1",
+		Signers: UploadDeleteSigners{Image: deleter},
+	})
+	if err == nil {
+		t.Fatal("expected COS delete failure")
+	}
+	if len(store.Items) != 1 || store.Items[0].ID != "r1" {
+		t.Fatalf("review record was removed after COS failure: %#v", store.Items)
 	}
 }
 
@@ -330,5 +410,43 @@ func TestDeleteOwnPublishedUpload(t *testing.T) {
 	}
 	if _, ok := imageMap["1001"]; ok {
 		t.Fatal("image map entry should be removed")
+	}
+}
+
+func TestAdminDeletePublishedUploadAllowsAnyOwner(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resourceMapPath := filepath.Join(dir, "resource_map.json")
+	imageMapPath := filepath.Join(dir, "image_map.json")
+	resources := []map[string]any{{
+		"id": 2001, "title": "built-in", "image": "img.jpg", "download": "img.jpg",
+		"materialType": "image",
+	}}
+	raw, err := json.Marshal(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourceMapPath, []byte(`{"2001":"img.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imageMapPath, []byte(`{"2001":"img.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DeleteOwnPublishedUpload(context.Background(), DeleteOwnPublishedUploadInput{
+		ResourceID: 2001, ResourcesPath: resourcesPath, ResourceMapPath: resourceMapPath,
+		ImageMapPath: imageMapPath, AllowAnyOwner: true,
+	}); err != nil {
+		t.Fatalf("admin delete failed: %v", err)
+	}
+	remaining, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("expected empty catalog after admin delete, got %#v", remaining)
 	}
 }

@@ -262,6 +262,16 @@ func (r *UserDataRepo) ListResourceInteractions(serial string, limit int) ([]Res
 	return r.mysql.listResourceInteractions(ctx, serial, limit)
 }
 
+func (r *UserDataRepo) DeleteResourceInteractions(resourceID string) error {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || !r.UsesMySQL() {
+		return nil
+	}
+	ctx, cancel := r.ctx()
+	defer cancel()
+	return r.mysql.deleteResourceInteractions(ctx, resourceID)
+}
+
 func (r *UserDataRepo) LoadMessages() (MessagesStore, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()

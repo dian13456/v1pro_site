@@ -587,6 +587,11 @@ func (m *mysqlStore) listResourceInteractions(ctx context.Context, serial string
 	return result, rows.Err()
 }
 
+func (m *mysqlStore) deleteResourceInteractions(ctx context.Context, resourceID string) error {
+	_, err := m.db.ExecContext(ctx, `DELETE FROM resource_interactions WHERE resource_id = ?`, resourceID)
+	return err
+}
+
 func (m *mysqlStore) loadMessages(ctx context.Context) (MessagesStore, error) {
 	store := NewEmptyMessagesStore()
 	rows, err := m.db.QueryContext(ctx,
