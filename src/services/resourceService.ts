@@ -34,7 +34,7 @@ interface ResourcePagePayload {
 export interface ResourcePageQuery {
   page?: number;
   pageSize?: number;
-  sort?: "latest" | "earliest";
+  sort?: "latest" | "earliest" | "hot" | "weeklyTop";
   keyword?: string;
   category?: string;
   materialType?: string;
@@ -162,20 +162,26 @@ export function parseResourceList(payload: unknown): ResourceItem[] {
   return parseResourcePayload(payload);
 }
 
-export async function fetchResourcePage(query: ResourcePageQuery = {}): Promise<ResourcePageResult> {
+export async function fetchResourcePage(
+  query: ResourcePageQuery = {},
+  signal?: AbortSignal,
+): Promise<ResourcePageResult> {
   const page = Math.max(1, Math.floor(query.page || 1));
   const pageSize = Math.max(1, Math.min(100, Math.floor(query.pageSize || 16)));
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(pageSize),
-    sort: query.sort === "earliest" ? "earliest" : "latest",
+    sort: query.sort || "latest",
   });
   if (query.keyword?.trim()) params.set("q", query.keyword.trim().slice(0, 80));
   if (query.category?.trim()) params.set("category", query.category.trim());
   if (query.materialType?.trim()) params.set("materialType", query.materialType.trim());
   if (query.columnTag?.trim()) params.set("columnTag", query.columnTag.trim());
 
-  const payload = await apiFetch<ResourcePagePayload>(`/api/resources/page?${params.toString()}`);
+  const payload = await apiFetch<ResourcePagePayload>(
+    `/api/resources/page?${params.toString()}`,
+    { signal },
+  );
   if (payload.success === false) throw new Error("素材目录分页加载失败");
   const items = parseResourcePayload(payload.items);
   const total = Math.max(0, Number(payload.total) || 0);

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -182,6 +183,9 @@ func TestCatalogNumericIDPreservesProductionSizedIDs(t *testing.T) {
 	if actual := catalogNumericID(map[string]any{"id": float64(resourceID)}); actual != resourceID {
 		t.Fatalf("catalogNumericID() = %d, want %d", actual, resourceID)
 	}
+	if actual := catalogResourceID(map[string]any{"id": float64(resourceID)}); actual != "2608232258233170" {
+		t.Fatalf("catalogResourceID() = %q, want decimal production id", actual)
+	}
 }
 
 func TestBuildPublicResourceCatalogPageFiltersAndSorts(t *testing.T) {
@@ -205,5 +209,116 @@ func TestBuildPublicResourceCatalogPageFiltersAndSorts(t *testing.T) {
 	}
 	if catalogNumericID(page.Items[0]) != 3 {
 		t.Fatalf("latest item should be id=3, got %v", page.Items[0]["id"])
+	}
+}
+
+func TestResourceCatalogDateOnlySortMatchesBrowserUTCParsing(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(1), "category": "gif", "materialType": "gif", "updatedAt": "2026-08-03"},
+		{"id": float64(2), "category": "gif", "materialType": "gif", "updatedAt": "2026-08-03T04:00:00+08:00"},
+	}
+	page := buildPublicResourceCatalogPage(items, parseResourceCatalogPageQuery(url.Values{"sort": []string{"latest"}}))
+	if got := catalogResourceID(page.Items[0]); got != "1" {
+		t.Fatalf("date-only value must follow browser UTC semantics, first id=%s want 1", got)
+	}
+}
+
+func TestResourceCatalogPageSupportsDynamicSortsAndMaterialTypeList(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(1), "title": "image", "category": "gif", "materialType": "image", "updatedAt": "2026-08-04"},
+		{"id": float64(2), "title": "gif", "category": "gif", "materialType": "gif", "updatedAt": "2026-08-03"},
+		{"id": float64(3), "title": "video", "category": "gif", "materialType": "video", "updatedAt": "2026-08-02"},
+	}
+	hotQuery := parseResourceCatalogPageQuery(url.Values{
+		"sort":         []string{"hot"},
+		"materialType": []string{"video,gif"},
+	})
+	hotPage := buildPublicResourceCatalogPageWithStatistics(items, hotQuery, resourceCatalogSortStatistics{
+		LikeCounts: map[string]int{"1": 100, "2": 4, "3": 8},
+	})
+	if hotPage.Total != 2 || len(hotPage.Items) != 2 {
+		t.Fatalf("hot material list should contain only video and gif items: %#v", hotPage)
+	}
+	if got := catalogResourceID(hotPage.Items[0]); got != "3" {
+		t.Fatalf("hot order should use like counts, first id=%s want 3", got)
+	}
+
+	weeklyQuery := parseResourceCatalogPageQuery(url.Values{"sort": []string{"weeklyTop"}})
+	weeklyPage := buildPublicResourceCatalogPageWithStatistics(items, weeklyQuery, resourceCatalogSortStatistics{
+		WeeklyDownloadCounts: map[string]int{"1": 5, "2": 5, "3": 6},
+		TotalDownloadCounts:  map[string]int{"1": 100, "2": 200, "3": 1},
+	})
+	want := []string{"3", "2", "1"}
+	for index, item := range weeklyPage.Items {
+		if got := catalogResourceID(item); got != want[index] {
+			t.Fatalf("weekly order[%d]=%s want %s", index, got, want[index])
+		}
+	}
+}
+
+func TestResourceCatalogWeeklyTopRetainsLegacyTwentyItemLimit(t *testing.T) {
+	items := make([]map[string]any, 0, 25)
+	weeklyCounts := make(map[string]int, 25)
+	for id := 1; id <= 25; id++ {
+		resourceID := strconv.Itoa(id)
+		items = append(items, map[string]any{
+			"id":           float64(id),
+			"category":     "gif",
+			"materialType": "gif",
+			"updatedAt":    "2026-08-01",
+		})
+		weeklyCounts[resourceID] = id
+	}
+	query := parseResourceCatalogPageQuery(url.Values{
+		"sort":     []string{"weeklyTop"},
+		"pageSize": []string{"100"},
+	})
+	page := buildPublicResourceCatalogPageWithStatistics(items, query, resourceCatalogSortStatistics{
+		WeeklyDownloadCounts: weeklyCounts,
+	})
+	if page.Total != resourceCatalogWeeklyTopLimit || len(page.Items) != resourceCatalogWeeklyTopLimit || page.HasMore {
+		t.Fatalf("weekly top should expose exactly %d results: %#v", resourceCatalogWeeklyTopLimit, page)
+	}
+	if got := catalogResourceID(page.Items[0]); got != "25" {
+		t.Fatalf("weekly top first id=%s want 25", got)
+	}
+}
+
+func TestResourceCatalogColumnMatchingUsesServerResolvedKeywords(t *testing.T) {
+	rawTags := []map[string]any{
+		{"id": "doro", "keywords": []any{"Doro", "多洛"}},
+	}
+	query := parseResourceCatalogPageQuery(url.Values{"columnTag": []string{"doro"}})
+	query.ColumnKeywords = resourceCatalogColumnKeywords(rawTags, query.ColumnTag)
+	items := []map[string]any{
+		{"id": float64(1), "title": "legacy DORO animation", "category": "gif", "materialType": "gif"},
+		{"id": float64(2), "title": "direct tag", "category": "gif", "materialType": "gif", "columnTag": "doro"},
+		{"id": float64(3), "title": "unrelated", "category": "gif", "materialType": "gif"},
+	}
+	page := buildPublicResourceCatalogPage(items, query)
+	if page.Total != 2 {
+		t.Fatalf("column should match direct tag or curated keyword, got total=%d", page.Total)
+	}
+}
+
+func TestResourceCatalogETagAndCacheSemantics(t *testing.T) {
+	hotQuery := parseResourceCatalogPageQuery(url.Values{"sort": []string{"hot"}})
+	if !resourceCatalogPageUsesDynamicStatistics(hotQuery.Sort) {
+		t.Fatal("hot must be treated as a dynamic statistics sort")
+	}
+	if got := resourceCatalogPageCacheControl(hotQuery.Sort); !strings.Contains(got, "no-store") {
+		t.Fatalf("hot responses must not be cached: %q", got)
+	}
+
+	latestQuery := parseResourceCatalogPageQuery(url.Values{"sort": []string{"latest"}})
+	if resourceCatalogPageUsesDynamicStatistics(latestQuery.Sort) {
+		t.Fatal("latest must remain catalog-cacheable")
+	}
+	firstLatestETag := resourceCatalogPageETag(`W/"catalog"`, latestQuery)
+
+	latestQuery.ColumnKeywords = []string{"doro"}
+	columnETag := resourceCatalogPageETag(`W/"catalog"`, latestQuery)
+	if columnETag == firstLatestETag {
+		t.Fatal("ETag must include server-resolved column keywords")
 	}
 }

@@ -2345,12 +2345,37 @@ func main() {
 			return
 		}
 		query := parseResourceCatalogPageQuery(c.Request.URL.Query())
-		page := buildPublicResourceCatalogPage(snapshot.publicItems, query)
-		c.Header("Cache-Control", "private, max-age=60, stale-while-revalidate=300")
-		c.Header("ETag", resourceCatalogPageETag(snapshot.etag, query))
-		if requestETagMatches(c.GetHeader("If-None-Match"), c.Writer.Header().Get("ETag")) {
-			c.Status(http.StatusNotModified)
-			return
+		if query.ColumnTag != "" && query.ColumnTag != "all" {
+			rawTags, tagErr := loadColumnTags(columnTagsPath)
+			if tagErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "load column tags failed"})
+				return
+			}
+			query.ColumnKeywords = resourceCatalogColumnKeywords(rawTags, query.ColumnTag)
+		}
+
+		statistics := resourceCatalogSortStatistics{}
+		switch query.Sort {
+		case "hot":
+			likesMu.RLock()
+			statistics.LikeCounts = cloneNonNegativeCatalogCounts(likes.Counts)
+			likesMu.RUnlock()
+		case "weeklytop":
+			downloadsMu.Lock()
+			downloads.EnsureCurrentWeek(time.Now())
+			statistics.WeeklyDownloadCounts = cloneNonNegativeCatalogCounts(downloads.WeeklyCounts)
+			statistics.TotalDownloadCounts = cloneNonNegativeCatalogCounts(downloads.TotalCounts)
+			downloadsMu.Unlock()
+		}
+
+		page := buildPublicResourceCatalogPageWithStatistics(snapshot.publicItems, query, statistics)
+		c.Header("Cache-Control", resourceCatalogPageCacheControl(query.Sort))
+		if !resourceCatalogPageUsesDynamicStatistics(query.Sort) {
+			c.Header("ETag", resourceCatalogPageETag(snapshot.etag, query))
+			if requestETagMatches(c.GetHeader("If-None-Match"), c.Writer.Header().Get("ETag")) {
+				c.Status(http.StatusNotModified)
+				return
+			}
 		}
 		c.JSON(http.StatusOK, page)
 	})

@@ -251,7 +251,19 @@ type resourceCatalogPageQuery struct {
 	Category     string
 	MaterialType string
 	ColumnTag    string
+	// ColumnKeywords is resolved from the server-owned columnTags file. It is
+	// intentionally not populated from URL input so callers cannot alter the
+	// meaning of a curated column.
+	ColumnKeywords []string
 }
+
+type resourceCatalogSortStatistics struct {
+	LikeCounts           map[string]int
+	WeeklyDownloadCounts map[string]int
+	TotalDownloadCounts  map[string]int
+}
+
+const resourceCatalogWeeklyTopLimit = 20
 
 type publicResourceCatalogPage struct {
 	Success    bool             `json:"success"`
@@ -284,7 +296,9 @@ func truncateRunes(value string, maximum int) string {
 
 func parseResourceCatalogPageQuery(values url.Values) resourceCatalogPageQuery {
 	sortMode := strings.ToLower(strings.TrimSpace(values.Get("sort")))
-	if sortMode != "earliest" {
+	switch sortMode {
+	case "earliest", "hot", "weeklytop":
+	default:
 		sortMode = "latest"
 	}
 	return resourceCatalogPageQuery{
@@ -306,24 +320,97 @@ func catalogString(item map[string]any, key string) string {
 	return strings.TrimSpace(fmt.Sprint(value))
 }
 
-func catalogItemMatches(item map[string]any, query resourceCatalogPageQuery) bool {
-	if query.Category != "" && query.Category != "all" && !strings.EqualFold(catalogString(item, "category"), query.Category) {
-		return false
-	}
-	if query.MaterialType != "" && query.MaterialType != "all" && !strings.EqualFold(catalogString(item, "materialType"), query.MaterialType) {
-		return false
-	}
-	if query.ColumnTag != "" && query.ColumnTag != "all" && !strings.EqualFold(catalogString(item, "columnTag"), query.ColumnTag) {
-		return false
-	}
-	if query.Keyword == "" {
+func catalogStringFilterMatches(actual, requested string) bool {
+	requested = strings.TrimSpace(requested)
+	if requested == "" || strings.EqualFold(requested, "all") {
 		return true
 	}
-	haystack := strings.ToLower(strings.Join([]string{
+	for _, option := range strings.Split(requested, ",") {
+		option = strings.TrimSpace(option)
+		if option == "" {
+			continue
+		}
+		if strings.EqualFold(option, "all") || strings.EqualFold(actual, option) {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogSearchHaystack(item map[string]any) string {
+	return strings.ToLower(strings.Join([]string{
 		catalogString(item, "title"),
 		catalogString(item, "description"),
 		catalogString(item, "author"),
 	}, "\n"))
+}
+
+func resourceCatalogColumnKeywords(rawTags []map[string]any, selectedColumn string) []string {
+	selectedColumn = strings.TrimSpace(selectedColumn)
+	if selectedColumn == "" || strings.EqualFold(selectedColumn, "all") {
+		return nil
+	}
+	for _, tag := range rawTags {
+		if tag == nil || !strings.EqualFold(catalogString(tag, "id"), selectedColumn) {
+			continue
+		}
+		seen := make(map[string]struct{})
+		keywords := make([]string, 0)
+		appendKeyword := func(raw string) {
+			keyword := strings.ToLower(truncateRunes(raw, 80))
+			if keyword == "" {
+				return
+			}
+			if _, exists := seen[keyword]; exists {
+				return
+			}
+			seen[keyword] = struct{}{}
+			keywords = append(keywords, keyword)
+		}
+		switch values := tag["keywords"].(type) {
+		case []any:
+			for _, value := range values {
+				appendKeyword(fmt.Sprint(value))
+			}
+		case []string:
+			for _, value := range values {
+				appendKeyword(value)
+			}
+		case string:
+			appendKeyword(values)
+		}
+		return keywords
+	}
+	return nil
+}
+
+func catalogItemMatches(item map[string]any, query resourceCatalogPageQuery) bool {
+	if query.Category != "" && query.Category != "all" && !strings.EqualFold(catalogString(item, "category"), query.Category) {
+		return false
+	}
+	if !catalogStringFilterMatches(catalogString(item, "materialType"), query.MaterialType) {
+		return false
+	}
+	var haystack string
+	if query.ColumnTag != "" && query.ColumnTag != "all" && !strings.EqualFold(catalogString(item, "columnTag"), query.ColumnTag) {
+		haystack = catalogSearchHaystack(item)
+		matchedKeyword := false
+		for _, keyword := range query.ColumnKeywords {
+			if keyword != "" && strings.Contains(haystack, strings.ToLower(keyword)) {
+				matchedKeyword = true
+				break
+			}
+		}
+		if !matchedKeyword {
+			return false
+		}
+	}
+	if query.Keyword == "" {
+		return true
+	}
+	if haystack == "" {
+		haystack = catalogSearchHaystack(item)
+	}
 	return strings.Contains(haystack, query.Keyword)
 }
 
@@ -332,9 +419,13 @@ func catalogUpdatedTime(item map[string]any) time.Time {
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
 		return parsed
 	}
+	// ECMAScript parses date-only values as UTC. Match the previous browser
+	// ordering exactly when old date-only and newer RFC3339 entries are mixed.
+	if parsed, err := time.Parse("2006-01-02", raw); err == nil {
+		return parsed
+	}
 	chinaTime := time.FixedZone("Asia/Shanghai", 8*60*60)
 	for _, layout := range []string{
-		"2006-01-02",
 		"2006/1/2 15:04:05",
 		"2006/01/02 15:04:05",
 		"2006-01-02 15:04:05",
@@ -363,23 +454,89 @@ func catalogNumericID(item map[string]any) int64 {
 	}
 }
 
+func catalogResourceID(item map[string]any) string {
+	switch value := item["id"].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case int:
+		return strconv.FormatInt(int64(value), 10)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case json.Number:
+		return strings.TrimSpace(value.String())
+	case nil:
+		return ""
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func cloneNonNegativeCatalogCounts(source map[string]int) map[string]int {
+	cloned := make(map[string]int, len(source))
+	for id, count := range source {
+		if count < 0 {
+			count = 0
+		}
+		cloned[id] = count
+	}
+	return cloned
+}
+
+func nonNegativeCatalogCount(counts map[string]int, resourceID string) int {
+	count := counts[resourceID]
+	if count < 0 {
+		return 0
+	}
+	return count
+}
+
 func buildPublicResourceCatalogPage(items []map[string]any, query resourceCatalogPageQuery) publicResourceCatalogPage {
+	return buildPublicResourceCatalogPageWithStatistics(items, query, resourceCatalogSortStatistics{})
+}
+
+func buildPublicResourceCatalogPageWithStatistics(items []map[string]any, query resourceCatalogPageQuery, statistics resourceCatalogSortStatistics) publicResourceCatalogPage {
 	type candidate struct {
-		item      map[string]any
-		updatedAt time.Time
-		id        int64
+		item            map[string]any
+		resourceID      string
+		updatedAt       time.Time
+		id              int64
+		likeCount       int
+		weeklyDownloads int
+		totalDownloads  int
 	}
 	filtered := make([]candidate, 0, len(items))
 	for _, item := range items {
 		if item != nil && catalogItemMatches(item, query) {
+			resourceID := catalogResourceID(item)
 			filtered = append(filtered, candidate{
-				item:      item,
-				updatedAt: catalogUpdatedTime(item),
-				id:        catalogNumericID(item),
+				item:            item,
+				resourceID:      resourceID,
+				updatedAt:       catalogUpdatedTime(item),
+				id:              catalogNumericID(item),
+				likeCount:       nonNegativeCatalogCount(statistics.LikeCounts, resourceID),
+				weeklyDownloads: nonNegativeCatalogCount(statistics.WeeklyDownloadCounts, resourceID),
+				totalDownloads:  nonNegativeCatalogCount(statistics.TotalDownloadCounts, resourceID),
 			})
 		}
 	}
 	sort.SliceStable(filtered, func(left, right int) bool {
+		leftItem := filtered[left]
+		rightItem := filtered[right]
+		switch query.Sort {
+		case "hot":
+			if leftItem.likeCount != rightItem.likeCount {
+				return leftItem.likeCount > rightItem.likeCount
+			}
+		case "weeklytop":
+			if leftItem.weeklyDownloads != rightItem.weeklyDownloads {
+				return leftItem.weeklyDownloads > rightItem.weeklyDownloads
+			}
+			if leftItem.totalDownloads != rightItem.totalDownloads {
+				return leftItem.totalDownloads > rightItem.totalDownloads
+			}
+		}
 		leftTime := filtered[left].updatedAt
 		rightTime := filtered[right].updatedAt
 		if !leftTime.Equal(rightTime) {
@@ -395,6 +552,9 @@ func buildPublicResourceCatalogPage(items []map[string]any, query resourceCatalo
 		}
 		return leftID > rightID
 	})
+	if query.Sort == "weeklytop" && len(filtered) > resourceCatalogWeeklyTopLimit {
+		filtered = filtered[:resourceCatalogWeeklyTopLimit]
+	}
 
 	total := len(filtered)
 	totalPages := 0
@@ -425,6 +585,24 @@ func buildPublicResourceCatalogPage(items []map[string]any, query resourceCatalo
 }
 
 func resourceCatalogPageETag(base string, query resourceCatalogPageQuery) string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("page-v1|%s|%d|%d|%s|%s|%s|%s|%s", base, query.Page, query.PageSize, query.Sort, query.Keyword, query.Category, query.MaterialType, query.ColumnTag)))
-	return `W/"resources-page-` + hex.EncodeToString(digest[:12]) + `"`
+	digest := sha256.New()
+	_, _ = fmt.Fprintf(digest, "page-v2|%s|%d|%d|%s|%s|%s|%s|%s", base, query.Page, query.PageSize, query.Sort, query.Keyword, query.Category, query.MaterialType, query.ColumnTag)
+	for _, keyword := range query.ColumnKeywords {
+		_, _ = fmt.Fprintf(digest, "|column-keyword:%d:%s", len(keyword), keyword)
+	}
+	sum := digest.Sum(nil)
+	return `W/"resources-page-` + hex.EncodeToString(sum[:12]) + `"`
+}
+
+func resourceCatalogPageUsesDynamicStatistics(sortMode string) bool {
+	return sortMode == "hot" || sortMode == "weeklytop"
+}
+
+func resourceCatalogPageCacheControl(sortMode string) string {
+	if resourceCatalogPageUsesDynamicStatistics(sortMode) {
+		// Dynamic rankings can change without the catalog file changing. Avoid an
+		// O(N log N) statistics digest on every request and never cache their body.
+		return "private, no-store"
+	}
+	return "private, max-age=60, stale-while-revalidate=300"
 }

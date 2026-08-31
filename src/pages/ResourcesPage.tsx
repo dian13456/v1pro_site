@@ -12,7 +12,7 @@ import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../comp
 import { SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
-import { fetchResourcePage } from "../services/resourceService";
+import { fetchResourcePage, type ResourcePageResult } from "../services/resourceService";
 import { hasValidLocalAuth } from "../services/authService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
@@ -147,16 +147,31 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
   const [catalogFallbackRequested, setCatalogFallbackRequested] = useState(false);
+  const [serverPageState, setServerPageState] = useState<{
+    key: string;
+    result: ResourcePageResult;
+  } | null>(null);
+  const [serverPageLoading, setServerPageLoading] = useState(false);
+  const [serverPageError, setServerPageError] = useState("");
+  const [serverPageRefreshKey, setServerPageRefreshKey] = useState(0);
   const initialSearch = (searchParams.get("search") || searchParams.get("q") || "").trim();
   const staticMode = isStaticMode();
   const recommendationsEnabled = authenticated && !staticMode;
   const shouldLoadFullCatalog =
-    adminMode || staticMode || catalogFallbackRequested || currentPage !== 0 || initialSearch.length > 0;
+    staticMode ||
+    catalogFallbackRequested ||
+    randomMode ||
+    randomPending ||
+    followingOnly ||
+    showHidden ||
+    hiddenIds.length > 0 ||
+    albumMode ||
+    capacityFilter !== "all";
   const {
     resources,
     filtered,
-    loading,
-    error,
+    loading: fullCatalogLoading,
+    error: fullCatalogError,
     keyword,
     setKeyword,
     category,
@@ -170,6 +185,79 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     removeResource,
   } = useResourceCatalog(shouldLoadFullCatalog);
 
+  const serverPagingEnabled = currentPage > 0 && !shouldLoadFullCatalog;
+  const requestedServerPage = sortMode === "weeklyTop" ? 1 : Math.max(1, currentPage);
+  const requestedServerPageSize = sortMode === "weeklyTop" ? WEEKLY_TOP_LIMIT : pageSize;
+  const serverMaterialType = sortMode === "hot" && materialType === "all"
+    ? "video,gif"
+    : materialType === "all"
+      ? undefined
+      : materialType;
+  const serverPageKey = JSON.stringify({
+    page: requestedServerPage,
+    pageSize: requestedServerPageSize,
+    sortMode,
+    keyword: keyword.trim(),
+    category: category === "all" ? "gif" : category,
+    materialType: serverMaterialType || "",
+    columnTag: columnTag === "all" ? "" : columnTag,
+    refresh: serverPageRefreshKey,
+  });
+  const activeServerPage = serverPageState?.key === serverPageKey ? serverPageState.result : null;
+  const loading = serverPagingEnabled ? serverPageLoading || activeServerPage == null : fullCatalogLoading;
+  const error = serverPagingEnabled ? serverPageError : fullCatalogError;
+
+  useEffect(() => {
+    if (!serverPagingEnabled) {
+      setServerPageLoading(false);
+      setServerPageError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setServerPageLoading(true);
+    setServerPageError("");
+    fetchResourcePage({
+      page: requestedServerPage,
+      pageSize: requestedServerPageSize,
+      sort: sortMode,
+      keyword,
+      category: category === "all" ? "gif" : category,
+      materialType: serverMaterialType,
+      columnTag: columnTag === "all" ? undefined : columnTag,
+    }, controller.signal)
+      .then((result) => {
+        if (!active) return;
+        setServerPageState({ key: serverPageKey, result });
+      })
+      .catch((err: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        setServerPageError((err as Error)?.message || "素材分页加载失败");
+        // Older deployments may not expose the page endpoint yet. Falling back
+        // keeps the catalog usable while avoiding an endless retry loop.
+        setCatalogFallbackRequested(true);
+      })
+      .finally(() => {
+        if (active) setServerPageLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    category,
+    columnTag,
+    keyword,
+    requestedServerPage,
+    requestedServerPageSize,
+    serverMaterialType,
+    serverPageKey,
+    serverPagingEnabled,
+    sortMode,
+  ]);
+
   useEffect(() => {
     setKeyword(initialSearch);
     if (initialSearch) {
@@ -181,11 +269,11 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
 
   const identityResources = useMemo(() => {
     const byId = new Map<number, ResourceItem>();
-    for (const resource of [...recommendationResources, ...resources]) {
+    for (const resource of [...recommendationResources, ...resources, ...(activeServerPage?.items || [])]) {
       byId.set(resource.id, resource);
     }
     return Array.from(byId.values());
-  }, [recommendationResources, resources]);
+  }, [activeServerPage, recommendationResources, resources]);
 
   const hiddenIdSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const followedIdSet = useMemo(() => new Set(followedIds), [followedIds]);
@@ -231,8 +319,18 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       return frames == null || frames <= capacityFilter;
     });
   }, [capacityFilter, sortedResources]);
-  const totalItems = capacityFilteredResources.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const serverVisibleItems = useMemo(
+    () => (activeServerPage?.items || []).filter((resource) => !hiddenIdSet.has(resource.id)),
+    [activeServerPage, hiddenIdSet],
+  );
+  const totalItems = serverPagingEnabled
+    ? sortMode === "weeklyTop"
+      ? Math.min(WEEKLY_TOP_LIMIT, activeServerPage?.total || 0)
+      : activeServerPage?.total || 0
+    : capacityFilteredResources.length;
+  const totalPages = serverPagingEnabled
+    ? Math.max(1, sortMode === "weeklyTop" ? 1 : activeServerPage?.totalPages || currentPage)
+    : Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
     setRandomMode(false);
@@ -256,14 +354,17 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   }, [sortMode]);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
+    if ((!serverPagingEnabled || activeServerPage) && currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
-  }, [currentPage, totalPages]);
+  }, [activeServerPage, currentPage, serverPagingEnabled, totalPages]);
 
   const visibleItems = useMemo(() => {
     if (randomMode) {
       return randomItems;
+    }
+    if (serverPagingEnabled) {
+      return serverVisibleItems;
     }
     if (sortMode === "weeklyTop") {
       return capacityFilteredResources;
@@ -271,7 +372,16 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     const catalogPage = Math.max(1, currentPage);
     const start = (catalogPage - 1) * pageSize;
     return capacityFilteredResources.slice(start, start + pageSize);
-  }, [randomMode, randomItems, sortMode, capacityFilteredResources, currentPage, pageSize]);
+  }, [
+    capacityFilteredResources,
+    currentPage,
+    pageSize,
+    randomItems,
+    randomMode,
+    serverPagingEnabled,
+    serverVisibleItems,
+    sortMode,
+  ]);
 
   const albumResources = useMemo(() => {
     const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
@@ -926,6 +1036,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     try {
       const result = await adminDeleteResource(adminToken, resource.id);
       removeResource(resource.id);
+      setServerPageRefreshKey((value) => value + 1);
       setSelectedResource((current) => current?.id === resource.id ? null : current);
       setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
       const warningText = result.cleanupWarnings.length > 0
