@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -275,7 +276,8 @@ func loadResourceCatalogFile(path string) ([]map[string]any, error) {
 }
 
 func saveResourceCatalogFile(path string, resources []map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(resources, "", "  ")
@@ -283,7 +285,49 @@ func saveResourceCatalogFile(path string, resources []map[string]any) error {
 		return err
 	}
 	raw = append(raw, '\n')
-	return os.WriteFile(path, raw, 0o644)
+	temporary, err := os.CreateTemp(directory, ".resources-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(raw); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	renameErr := os.Rename(temporaryPath, path)
+	if renameErr == nil {
+		return nil
+	}
+	// Windows does not replace an existing destination with os.Rename. The
+	// production host is Linux (where the rename above is atomic), while this
+	// fallback keeps local tooling and tests functional.
+	if runtime.GOOS != "windows" {
+		return renameErr
+	}
+	backupPath := temporaryPath + ".previous"
+	if backupErr := os.Rename(path, backupPath); backupErr != nil {
+		return renameErr
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		if restoreErr := os.Rename(backupPath, path); restoreErr != nil {
+			return fmt.Errorf("replace resource catalog failed: %v; restore failed: %v; previous catalog preserved at %s", err, restoreErr, backupPath)
+		}
+		return err
+	}
+	_ = os.Remove(backupPath)
+	return nil
 }
 
 func loadStringMapFile(path string) (map[string]string, error) {

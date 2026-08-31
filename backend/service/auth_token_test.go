@@ -48,6 +48,12 @@ func TestSanitizePublicResourceCatalog(t *testing.T) {
 			"download":       "https://bucket.cos.ap-guangzhou.myqcloud.com/foo.jpg",
 			"uploaderSerial": "SN-001",
 		},
+		{
+			"id":              2,
+			"title":           "legacy",
+			"image":           "legacy.jpg",
+			"_uploaderSerial": "SN-LEGACY",
+		},
 	}
 	out := SanitizePublicResourceCatalog(items)
 	if _, ok := out[0]["download"]; ok {
@@ -61,6 +67,12 @@ func TestSanitizePublicResourceCatalog(t *testing.T) {
 	}
 	if _, ok := out[0]["uploaderSerial"]; ok {
 		t.Fatalf("uploader serial should remain private")
+	}
+	if out[1]["uploaderBlockable"] != true {
+		t.Fatalf("expected legacy uploader to be blockable")
+	}
+	if _, ok := out[1]["_uploaderSerial"]; ok {
+		t.Fatalf("legacy uploader serial should remain private")
 	}
 }
 
@@ -82,6 +94,9 @@ func TestSelectPublicResourceCatalogPreservesRecommendationOrder(t *testing.T) {
 		}
 		if _, ok := item["uploaderSerial"]; ok {
 			t.Fatal("uploaderSerial must be removed")
+		}
+		if _, ok := item["_uploaderSerial"]; ok {
+			t.Fatal("_uploaderSerial must be removed")
 		}
 	}
 }

@@ -37,9 +37,14 @@ func SanitizePublicResourceCatalog(items []map[string]any) []map[string]any {
 		for key, value := range item {
 			copy[key] = value
 		}
-		copy["uploaderBlockable"] = normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey])) != ""
+		uploaderSerial := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		if uploaderSerial == "" {
+			uploaderSerial = normalizeUploaderSerial(stringifyCatalogValue(item["_uploaderSerial"]))
+		}
+		copy["uploaderBlockable"] = uploaderSerial != ""
 		delete(copy, "download")
 		delete(copy, catalogUploaderSerialKey)
+		delete(copy, "_uploaderSerial")
 		if imageRaw, ok := copy["image"].(string); ok {
 			copy["image"] = StripPublicObjectURL(imageRaw)
 		}

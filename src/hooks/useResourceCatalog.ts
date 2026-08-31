@@ -6,10 +6,11 @@ import { resourceMatchesColumn } from "../utils/columnMatch";
 
 export type ResourceSortMode = "earliest" | "latest" | "hot" | "weeklyTop";
 
-export function useResourceCatalog() {
+export function useResourceCatalog(enabled = true) {
   const { columnTagOptions, columnTagFilterOptions } = useColumnTags();
   const [resources, setResources] = useState<ResourceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState<ResourceCategory>("all");
@@ -18,7 +19,13 @@ export function useResourceCatalog() {
   const [sortMode, setSortMode] = useState<ResourceSortMode>("latest");
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     let active = true;
+    setLoading(true);
+    setError("");
     fetchResources()
       .then((list) => {
         if (active) setResources(list);
@@ -27,13 +34,16 @@ export function useResourceCatalog() {
         if (active) setError((err as Error)?.message || "资源加载失败");
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          setHasLoaded(true);
+        }
       });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [enabled]);
 
   const filtered = useMemo(() => {
     const query = keyword.trim().toLowerCase();
@@ -73,7 +83,7 @@ export function useResourceCatalog() {
   return {
     resources,
     filtered,
-    loading,
+    loading: enabled && !hasLoaded ? true : loading,
     error,
     keyword,
     setKeyword,

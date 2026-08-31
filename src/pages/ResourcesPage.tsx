@@ -12,6 +12,7 @@ import { ResourceDetailModal, type ResourceWebUsbTransferOptions } from "../comp
 import { SiteAlert } from "../components/SiteUi";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useResourceCatalog } from "../hooks/useResourceCatalog";
+import { fetchResourcePage } from "../services/resourceService";
 import { hasValidLocalAuth } from "../services/authService";
 import { fetchResourceDownloads, displayDownloadCount } from "../services/downloadStatsService";
 import type { DownloadStatsSnapshot } from "../types/downloadStats";
@@ -55,7 +56,7 @@ import {
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 16;
-const RECOMMENDATION_FETCH_SIZE = 64;
+const RECOMMENDATION_FETCH_SIZE = 16;
 const RECENT_RECOMMENDATIONS_KEY = "jiadian_recent_recommendations_v2";
 const CURRENT_DEVICE_NOT_FOUND_PATTERN = /^未找到当前认证的 V1PRO（SN .+），请重新认证该设备$/;
 
@@ -129,6 +130,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
+  const [randomPending, setRandomPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [deviceAuthErrorMessage, setDeviceAuthErrorMessage] = useState("");
   const [capacityFilter, setCapacityFilter] = useState<"all" | DeviceFrameCapacity>("all");
@@ -144,6 +146,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const [recommendationResources, setRecommendationResources] = useState<ResourceItem[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
   const [recommendationRefreshKey, setRecommendationRefreshKey] = useState(0);
+  const [catalogFallbackRequested, setCatalogFallbackRequested] = useState(false);
+  const initialSearch = (searchParams.get("search") || searchParams.get("q") || "").trim();
+  const staticMode = isStaticMode();
+  const recommendationsEnabled = authenticated && !staticMode;
+  const shouldLoadFullCatalog =
+    adminMode || staticMode || catalogFallbackRequested || currentPage !== 0 || initialSearch.length > 0;
   const {
     resources,
     filtered,
@@ -160,15 +168,24 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     sortMode,
     setSortMode,
     removeResource,
-  } = useResourceCatalog();
+  } = useResourceCatalog(shouldLoadFullCatalog);
 
   useEffect(() => {
-    const search = searchParams.get("search")?.trim();
-    if (search) {
-      setKeyword(search);
+    setKeyword(initialSearch);
+    if (initialSearch) {
       setCurrentPage(1);
+    } else {
+      setCurrentPage(0);
     }
-  }, [searchParams, setKeyword]);
+  }, [initialSearch, setKeyword]);
+
+  const identityResources = useMemo(() => {
+    const byId = new Map<number, ResourceItem>();
+    for (const resource of [...recommendationResources, ...resources]) {
+      byId.set(resource.id, resource);
+    }
+    return Array.from(byId.values());
+  }, [recommendationResources, resources]);
 
   const hiddenIdSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const followedIdSet = useMemo(() => new Set(followedIds), [followedIds]);
@@ -220,11 +237,13 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   useEffect(() => {
     setRandomMode(false);
     setRandomItems([]);
+    setRandomPending(false);
   }, [keyword, category, materialType, columnTag, sortMode, pageSize]);
 
   useEffect(() => {
     setRandomMode(false);
     setRandomItems([]);
+    setRandomPending(false);
     setAlbumMode(false);
     setAlbumSelectedIds([]);
   }, [showHidden, followingOnly]);
@@ -262,7 +281,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   }, [albumSelectedIds, resources]);
 
   const fallbackRecommendationResources = useMemo(() => {
-    const eligible = resources.filter((resource) =>
+    const eligible = identityResources.filter((resource) =>
       resource.category === "gif" &&
       (resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif") &&
       !hiddenIdSet.has(resource.id)
@@ -273,7 +292,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     return [...(unseen.length >= DEFAULT_PAGE_SIZE ? unseen : eligible)]
       .sort((left, right) => fallbackRecommendationRank(left.id, seed) - fallbackRecommendationRank(right.id, seed))
       .slice(0, DEFAULT_PAGE_SIZE);
-  }, [hiddenIdSet, location.key, recommendationRefreshKey, resources]);
+  }, [hiddenIdSet, identityResources, location.key, recommendationRefreshKey]);
 
   const recommendedResources = useMemo(() => {
     const resourceMap = new Map(
@@ -293,14 +312,33 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     rememberRecommendationIds(fallbackRecommendationResources.map((resource) => resource.id));
   }, [fallbackRecommendationResources, recommendationItems.length, recommendationsLoading]);
 
+  useEffect(() => {
+    if (!randomPending || loading) return;
+    if (resources.length === 0) {
+      setRandomPending(false);
+      setRandomMode(false);
+      setErrorMessage(error || "素材目录为空，请稍后重试");
+      return;
+    }
+    const pool = filtered.filter(
+      (resource) => resource.materialType === "image" || resource.materialType === "video" || resource.materialType === "gif"
+    );
+    setRandomItems(pickRandomItems(pool, RANDOM_PAGE_SIZE));
+    setRandomMode(true);
+    setRandomPending(false);
+  }, [error, filtered, loading, randomPending, resources.length]);
+
   const showingRecommendations =
     !showHidden &&
     !albumMode &&
     !randomMode &&
     currentPage === 0;
   const displayedItems = showingRecommendations ? recommendedResources : visibleItems;
-  const canRenderCards = showingRecommendations ? !recommendationsLoading : !loading;
-  const showInitialLoader = !canRenderCards;
+  const homeFallbackLoading =
+    showingRecommendations && (!recommendationsEnabled || catalogFallbackRequested) && loading;
+  const showInitialLoader = showingRecommendations ? recommendationsLoading || homeFallbackLoading : loading;
+  const canRenderCards = !showInitialLoader;
+  const visibleCatalogError = showingRecommendations && recommendationResources.length > 0 ? "" : error;
   const displayedTotalItems = currentPage === 0 ? recommendedResources.length : totalItems;
   const displayedTotalPages = currentPage === 0 ? 1 : totalPages;
 
@@ -376,9 +414,9 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   }, [authenticated]);
 
   useEffect(() => {
-    if (!authenticated || resources.length === 0) return;
+    if (!authenticated || identityResources.length === 0) return;
     let active = true;
-    fetchHiddenResourceState(resources)
+    fetchHiddenResourceState(identityResources)
       .then((state) => {
         if (!active) return;
         setHiddenIds(state.hiddenResourceIds);
@@ -390,12 +428,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     return () => {
       active = false;
     };
-  }, [authenticated, resources]);
+  }, [authenticated, identityResources]);
 
   useEffect(() => {
-    if (!authenticated || resources.length === 0) return;
+    if (!authenticated || identityResources.length === 0) return;
     let active = true;
-    fetchUploaderFollows(resources)
+    fetchUploaderFollows(identityResources)
       .then((state) => {
         if (!active) return;
         setFollowedIds(state.followedResourceIds);
@@ -408,28 +446,80 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     return () => {
       active = false;
     };
-  }, [authenticated, resources]);
+  }, [authenticated, identityResources]);
 
   useEffect(() => {
-    if (!authenticated || isStaticMode()) {
+    if (staticMode) {
       setRecommendationsLoading(false);
       return;
     }
     let active = true;
     setRecommendationsLoading(true);
-    fetchResourceRecommendations(RECOMMENDATION_FETCH_SIZE, {
-      seed: newRecommendationSeed(),
-      excludeIds: readRecentRecommendationIds(),
-    })
+    const loadFallbackPage = async () => {
+      const firstPage = await fetchResourcePage({
+        page: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+        sort: "latest",
+        category: "gif",
+      });
+      const targetPage =
+        recommendationRefreshKey > 0 && firstPage.totalPages > 1
+          ? (recommendationRefreshKey % firstPage.totalPages) + 1
+          : 1;
+      const fallback = targetPage === 1
+        ? firstPage
+        : await fetchResourcePage({
+            page: targetPage,
+            pageSize: DEFAULT_PAGE_SIZE,
+            sort: "latest",
+            category: "gif",
+          });
+      if (fallback.items.length === 0) {
+        throw new Error("素材分页结果为空");
+      }
+      return fallback;
+    };
+    const loadHomepage = async () => {
+      if (recommendationsEnabled) {
+        try {
+          const result = await fetchResourceRecommendations(RECOMMENDATION_FETCH_SIZE, {
+            seed: newRecommendationSeed(),
+            excludeIds: readRecentRecommendationIds(),
+          });
+          if (result.resources.length === 0) {
+            throw new Error("推荐素材详情为空");
+          }
+          return {
+            resources: result.resources,
+            recommendations: result.items,
+          };
+        } catch {
+          // Personalized recommendations are optional; use the public lightweight page next.
+        }
+      }
+      const fallback = await loadFallbackPage();
+      return {
+        resources: fallback.items,
+        recommendations: fallback.items.map((resource) => ({
+          resourceId: resource.id,
+          score: 0,
+          reason: "最新上传",
+        })),
+      };
+    };
+    loadHomepage()
       .then((result) => {
         if (!active) return;
-        setRecommendationItems(result.items);
+        setCatalogFallbackRequested(false);
         setRecommendationResources(result.resources);
-        rememberRecommendationIds(result.items.slice(0, DEFAULT_PAGE_SIZE).map((item) => item.resourceId));
+        setRecommendationItems(result.recommendations);
+        rememberRecommendationIds(result.recommendations.slice(0, DEFAULT_PAGE_SIZE).map((item) => item.resourceId));
       })
       .catch(() => {
-        if (active) setRecommendationItems([]);
-        if (active) setRecommendationResources([]);
+        if (!active) return;
+        setRecommendationItems([]);
+        setRecommendationResources([]);
+        setCatalogFallbackRequested(true);
       })
       .finally(() => {
         if (active) setRecommendationsLoading(false);
@@ -437,9 +527,17 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     return () => {
       active = false;
     };
-  }, [authenticated, location.key, recommendationRefreshKey]);
+  }, [location.key, recommendationRefreshKey, recommendationsEnabled, staticMode]);
 
   const handleRandomRecommend = () => {
+    setCurrentPage(1);
+    if (resources.length === 0) {
+      setRandomPending(true);
+      setRandomItems([]);
+      setRandomMode(false);
+      setErrorMessage("");
+      return;
+    }
     const pool = filtered.filter(
       (resource) =>
         resource.materialType === "image" ||
@@ -448,7 +546,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     );
     setRandomItems(pickRandomItems(pool, RANDOM_PAGE_SIZE));
     setRandomMode(true);
-    setCurrentPage(1);
+    setRandomPending(false);
     setErrorMessage("");
   };
 
@@ -456,6 +554,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     setCurrentPage(0);
     setRandomMode(false);
     setRandomItems([]);
+    setRandomPending(false);
     setShowHidden(false);
     setFollowingOnly(false);
     setAlbumMode(false);
@@ -465,6 +564,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const handleExitRandomMode = () => {
     setRandomMode(false);
     setRandomItems([]);
+    setRandomPending(false);
     setCurrentPage(1);
   };
 
@@ -483,6 +583,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     }
     setRandomMode(false);
     setRandomItems([]);
+    setRandomPending(false);
     setCurrentPage(1);
     if (section === "following") {
       setFollowingOnly(true);
@@ -670,7 +771,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setFollowingId(resource.id);
       setErrorMessage("");
       setStatusMessage("");
-      const result = await setUploaderFollowed(resource, followed, resources);
+      const result = await setUploaderFollowed(resource, followed, identityResources);
       setFollowedIds(result.state.followedResourceIds);
       setOwnResourceIds(result.state.ownResourceIds);
       setFollowedUploaderCount(result.state.followedUploaderCount);
@@ -695,11 +796,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setHidingId(resource.id);
       setErrorMessage("");
       setStatusMessage("");
-      const state = await setUploaderHidden(resource, hidden, resources);
+      const state = await setUploaderHidden(resource, hidden, identityResources);
       setHiddenIds(state.hiddenResourceIds);
       setBlockedUploaderCount(state.blockedUploaderCount);
       setRandomMode(false);
       setRandomItems([]);
+      setRandomPending(false);
       setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
       setSelectedResource((current) => current?.id === resource.id ? null : current);
       setStatusMessage(hidden
@@ -916,6 +1018,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           <div className="mt-4">
             <ResourceLibrarySidebar
               resources={resources}
+              countsAvailable={shouldLoadFullCatalog && !loading}
               materialType={materialType}
               onMaterialType={(value) => {
                 setCurrentPage(1);
@@ -959,6 +1062,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           <div className="resource-sidebar-scroll hidden self-start lg:sticky lg:top-[80px] lg:block lg:max-h-[calc(100vh-96px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <ResourceLibrarySidebar
               resources={resources}
+              countsAvailable={shouldLoadFullCatalog && !loading}
               materialType={materialType}
               onMaterialType={(value) => {
                 setCurrentPage(1);
@@ -1109,7 +1213,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
               </div>
             </div>
 
-            {error || errorMessage ? <SiteAlert variant="error" className="mb-5">{error || errorMessage}</SiteAlert> : null}
+            {visibleCatalogError || errorMessage ? <SiteAlert variant="error" className="mb-5">{visibleCatalogError || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {showInitialLoader ? (
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label={recommendationsLoading ? "正在加载推荐素材" : "正在加载素材"}>
@@ -1168,7 +1272,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
               </div>
             ) : null}
 
-            {!loading && !randomMode && totalItems > 0 && (currentPage === 0 || sortMode !== "weeklyTop") ? (
+            {!loading && !randomMode && (currentPage === 0 || totalItems > 0) && (currentPage === 0 || sortMode !== "weeklyTop") ? (
               <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
                 <button type="button" disabled={currentPage <= 0} onClick={() => {
                   if (currentPage === 1) handleRecommendationHome();

@@ -263,18 +263,6 @@ func loadResourceMap(path string) (resourceMap, error) {
 	return m, nil
 }
 
-func loadResourceCatalog(path string) ([]map[string]any, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var list []map[string]any
-	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, err
-	}
-	return list, nil
-}
-
 func loadColumnTags(path string) ([]map[string]any, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -2339,13 +2327,32 @@ func main() {
 		if abuseGuard.RejectRead(c, ginClientIP(c)) {
 			return
 		}
-		items, err := loadResourceCatalog(resourcesPath)
+		snapshot, err := loadPublicResourceCatalogSnapshot(resourcesPath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
 			return
 		}
+		writePublicResourceCatalog(c, snapshot)
+	})
+
+	router.GET("/api/resources/page", func(c *gin.Context) {
+		if abuseGuard.RejectRead(c, ginClientIP(c)) {
+			return
+		}
+		snapshot, err := loadPublicResourceCatalogSnapshot(resourcesPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "load resources failed"})
+			return
+		}
+		query := parseResourceCatalogPageQuery(c.Request.URL.Query())
+		page := buildPublicResourceCatalogPage(snapshot.publicItems, query)
 		c.Header("Cache-Control", "private, max-age=60, stale-while-revalidate=300")
-		c.JSON(http.StatusOK, service.SanitizePublicResourceCatalog(items))
+		c.Header("ETag", resourceCatalogPageETag(snapshot.etag, query))
+		if requestETagMatches(c.GetHeader("If-None-Match"), c.Writer.Header().Get("ETag")) {
+			c.Status(http.StatusNotModified)
+			return
+		}
+		c.JSON(http.StatusOK, page)
 	})
 
 	recordResourceInteraction := func(serial, resourceID, action string, now time.Time) {

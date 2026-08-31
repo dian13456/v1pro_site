@@ -21,6 +21,35 @@ type ResourceRecord = Partial<ResourceItem> & {
 const COS_MANIFEST_URL = import.meta.env.VITE_COS_RESOURCE_MANIFEST_URL || "";
 let resourceCatalogPromise: Promise<ResourceItem[]> | null = null;
 
+interface ResourcePagePayload {
+  success?: boolean;
+  items?: unknown[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
+  hasMore?: boolean;
+}
+
+export interface ResourcePageQuery {
+  page?: number;
+  pageSize?: number;
+  sort?: "latest" | "earliest";
+  keyword?: string;
+  category?: string;
+  materialType?: string;
+  columnTag?: string;
+}
+
+export interface ResourcePageResult {
+  items: ResourceItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
 /** 将 COS 公网 URL 转为对象键；已是相对路径则原样返回。 */
 export function stripPublicObjectUrl(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -131,6 +160,34 @@ function parseResourcePayload(payload: unknown): ResourceItem[] {
 
 export function parseResourceList(payload: unknown): ResourceItem[] {
   return parseResourcePayload(payload);
+}
+
+export async function fetchResourcePage(query: ResourcePageQuery = {}): Promise<ResourcePageResult> {
+  const page = Math.max(1, Math.floor(query.page || 1));
+  const pageSize = Math.max(1, Math.min(100, Math.floor(query.pageSize || 16)));
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+    sort: query.sort === "earliest" ? "earliest" : "latest",
+  });
+  if (query.keyword?.trim()) params.set("q", query.keyword.trim().slice(0, 80));
+  if (query.category?.trim()) params.set("category", query.category.trim());
+  if (query.materialType?.trim()) params.set("materialType", query.materialType.trim());
+  if (query.columnTag?.trim()) params.set("columnTag", query.columnTag.trim());
+
+  const payload = await apiFetch<ResourcePagePayload>(`/api/resources/page?${params.toString()}`);
+  if (payload.success === false) throw new Error("素材目录分页加载失败");
+  const items = parseResourcePayload(payload.items);
+  const total = Math.max(0, Number(payload.total) || 0);
+  const normalizedPageSize = Math.max(1, Number(payload.pageSize) || pageSize);
+  return {
+    items,
+    page: Math.max(1, Number(payload.page) || page),
+    pageSize: normalizedPageSize,
+    total,
+    totalPages: Math.max(0, Number(payload.totalPages) || Math.ceil(total / normalizedPageSize)),
+    hasMore: Boolean(payload.hasMore),
+  };
 }
 
 async function fetchFromCosManifest(): Promise<ResourceItem[]> {

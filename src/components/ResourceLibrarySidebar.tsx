@@ -53,6 +53,7 @@ function FilterGroup<T extends string | number>({
 
 interface ResourceLibrarySidebarProps {
   resources: ResourceItem[];
+  countsAvailable?: boolean;
   materialType: MaterialTypeFilter;
   onMaterialType: (value: MaterialTypeFilter) => void;
   capacity: "all" | DeviceFrameCapacity;
@@ -68,6 +69,7 @@ interface ResourceLibrarySidebarProps {
 
 export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
   const count = (type: ResourceItem["materialType"]) => props.resources.filter((item) => item.materialType === type).length;
+  const visibleCount = (value: number) => props.countsAvailable === false ? undefined : value;
   return (
     <aside className="space-y-[14px]">
       <FilterGroup
@@ -75,10 +77,10 @@ export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
         value={props.materialType}
         onChange={props.onMaterialType}
         options={[
-          { value: "all", label: "全部类型", count: props.resources.length, icon: "▰" },
-          { value: "image", label: "图片素材", count: count("image"), icon: "▧" },
-          { value: "gif", label: "GIF 素材", count: count("gif"), icon: "◇" },
-          { value: "video", label: "视频素材", count: count("video"), icon: "▣" },
+          { value: "all", label: "全部类型", count: visibleCount(props.resources.length), icon: "▰" },
+          { value: "image", label: "图片素材", count: visibleCount(count("image")), icon: "▧" },
+          { value: "gif", label: "GIF 素材", count: visibleCount(count("gif")), icon: "◇" },
+          { value: "video", label: "视频素材", count: visibleCount(count("video")), icon: "▣" },
         ]}
       />
       {props.showSortOptions !== false ? (
