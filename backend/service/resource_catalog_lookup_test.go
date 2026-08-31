@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestFindUploaderSerial(t *testing.T) {
 	items := []map[string]any{
@@ -15,6 +19,30 @@ func TestFindUploaderSerial(t *testing.T) {
 	}
 	if got := FindUploaderSerial(items, "999"); got != "" {
 		t.Fatalf("expected empty, got %q", got)
+	}
+}
+
+func TestLoadUploaderSerialWithPresenceFromCatalogFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resources.json")
+	raw := []byte(`[
+		{"id": 1, "uploaderSerial": "sn-one"},
+		{"id": 2, "title": "legacy"}
+	]`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	serial, found, err := LoadUploaderSerialWithPresenceFromCatalogFile(path, "1")
+	if err != nil || !found || serial != "SN-ONE" {
+		t.Fatalf("resource 1 = serial %q, found %v, err %v", serial, found, err)
+	}
+	serial, found, err = LoadUploaderSerialWithPresenceFromCatalogFile(path, "2")
+	if err != nil || !found || serial != "" {
+		t.Fatalf("legacy resource = serial %q, found %v, err %v", serial, found, err)
+	}
+	_, found, err = LoadUploaderSerialWithPresenceFromCatalogFile(path, "3")
+	if err != nil || found {
+		t.Fatalf("missing resource = found %v, err %v", found, err)
 	}
 }
 

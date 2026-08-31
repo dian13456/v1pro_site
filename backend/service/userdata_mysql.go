@@ -1033,15 +1033,22 @@ func (m *mysqlStore) loadAIShareQuota(ctx context.Context) (AIShareQuotaStore, e
 		if err := rows.Scan(&serial, &count, &extraQuota); err != nil {
 			return store, err
 		}
-		store.Counts[serial] = count
+		serial = normalizeAIShareQuotaSerial(serial)
+		if serial == "" {
+			continue
+		}
+		if count > 0 {
+			store.Counts[serial] += count
+		}
 		if extraQuota > 0 {
-			store.ExtraQuota[serial] = extraQuota
+			store.ExtraQuota[serial] += extraQuota
 		}
 	}
 	return store, rows.Err()
 }
 
 func (m *mysqlStore) saveAIShareQuota(ctx context.Context, store AIShareQuotaStore) error {
+	store = store.Clone()
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1072,6 +1079,61 @@ func (m *mysqlStore) saveAIShareQuota(ctx context.Context, store AIShareQuotaSto
 		}
 	}
 	return tx.Commit()
+}
+
+func (m *mysqlStore) resetAIShareRemainingToBase(ctx context.Context, serial string) (int, error) {
+	serial = normalizeAIShareQuotaSerial(serial)
+	if serial == "" {
+		return 0, fmt.Errorf("serial empty")
+	}
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT share_count
+		FROM ai_share_counts
+		WHERE UPPER(TRIM(serial)) = ?
+		FOR UPDATE
+	`, serial)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for rows.Next() {
+		var storedCount int
+		if err := rows.Scan(&storedCount); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		if storedCount > 0 {
+			count += storedCount
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_share_counts WHERE UPPER(TRIM(serial)) = ?`, serial); err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO ai_share_counts (serial, share_count, extra_quota) VALUES (?, ?, ?)`,
+			serial, count, count,
+		); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (m *mysqlStore) loadAIShareUnlimited(ctx context.Context) (AIShareUnlimitedStore, error) {

@@ -106,15 +106,29 @@ func PrimaryCatalogAuthorsByUploaderSerial(items []map[string]any) map[string]st
 
 // LoadUploaderSerialFromCatalogFile reads resources.json and finds uploader SN by resource id.
 func LoadUploaderSerialFromCatalogFile(path, resourceID string) (string, error) {
+	serial, _, err := LoadUploaderSerialWithPresenceFromCatalogFile(path, resourceID)
+	return serial, err
+}
+
+// LoadUploaderSerialWithPresenceFromCatalogFile distinguishes a missing
+// resource from a legacy resource that exists but has no private uploader key.
+func LoadUploaderSerialWithPresenceFromCatalogFile(path, resourceID string) (string, bool, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	var items []map[string]any
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return FindUploaderSerial(items, resourceID), nil
+	target := strings.TrimSpace(resourceID)
+	for _, item := range items {
+		if item == nil || stringifyCatalogID(item["id"]) != target {
+			continue
+		}
+		return normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey])), true, nil
+	}
+	return "", false, nil
 }
 
 func stringifyCatalogID(value any) string {

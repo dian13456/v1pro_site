@@ -25,7 +25,7 @@ import {
   type ResourceRecommendation,
 } from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
-import { adminDeleteResource } from "../services/adminResourceService";
+import { adminDeleteResource, adminResetUploaderQuota } from "../services/adminResourceService";
 import { useAdminSession } from "../hooks/useAdminSession";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -102,6 +102,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const [searchParams] = useSearchParams();
   const authenticated = hasValidLocalAuth();
   const adminSession = useAdminSession();
+  const [adminQuotaResettingId, setAdminQuotaResettingId] = useState<number | null>(null);
   const [adminDeletingId, setAdminDeletingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
@@ -812,7 +813,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
 
   const handleAdminDelete = async (resource: ResourceItem) => {
     const adminToken = adminSession.adminToken;
-    if (!adminMode || !adminToken || adminDeletingId != null) return;
+    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null) return;
     const confirmed = window.confirm(
       `确定永久删除素材「${resource.title || resource.description}」吗？\n\n将同时删除 COS 原文件、封面及相关点赞、收藏、评论记录，此操作不可撤销。`,
     );
@@ -840,6 +841,31 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     }
   };
 
+  const handleAdminQuotaReset = async (resource: ResourceItem) => {
+    const adminToken = adminSession.adminToken;
+    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null) return;
+    const uploaderName = resource.author?.trim() || "该上传人";
+    const confirmed = window.confirm(
+      `确定将「${uploaderName}」的剩余上传额度重置为 50 次吗？\n\n这会替换现有额外上传额度，但不会删除素材或清除历史上传记录。`,
+    );
+    if (!confirmed) return;
+    setAdminQuotaResettingId(resource.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const result = await adminResetUploaderQuota(adminToken, resource.id);
+      setStatusMessage(`${result.message}（当前剩余 ${result.shareRemaining} 次）`);
+    } catch (error) {
+      const message = (error as Error)?.message || "管理员重置上传额度失败";
+      if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
+        adminSession.handleUnauthorized();
+      }
+      setErrorMessage(message);
+    } finally {
+      setAdminQuotaResettingId(null);
+    }
+  };
+
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
@@ -856,12 +882,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             {!adminSession.authenticated ? (
               <AdminLoginPanel
                 title="素材库管理员登录"
-                description="登录后可永久删除素材库中的任意素材。所有删除请求均由服务器验证管理员权限。"
+                description="登录后可永久删除任意素材，并把指定上传人的剩余上传额度重置为 50 次。所有操作均由服务器验证管理员权限。"
                 onLoggedIn={adminSession.refreshSession}
               />
             ) : (
               <SiteAlert variant="success" className="flex flex-wrap items-center justify-between gap-3">
-                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以永久删除素材。</span>
+                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以重置上传人额度或永久删除素材。</span>
                 <button
                   type="button"
                   onClick={adminSession.logout}
@@ -1114,6 +1140,10 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                     hiding={hidingId === resource.id}
                     onHiddenChange={authenticated && resource.uploaderBlockable
                       ? (item, hidden) => void handleHiddenChange(item, hidden)
+                      : undefined}
+                    adminQuotaResetting={adminQuotaResettingId === resource.id}
+                    onAdminQuotaReset={adminMode && adminSession.authenticated && resource.uploaderBlockable
+                      ? (item) => void handleAdminQuotaReset(item)
                       : undefined}
                     adminDeleting={adminDeletingId === resource.id}
                     onAdminDelete={adminMode && adminSession.authenticated

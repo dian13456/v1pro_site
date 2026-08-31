@@ -362,6 +362,32 @@ func (r *UserDataRepo) SaveAIShareQuota(store AIShareQuotaStore) error {
 	return SaveAIShareQuotaStore(r.paths.SharesPath, store)
 }
 
+// ResetAIShareRemainingToBase replaces a device's purchased extra quota so its
+// remaining allowance equals the base limit, while preserving its historical
+// share count. The MySQL implementation updates only the target device in one
+// transaction.
+func (r *UserDataRepo) ResetAIShareRemainingToBase(serial string, baseLimit int) (int, error) {
+	serial = normalizeAIShareQuotaSerial(serial)
+	if serial == "" {
+		return 0, fmt.Errorf("serial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.resetAIShareRemainingToBase(ctx, serial)
+	}
+
+	store, err := LoadAIShareQuotaStore(r.paths.SharesPath)
+	if err != nil {
+		return 0, err
+	}
+	store.ResetShareRemainingToBase(serial, baseLimit)
+	if err := SaveAIShareQuotaStore(r.paths.SharesPath, store); err != nil {
+		return 0, err
+	}
+	return store.ShareCount(serial), nil
+}
+
 func (r *UserDataRepo) LoadAIShareUnlimited() (AIShareUnlimitedStore, error) {
 	if r.UsesMySQL() {
 		ctx, cancel := r.ctx()

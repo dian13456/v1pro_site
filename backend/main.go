@@ -2065,6 +2065,71 @@ func main() {
 		})
 	})
 
+	router.POST("/api/admin/resources/:id/reset-upload-quota", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if parseErr != nil || resourceID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+			return
+		}
+
+		uploaderSerial, found, loadErr := service.LoadUploaderSerialWithPresenceFromCatalogFile(
+			resourcesPath,
+			strconv.FormatInt(resourceID, 10),
+		)
+		if loadErr != nil {
+			log.Printf("warn: admin read uploader for resource %d failed: %v", resourceID, loadErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传人信息读取失败，请稍后重试"})
+			return
+		}
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在"})
+			return
+		}
+		if uploaderSerial == "" {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"success": false, "message": "该素材没有可识别的上传人，无法重置额度"})
+			return
+		}
+
+		aiShareMu.Lock()
+		latestUnlimited, loadErr := userDataRepo.LoadAIShareUnlimited()
+		if loadErr != nil {
+			aiShareMu.Unlock()
+			log.Printf("warn: admin reload unlimited share accounts failed: %v", loadErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传额度读取失败，请稍后重试"})
+			return
+		}
+		if latestUnlimited.Has(uploaderSerial) {
+			aiShareMu.Unlock()
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "该上传人当前为不限额账号，无需重置上传额度"})
+			return
+		}
+		shareCount, resetErr := userDataRepo.ResetAIShareRemainingToBase(uploaderSerial, service.MaxAISharesPerDevice)
+		if resetErr != nil {
+			aiShareMu.Unlock()
+			log.Printf("warn: admin reset uploader quota failed for resource %d: %v", resourceID, resetErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传额度保存失败，请稍后重试"})
+			return
+		}
+		aiShareQuota.SetShareQuota(uploaderSerial, shareCount, shareCount)
+		aiShareUnlimited = latestUnlimited
+		remaining := aiShareQuota.ShareRemaining(uploaderSerial, service.MaxAISharesPerDevice)
+		shareLimit := aiShareQuota.ShareLimit(uploaderSerial, service.MaxAISharesPerDevice)
+		aiShareMu.Unlock()
+
+		log.Printf("info: admin reset uploader quota for resource %d to %d remaining", resourceID, remaining)
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"message":        "已将该上传人的剩余上传额度重置为 50 次",
+			"resourceId":     resourceID,
+			"shareCount":     shareCount,
+			"shareLimit":     shareLimit,
+			"shareRemaining": remaining,
+		})
+	})
+
 	router.GET("/api/shop/items", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)

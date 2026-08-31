@@ -42,6 +42,8 @@ export function CompactResourceCard({
   followed = false,
   following = false,
   onFollow,
+  adminQuotaResetting = false,
+  onAdminQuotaReset,
   adminDeleting = false,
   onAdminDelete,
   selectionMode = false,
@@ -64,6 +66,8 @@ export function CompactResourceCard({
   followed?: boolean;
   following?: boolean;
   onFollow?: (resource: ResourceItem, followed: boolean) => void;
+  adminQuotaResetting?: boolean;
+  onAdminQuotaReset?: (resource: ResourceItem) => void;
   adminDeleting?: boolean;
   onAdminDelete?: (resource: ResourceItem) => void;
   selectionMode?: boolean;
@@ -204,12 +208,12 @@ export function CompactResourceCard({
               <span>{liking ? "…" : likeCount}</span>
             </button>
             <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {downloadCount}</span>
-            {onFollow || onHiddenChange || onAdminDelete ? (
+            {onFollow || onHiddenChange || onAdminQuotaReset || onAdminDelete ? (
               <details className="group/card-menu relative" onClick={(event) => event.stopPropagation()}>
                 <summary className="grid h-5 w-5 cursor-pointer list-none place-items-center rounded-full text-[11px] font-bold tracking-[-1px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white [&::-webkit-details-marker]:hidden" aria-label="更多素材操作">
                   •••
                 </summary>
-                <div className="absolute bottom-[calc(100%+7px)] right-0 z-30 grid w-32 gap-1 rounded-xl border border-black/[.07] bg-white/95 p-1.5 text-[11px] shadow-[0_14px_38px_rgba(15,23,42,.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+                <div className="absolute bottom-[calc(100%+7px)] right-0 z-30 grid w-44 gap-1 rounded-xl border border-black/[.07] bg-white/95 p-1.5 text-[11px] shadow-[0_14px_38px_rgba(15,23,42,.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
                   {onFollow ? (
                     <button
                       type="button"
@@ -232,10 +236,21 @@ export function CompactResourceCard({
                       {hiding ? "处理中…" : hidden ? "恢复该用户" : "屏蔽该用户"}
                     </button>
                   ) : null}
+                  {onAdminQuotaReset ? (
+                    <button
+                      type="button"
+                      disabled={adminQuotaResetting || adminDeleting}
+                      onClick={() => onAdminQuotaReset(resource)}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sky-700 transition hover:bg-sky-50 disabled:opacity-60 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                    >
+                      <span className="w-4 text-center" aria-hidden="true">↻</span>
+                      {adminQuotaResetting ? "重置中…" : "重置上传额度（50）"}
+                    </button>
+                  ) : null}
                   {onAdminDelete ? (
                     <button
                       type="button"
-                      disabled={adminDeleting}
+                      disabled={adminDeleting || adminQuotaResetting}
                       onClick={() => onAdminDelete(resource)}
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
                     >

@@ -38,7 +38,7 @@ func LoadAIShareQuotaStore(path string) (AIShareQuotaStore, error) {
 	if store.ExtraQuota == nil {
 		store.ExtraQuota = map[string]int{}
 	}
-	return store, nil
+	return store.Clone(), nil
 }
 
 func newAIShareQuotaStore() AIShareQuotaStore {
@@ -51,10 +51,16 @@ func newAIShareQuotaStore() AIShareQuotaStore {
 func (store AIShareQuotaStore) Clone() AIShareQuotaStore {
 	clone := newAIShareQuotaStore()
 	for serial, count := range store.Counts {
-		clone.Counts[serial] = count
+		serial = normalizeAIShareQuotaSerial(serial)
+		if serial != "" && count > 0 {
+			clone.Counts[serial] += count
+		}
 	}
 	for serial, extra := range store.ExtraQuota {
-		clone.ExtraQuota[serial] = extra
+		serial = normalizeAIShareQuotaSerial(serial)
+		if serial != "" && extra > 0 {
+			clone.ExtraQuota[serial] += extra
+		}
 	}
 	return clone
 }
@@ -63,12 +69,7 @@ func SaveAIShareQuotaStore(path string, store AIShareQuotaStore) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if store.Counts == nil {
-		store.Counts = map[string]int{}
-	}
-	if store.ExtraQuota == nil {
-		store.ExtraQuota = map[string]int{}
-	}
+	store = store.Clone()
 	raw, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
@@ -102,11 +103,16 @@ func TryReloadAIShareQuotaStore(path string, current *AIShareQuotaStore, lastMod
 }
 
 func (store AIShareQuotaStore) ShareCount(serial string) int {
-	serial = strings.TrimSpace(serial)
+	serial = normalizeAIShareQuotaSerial(serial)
 	if serial == "" || store.Counts == nil {
 		return 0
 	}
-	count := store.Counts[serial]
+	count := 0
+	for key, value := range store.Counts {
+		if normalizeAIShareQuotaSerial(key) == serial && value > 0 {
+			count += value
+		}
+	}
 	if count < 0 {
 		return 0
 	}
@@ -123,11 +129,16 @@ func (store AIShareQuotaStore) ShareLimitMessage(serial string, limit int) strin
 }
 
 func (store AIShareQuotaStore) ExtraShareQuota(serial string) int {
-	serial = strings.TrimSpace(serial)
+	serial = normalizeAIShareQuotaSerial(serial)
 	if serial == "" || store.ExtraQuota == nil {
 		return 0
 	}
-	extra := store.ExtraQuota[serial]
+	extra := 0
+	for key, value := range store.ExtraQuota {
+		if normalizeAIShareQuotaSerial(key) == serial && value > 0 {
+			extra += value
+		}
+	}
 	if extra < 0 {
 		return 0
 	}
@@ -149,24 +160,83 @@ func (store *AIShareQuotaStore) AddShareQuota(serial string, amount int) int {
 	if store.ExtraQuota == nil {
 		store.ExtraQuota = map[string]int{}
 	}
-	serial = strings.TrimSpace(serial)
+	serial = normalizeAIShareQuotaSerial(serial)
 	if serial == "" || amount <= 0 {
 		return store.ExtraShareQuota(serial)
 	}
-	store.ExtraQuota[serial] = store.ExtraShareQuota(serial) + amount
+	current := store.ExtraShareQuota(serial)
+	deleteAIShareQuotaAliases(store.ExtraQuota, serial)
+	store.ExtraQuota[serial] = current + amount
 	return store.ExtraQuota[serial]
+}
+
+// ResetShareRemainingToBase preserves the historical share count while making
+// the device's remaining upload allowance equal to the base limit again.
+func (store *AIShareQuotaStore) ResetShareRemainingToBase(serial string, baseLimit int) int {
+	serial = normalizeAIShareQuotaSerial(serial)
+	if serial == "" {
+		return 0
+	}
+	if baseLimit <= 0 {
+		baseLimit = MaxAISharesPerDevice
+	}
+	if store.ExtraQuota == nil {
+		store.ExtraQuota = map[string]int{}
+	}
+	count := store.ShareCount(serial)
+	// limit = base + extra, so extra=count yields exactly base shares left.
+	store.SetShareQuota(serial, count, count)
+	return store.ShareRemaining(serial, baseLimit)
+}
+
+// SetShareQuota replaces one device's quota values and removes legacy aliases
+// that differ only by whitespace or character casing.
+func (store *AIShareQuotaStore) SetShareQuota(serial string, count, extra int) {
+	serial = normalizeAIShareQuotaSerial(serial)
+	if serial == "" {
+		return
+	}
+	if store.Counts == nil {
+		store.Counts = map[string]int{}
+	}
+	if store.ExtraQuota == nil {
+		store.ExtraQuota = map[string]int{}
+	}
+	deleteAIShareQuotaAliases(store.Counts, serial)
+	deleteAIShareQuotaAliases(store.ExtraQuota, serial)
+	if count > 0 {
+		store.Counts[serial] = count
+	}
+	if extra > 0 {
+		store.ExtraQuota[serial] = extra
+	}
 }
 
 func (store *AIShareQuotaStore) RecordShare(serial string) int {
 	if store.Counts == nil {
 		store.Counts = map[string]int{}
 	}
-	serial = strings.TrimSpace(serial)
+	serial = normalizeAIShareQuotaSerial(serial)
 	if serial == "" {
 		return 0
 	}
-	store.Counts[serial] = store.ShareCount(serial) + 1
+	current := store.ShareCount(serial)
+	deleteAIShareQuotaAliases(store.Counts, serial)
+	store.Counts[serial] = current + 1
 	return store.Counts[serial]
+}
+
+func normalizeAIShareQuotaSerial(serial string) string {
+	return strings.ToUpper(strings.TrimSpace(serial))
+}
+
+func deleteAIShareQuotaAliases(values map[string]int, serial string) {
+	serial = normalizeAIShareQuotaSerial(serial)
+	for key := range values {
+		if normalizeAIShareQuotaSerial(key) == serial {
+			delete(values, key)
+		}
+	}
 }
 
 func RemainingAIShares(count, limit int) int {
