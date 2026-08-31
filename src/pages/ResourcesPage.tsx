@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
 import { SiteFooter } from "../components/SiteFooter";
@@ -128,6 +128,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const [weeklyDownloadCounts, setWeeklyDownloadCounts] = useState<Record<number, number>>({});
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState<number>(0);
+  const [pageJumpInput, setPageJumpInput] = useState("1");
   const [randomMode, setRandomMode] = useState(false);
   const [randomItems, setRandomItems] = useState<ResourceItem[]>([]);
   const [randomPending, setRandomPending] = useState(false);
@@ -358,6 +359,10 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setCurrentPage(totalPages);
     }
   }, [activeServerPage, currentPage, serverPagingEnabled, totalPages]);
+
+  useEffect(() => {
+    setPageJumpInput(String(Math.max(1, currentPage)));
+  }, [currentPage]);
 
   const visibleItems = useMemo(() => {
     if (randomMode) {
@@ -669,6 +674,17 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     setFollowingOnly(false);
     setAlbumMode(false);
     setAlbumSelectedIds([]);
+  };
+
+  const handlePageJump = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedPage = pageJumpInput.trim();
+    const requestedPage = /^-?\d+$/.test(normalizedPage) ? Number(normalizedPage) : Number.NaN;
+    const targetPage = Number.isFinite(requestedPage)
+      ? Math.min(totalPages, Math.max(1, requestedPage))
+      : Math.max(1, currentPage);
+    setPageJumpInput(String(targetPage));
+    setCurrentPage(targetPage);
   };
 
   const handleExitRandomMode = () => {
@@ -1394,6 +1410,24 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                   <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
                 ))}
                 <button type="button" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
+                <form noValidate onSubmit={handlePageJump} className="ml-1 flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                  <span>到</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    step={1}
+                    inputMode="numeric"
+                    value={pageJumpInput}
+                    onChange={(event) => setPageJumpInput(event.target.value)}
+                    aria-label={`跳转页码，共 ${totalPages} 页`}
+                    className="h-7 w-14 rounded-lg border border-slate-200 bg-slate-50 px-1.5 text-center text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:ring-orange-900/40"
+                  />
+                  <span>页</span>
+                  <button type="submit" className="h-7 rounded-full bg-orange-500 px-2.5 text-xs font-medium text-white transition hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
+                    跳转
+                  </button>
+                </form>
               </nav>
             ) : null}
 
