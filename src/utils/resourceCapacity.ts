@@ -4,7 +4,7 @@ export const DEVICE_FRAME_CAPACITIES = [77, 154, 308] as const;
 export const VIDEO_FPS_OPTIONS = [20, 25, 30] as const;
 export const COMPATIBLE_VIDEO_FPS = "compatible" as const;
 export const COMPATIBLE_VIDEO_FPS_FALLBACK = 20 as const;
-export const MAX_AUTOMATIC_SPEED = 5;
+export const MAX_AUTOMATIC_SPEED = 10;
 
 export type DeviceFrameCapacity = (typeof DEVICE_FRAME_CAPACITIES)[number];
 export type VideoFpsOption = (typeof VIDEO_FPS_OPTIONS)[number];
@@ -21,9 +21,9 @@ export function parseVideoFpsSelection(value: string): VideoFpsSelection {
 }
 
 /**
- * Compatibility mode keeps old 20/25/30 fps recommendations working. New or
- * local material without a recommendation follows the GUI beginner-mode 20 fps
- * baseline, while an explicit manual selection always wins.
+ * This resolver is only a legacy/UI estimate. Direct WebUSB keeps the
+ * `compatible` selection intact so a GFM3-capable device can run the GUI's
+ * measured-byte beginner fitter; old devices still use this 20/25/30 fallback.
  */
 export function resolveVideoFps(
   selection: VideoFpsSelection,

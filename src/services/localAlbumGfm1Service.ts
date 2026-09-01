@@ -9,9 +9,6 @@ import {
 } from "./browserFfmpegVideoService";
 import { readGifFrameDelays } from "./gifFrameTiming";
 
-const FRAME_WIDTH = 320;
-const FRAME_HEIGHT = 170;
-const FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 2;
 const GFM1_HEADER_BYTES = 56;
 const VIDEO_COMPAT_FPS = 20;
 const VIDEO_COMPAT_MAX_SECONDS = 15;
@@ -119,10 +116,13 @@ async function readGfm1Frames(blob: Blob): Promise<{ frames: Uint8Array[]; delay
     throw new Error("相册视频转换结果不是有效的 GFM1 文件");
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const frameWidth = view.getUint16(6, true);
+  const frameHeight = view.getUint16(8, true);
   const frameCount = view.getUint16(10, true);
+  const frameBytes = frameWidth * frameHeight * 2;
   const pixelOffset = GFM1_HEADER_BYTES + frameCount * 2;
-  const expectedBytes = pixelOffset + frameCount * FRAME_BYTES;
-  if (frameCount < 1 || bytes.byteLength < expectedBytes) {
+  const expectedBytes = pixelOffset + frameCount * frameBytes;
+  if (frameWidth < 1 || frameHeight < 1 || frameCount < 1 || bytes.byteLength < expectedBytes) {
     throw new Error("相册视频转换结果不完整");
   }
   const delaysMs = Array.from(
@@ -130,8 +130,8 @@ async function readGfm1Frames(blob: Blob): Promise<{ frames: Uint8Array[]; delay
     (_, index) => view.getUint16(GFM1_HEADER_BYTES + index * 2, true),
   );
   const frames = Array.from({ length: frameCount }, (_, index) => {
-    const start = pixelOffset + index * FRAME_BYTES;
-    return bytes.slice(start, start + FRAME_BYTES);
+    const start = pixelOffset + index * frameBytes;
+    return bytes.slice(start, start + frameBytes);
   });
   return { frames, delaysMs };
 }

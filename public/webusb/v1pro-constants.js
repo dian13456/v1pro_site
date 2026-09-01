@@ -48,9 +48,20 @@ export const USBDL_URL_SUB_BEGIN = 0xfe;
 export const USBDL_URL_SUB_WRITE = 0xff;
 export const USB_HID_URL_MAX_LEN = 180;
 
-export const LCD_W = 320;
-export const LCD_H = 170;
-export const FRAME_PIXEL_BYTES = LCD_W * LCD_H * 2; // 108800
+export let LCD_W = 320;
+export let LCD_H = 170;
+export let FRAME_PIXEL_BYTES = LCD_W * LCD_H * 2;
+
+export function configurePanelGeometry(width, height) {
+  const w = Math.trunc(Number(width));
+  const h = Math.trunc(Number(height));
+  if (!(w >= 100 && w <= 1024 && h >= 100 && h <= 1024)) {
+    throw new Error(`无效屏幕尺寸：${width}x${height}`);
+  }
+  LCD_W = w;
+  LCD_H = h;
+  FRAME_PIXEL_BYTES = w * h * 2;
+}
 export const ANIM_VERSION = 1;
 export const ANIM_MIN_FRAME_MS = 1;
 export const DEFAULT_FRAME_MS = 100;
@@ -64,11 +75,14 @@ export const DEFAULT_MAX_GIF_FRAMES = 70;
 /** Video encode: prefer up to this output fps (device capacity may lower it). */
 export const MAX_VIDEO_FPS = 30;
 
+/** Identified V1P/V2 hardware supports beginner-mode material up to 45 fps. */
+export const MAX_MATERIAL_FPS = 45;
+
 /** Lowest permitted video output fps before applying playback speed-up. */
 export const MIN_VIDEO_FPS = 20;
 
-/** Video encode: max playback speed multiplier when frame budget is tight. */
-export const MAX_VIDEO_SPEED = 5;
+/** GUI beginner mode uses at most 10x after real compressed-byte fitting. */
+export const MAX_VIDEO_SPEED = 10;
 
 /** Short video clip cap when device capacity is unknown (seconds). */
 export const DEFAULT_MAX_VIDEO_SEC = 10;
@@ -77,7 +91,7 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.33";
+export const WEBUSB_TRANSFER_VERSION = "1.2.35";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
 export const PREFETCH_CHUNKS_BEFORE_START = 6;

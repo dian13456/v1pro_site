@@ -1,5 +1,10 @@
 import type { ResourceItem } from "../types/resource";
 import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
+import {
+  COMPATIBLE_VIDEO_FPS,
+  resolveVideoFps,
+  type VideoFpsSelection,
+} from "../utils/resourceCapacity";
 import { importWithRetry } from "../utils/dynamicImportRecovery";
 import { withApiSignature } from "./apiSign";
 import {
@@ -19,8 +24,12 @@ import {
 import { guessTransferFileName } from "./v1proTransferService";
 import { toMaterialCdnUrl } from "./materialCdnService";
 import {
+  configureBrowserPanelGeometry,
   convertBrowserRasterWithFfmpeg,
   convertBrowserVideoWithFfmpeg,
+  getBrowserPanelGeometry,
+  planBrowserFfmpegVideo,
+  probeBrowserVideoDuration,
 } from "./browserFfmpegVideoService";
 
 export { WEBUSB_TRANSFER_VERSION };
@@ -43,11 +52,18 @@ export function canWebUsbDirectTransfer(resource: ResourceItem): boolean {
 }
 
 let sharedClient: V1ProWebTransferClient | null = null;
-let transferInflight: Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> | null = null;
+let transferInflight: Promise<{
+  bytes: number;
+  frameCount: number;
+  sourceFrameCount?: number;
+  fps?: number;
+  speed?: number;
+  storageFormat?: "GFM1" | "GFM2" | "GFM3";
+  predictedFrameCount?: number;
+  note?: string;
+}> | null = null;
 let transferInflightResourceId: number | "album" | null = null;
 const TRANSFER_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
-const ALBUM_FRAME_WIDTH = 320;
-const ALBUM_FRAME_HEIGHT = 170;
 const ALBUM_TRANSITION_STEPS = 6;
 const ALBUM_TRANSITION_FRAME_MS = 50;
 
@@ -93,12 +109,13 @@ function blendRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uin
 
 function slideLeftRgb565Frames(from: Uint8Array, to: Uint8Array, ratio: number): Uint8Array {
   const output = new Uint8Array(from.length);
-  const shiftPixels = Math.max(1, Math.min(ALBUM_FRAME_WIDTH - 1, Math.round(ALBUM_FRAME_WIDTH * ratio)));
-  const currentPixels = ALBUM_FRAME_WIDTH - shiftPixels;
-  for (let row = 0; row < ALBUM_FRAME_HEIGHT; row += 1) {
-    const rowOffset = row * ALBUM_FRAME_WIDTH * 2;
+  const { width, height } = getBrowserPanelGeometry();
+  const shiftPixels = Math.max(1, Math.min(width - 1, Math.round(width * ratio)));
+  const currentPixels = width - shiftPixels;
+  for (let row = 0; row < height; row += 1) {
+    const rowOffset = row * width * 2;
     const currentStart = rowOffset + shiftPixels * 2;
-    const currentEnd = rowOffset + ALBUM_FRAME_WIDTH * 2;
+    const currentEnd = rowOffset + width * 2;
     output.set(from.subarray(currentStart, currentEnd), rowOffset);
     output.set(to.subarray(rowOffset, rowOffset + shiftPixels * 2), rowOffset + currentPixels * 2);
   }
@@ -478,6 +495,10 @@ export async function transferAlbumResourcesViaWebUsb(
       callbacks.onStatus?.("正在连接当前认证设备…");
       const targetDevice = await resolveAuthenticatedV1ProDevice();
       await client.connect({ device: targetDevice });
+      configureBrowserPanelGeometry(
+        client.deviceCapacity?.lcdW || 320,
+        client.deviceCapacity?.lcdH || 170,
+      );
       const deviceFrameCapacity = client.deviceCapacity?.maxFrames;
       if (!deviceFrameCapacity) {
         throw new Error("无法读取设备容量，请重新连接设备后重试");
@@ -571,6 +592,7 @@ export async function transferAlbumResourcesViaWebUsb(
       throw new Error(formatUsbError(err));
     } finally {
       await client.disconnect();
+      configureBrowserPanelGeometry(320, 170);
       sharedClient = null;
     }
   })();
@@ -592,12 +614,21 @@ export async function transferResourceViaWebUsb(
     onProgress?: (progress: number) => void;
   } = {},
   options: {
-    videoFps?: number;
+    videoFps?: VideoFpsSelection;
     fitMode?: "fill" | "contain";
     rotationDeg?: 0 | 90 | 180 | 270;
     colorProfile?: "normal" | "vivid" | "professional";
   } = {},
-): Promise<{ bytes: number; frameCount: number; fps?: number; predictedFrameCount?: number; note?: string }> {
+): Promise<{
+  bytes: number;
+  frameCount: number;
+  sourceFrameCount?: number;
+  fps?: number;
+  speed?: number;
+  storageFormat?: "GFM1" | "GFM2" | "GFM3";
+  predictedFrameCount?: number;
+  note?: string;
+}> {
   if (!canWebUsbDirectTransfer(resource)) {
     throw new Error("当前素材或浏览器不支持网页直传");
   }
@@ -642,27 +673,45 @@ export async function transferResourceViaWebUsb(
           const detail = client.capacityError ? `：${client.capacityError}` : "";
           throw new Error(`无法读取设备容量${detail}`);
         }
-        callbacks.onStatus?.(`正在预测设备空间… ${capacityLabel}`);
+        configureBrowserPanelGeometry(
+          client.deviceCapacity.lcdW || 320,
+          client.deviceCapacity.lcdH || 170,
+        );
+        const fpsSelection = options.videoFps ?? COMPATIBLE_VIDEO_FPS;
+        const fallbackFps = resolveVideoFps(fpsSelection, resource.transferDefaults?.videoFps);
+        const beginnerAuto = fpsSelection === COMPATIBLE_VIDEO_FPS;
+        const persistentCompression = client.deviceCapacity.persistentCompression === true;
+        const candidateFps = beginnerAuto && persistentCompression
+          ? client.deviceCapacity.materialMaxFps
+          : fallbackFps;
+        callbacks.onStatus?.(
+          persistentCompression
+            ? `已识别 GFM3 持久压缩 · 新手模式将按实际压缩字节适配（最高 ${candidateFps}fps）`
+            : `当前固件使用兼容容量规划 · ${fallbackFps}fps · ${capacityLabel}`,
+        );
         reportProgress(12);
-        const videoFps = options.videoFps;
-        if (!videoFps) {
-          throw new Error("未指定视频下传帧率，请重新选择 20、25 或 30 fps。");
-        }
-        const prediction = await client.predictVideoUrl(directUrl, {
-          maxVideoFps: videoFps,
-          minVideoFps: videoFps,
-          maxVideoSpeed: 10,
-        });
-        if (prediction.fps !== videoFps) {
-          throw new Error(`视频帧率预处理不一致：选择 ${videoFps} fps，实际为 ${prediction.fps} fps。`);
+        let prediction: Awaited<ReturnType<V1ProWebTransferClient["predictVideoUrl"]>> | null = null;
+        if (!persistentCompression) {
+          prediction = await client.predictVideoUrl(directUrl, {
+            maxVideoFps: fallbackFps,
+            minVideoFps: fallbackFps,
+            maxVideoSpeed: 10,
+          });
+          if (prediction.fps !== fallbackFps) {
+            throw new Error(`视频帧率预处理不一致：选择 ${fallbackFps} fps，实际为 ${prediction.fps} fps。`);
+          }
+          callbacks.onStatus?.(
+            `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在启动设备预擦除…`,
+          );
+          reportProgress(16);
+          await client.beginPreparedVideoTransfer(prediction.totalBytes);
+          preEraseStarted = true;
         }
         callbacks.onStatus?.(
-          `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在启动设备预擦除…`,
+          persistentCompression
+            ? "正在从素材 CDN 下载视频，下载后本地测量压缩容量…"
+            : "设备正在预擦除，同时从素材 CDN 下载视频…",
         );
-        reportProgress(16);
-        await client.beginPreparedVideoTransfer(prediction.totalBytes);
-        preEraseStarted = true;
-        callbacks.onStatus?.("设备正在预擦除，同时从素材 CDN 下载视频…");
         reportProgress(18);
         let usingProxyFallback = false;
         const blob = await fetchTransferBlob(
@@ -683,17 +732,23 @@ export async function transferResourceViaWebUsb(
 
         let result: Awaited<ReturnType<V1ProWebTransferClient["transferFile"]>>;
         try {
+          let plan = prediction ? {
+            ...prediction,
+            note: prediction.note
+              || `FFmpeg 本地转换 · ${prediction.frameCount} 帧 · ${prediction.fps}fps`,
+          } : null;
+          if (!plan) {
+            const duration = await probeBrowserVideoDuration(blob);
+            plan = planBrowserFfmpegVideo(
+              duration,
+              Math.max(1, Math.ceil(duration * candidateFps)),
+              candidateFps,
+              1,
+            );
+          }
           const converted = await convertBrowserVideoWithFfmpeg(blob, {
             fileName,
-            plan: {
-              duration: prediction.duration,
-              sourceSpan: prediction.sourceSpan,
-              frameCount: prediction.frameCount,
-              fps: prediction.fps,
-              speed: prediction.speed,
-              totalBytes: prediction.totalBytes,
-              note: prediction.note || `FFmpeg 本地转换 · ${prediction.frameCount} 帧 · ${prediction.fps}fps`,
-            },
+            plan,
             fitMode: effectiveFitMode,
             rotationDeg: options.rotationDeg ?? 0,
             colorProfile: options.colorProfile ?? "normal",
@@ -701,21 +756,30 @@ export async function transferResourceViaWebUsb(
             onProgress: (ratio) => reportProgress(40 + ratio * 25),
           });
 
-          callbacks.onStatus?.("本地转换完成，正在继续设备传输…");
-          callbacks.onStatus?.("正在通过 USB 传输…");
+          callbacks.onStatus?.(
+            persistentCompression
+              ? "本地转换完成，正在按 GFM3 实际压缩字节适配容量…"
+              : "本地转换完成，正在通过 USB 传输…",
+          );
           result = await client.transferFile(converted.blob, {
             fileName,
             mediaType: "video",
-            maxVideoFps: videoFps,
-            minVideoFps: videoFps,
+            beginnerAuto,
+            maxVideoFps: beginnerAuto ? (client.deviceCapacity?.materialMaxFps || 30) : fallbackFps,
+            minVideoFps: beginnerAuto ? 20 : fallbackFps,
+            maxVideoSpeed: 10,
             pingFirst: false,
-            preparedTotalBytes: converted.totalBytes,
+            preparedTotalBytes: prediction ? converted.totalBytes : undefined,
             prebuiltGfm1: {
               frameCount: converted.frameCount,
               fps: converted.fps,
               note: converted.note,
             },
             onProgress: (info) => {
+              if (info.note && info.sent === 0) {
+                callbacks.onStatus?.(info.note);
+                return;
+              }
               callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
               reportProgress(65 + info.ratio * 34);
             },
@@ -726,8 +790,9 @@ export async function transferResourceViaWebUsb(
           result = await client.transferFile(blob, {
             fileName,
             mediaType: "video",
-            maxVideoFps: videoFps,
-            minVideoFps: videoFps,
+            beginnerAuto,
+            maxVideoFps: beginnerAuto ? (client.deviceCapacity?.materialMaxFps || 30) : fallbackFps,
+            minVideoFps: beginnerAuto ? 20 : fallbackFps,
             maxVideoSpeed: 10,
             fitMode: effectiveFitMode,
             rotationDeg: options.rotationDeg ?? 0,
@@ -744,17 +809,20 @@ export async function transferResourceViaWebUsb(
             },
           });
         }
-        if (result.fps !== videoFps) {
-          throw new Error(`视频实际编码帧率不一致：选择 ${videoFps} fps，实际为 ${result.fps ?? "未知"} fps。`);
+        if (
+          !beginnerAuto
+          && Math.abs(Number(result.fps) - Number(fallbackFps)) > 0.51
+        ) {
+          throw new Error(`视频实际编码帧率不一致：选择 ${fallbackFps} fps，实际为 ${result.fps ?? "未知"} fps。`);
         }
-        if (result.frameCount !== prediction.frameCount) {
-          throw new Error(`视频写入帧数不一致：预计 ${prediction.frameCount} 帧，实际 ${result.frameCount} 帧。`);
+        if (prediction && (result.sourceFrameCount ?? result.frameCount) !== prediction.frameCount) {
+          throw new Error(`视频写入帧数不一致：预计 ${prediction.frameCount} 帧，实际 ${result.sourceFrameCount ?? result.frameCount} 帧。`);
         }
         let message = `网页直传完成：${result.frameCount} 帧 · ${result.fps}fps`;
         if (result.note) message += `（${result.note}）`;
         callbacks.onStatus?.(message);
         reportProgress(100);
-        return { ...result, predictedFrameCount: prediction.frameCount };
+        return { ...result, predictedFrameCount: prediction?.frameCount };
       }
 
       let connected = false;
@@ -784,6 +852,10 @@ export async function transferResourceViaWebUsb(
         return blob;
       });
       const [, blob] = await Promise.all([connectTask, downloadTask]);
+      configureBrowserPanelGeometry(
+        client.deviceCapacity?.lcdW || 320,
+        client.deviceCapacity?.lcdH || 170,
+      );
       await validateTransferBlob(resource, blob);
       const capacityLabel = client.getCapacityLabel?.() ?? "";
       if (capacityLabel) {
@@ -797,12 +869,15 @@ export async function transferResourceViaWebUsb(
       if (!maxFrames) {
         throw new Error("无法读取设备容量，请重新连接设备后重试");
       }
+      const encodeMaxFrames = client.deviceCapacity?.persistentCompression
+        ? Math.max(maxFrames, 1000)
+        : maxFrames;
       const mediaType = resource.materialType === "gif" ? "gif" : "image";
       const converted = await convertBrowserRasterWithFfmpeg(blob, {
         fileName,
         mediaType,
-        maxFrames,
-        fitMode: options.fitMode ?? "fill",
+        maxFrames: encodeMaxFrames,
+        fitMode: effectiveFitMode,
         rotationDeg: options.rotationDeg ?? 0,
         colorProfile: options.colorProfile ?? "normal",
         onStatus: callbacks.onStatus,
@@ -811,7 +886,7 @@ export async function transferResourceViaWebUsb(
       const result = await client.transferFile(converted.blob, {
         fileName,
         mediaType,
-        maxFrames,
+        maxFrames: client.deviceCapacity?.persistentCompression ? undefined : maxFrames,
         pingFirst: false,
         prebuiltGfm1: {
           frameCount: converted.frameCount,
@@ -857,6 +932,7 @@ export async function transferResourceViaWebUsb(
       // Website transfers are one-shot. Always release the selected device so
       // another V1PRO or the desktop GUI can claim its interface immediately.
       await client.disconnect();
+      configureBrowserPanelGeometry(320, 170);
       sharedClient = null;
     }
   })();

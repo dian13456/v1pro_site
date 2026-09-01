@@ -2,17 +2,22 @@
  * High-level WebUSB transfer API for website / demo pages.
  */
 import {
+  configurePanelGeometry,
   DEFAULT_MAX_GIF_FRAMES,
+  FRAME_PIXEL_BYTES,
+  LCD_H,
+  LCD_W,
   MAX_VIDEO_FPS,
   MAX_VIDEO_SPEED,
   PREFETCH_CHUNKS_BEFORE_START,
   SPECTRUM_BANDS,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.33";
+} from "./v1pro-constants.js?v=1.2.35";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.33";
+} from "./v1pro-gfm1.js?v=1.2.35";
+import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.35";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -34,14 +39,56 @@ import {
   sendLiveRgb565,
   exitLiveMode,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.33";
+} from "./v1pro-usb.js?v=1.2.35";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
 const GFM1_HEADER_BYTES = 56;
-const GFM1_FRAME_BYTES = 320 * 170 * 2;
+const GFM_PAYLOAD_CHUNK_BYTES = 256 * 1024;
 
-async function planPrebuiltGfm1(blob, metadata = {}) {
+async function optimizePrebuiltGfm1InWorker(sourceBytes, options) {
+  if (typeof Worker !== "function") {
+    return optimizePrebuiltGfm1(sourceBytes, options);
+  }
+  let worker;
+  try {
+    worker = new Worker(
+      new URL("./v1pro-gfm-compression-worker.js?v=1.2.35", import.meta.url),
+      { type: "module", name: "v1pro-gfm-compression" },
+    );
+  } catch {
+    return optimizePrebuiltGfm1(sourceBytes, options);
+  }
+
+  const input = sourceBytes.byteOffset === 0 && sourceBytes.byteLength === sourceBytes.buffer.byteLength
+    ? sourceBytes.buffer
+    : sourceBytes.slice().buffer;
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("GFM 压缩容量计算超时，请缩短素材后重试。"));
+    }, 5 * 60 * 1000);
+    const finish = () => {
+      clearTimeout(timeout);
+      worker.terminate();
+    };
+    worker.addEventListener("message", (event) => {
+      finish();
+      if (event.data?.error) {
+        reject(new Error(event.data.error));
+      } else {
+        resolve(event.data);
+      }
+    }, { once: true });
+    worker.addEventListener("error", (event) => {
+      finish();
+      reject(new Error(event.message || "GFM 压缩 Worker 加载失败。"));
+    }, { once: true });
+    worker.postMessage({ input, options }, [input]);
+  });
+}
+
+async function planPrebuiltGfm1(blob, metadata = {}, options = {}) {
   if (!(blob instanceof Blob) || blob.size < GFM1_HEADER_BYTES) {
     throw new V1ProUsbError("invalid_gfm1", "浏览器本地转换结果无效。");
   }
@@ -55,7 +102,7 @@ async function planPrebuiltGfm1(blob, metadata = {}) {
   const height = view.getUint16(8, true);
   const frameCount = view.getUint16(10, true);
   const pixelBytes = view.getUint32(12, true);
-  if (version !== 1 || width !== 320 || height !== 170 || frameCount < 1) {
+  if (version !== 1 || width !== LCD_W || height !== LCD_H || frameCount < 1) {
     throw new V1ProUsbError("invalid_gfm1", "浏览器本地转换结果的版本或画面尺寸不正确。");
   }
   if (metadata.frameCount != null && frameCount !== metadata.frameCount) {
@@ -64,7 +111,7 @@ async function planPrebuiltGfm1(blob, metadata = {}) {
       `浏览器本地转换帧数不一致（${frameCount}/${metadata.frameCount}）。`,
     );
   }
-  const expectedPixelBytes = frameCount * GFM1_FRAME_BYTES;
+  const expectedPixelBytes = frameCount * FRAME_PIXEL_BYTES;
   const expectedTotalBytes = GFM1_HEADER_BYTES + frameCount * 2 + expectedPixelBytes;
   if (pixelBytes !== expectedPixelBytes || blob.size !== expectedTotalBytes) {
     throw new V1ProUsbError(
@@ -73,21 +120,46 @@ async function planPrebuiltGfm1(blob, metadata = {}) {
     );
   }
 
+  const sourceBytes = new Uint8Array(await blob.arrayBuffer());
+  let optimized;
+  try {
+    optimized = await optimizePrebuiltGfm1InWorker(sourceBytes, {
+      maxBytes: options.maxPayloadBytes,
+      maxFps: options.maxVideoFps,
+      fitMinFps: options.mediaType === "video" ? (options.minVideoFps ?? 20) : 15,
+      maxSpeed: options.maxVideoSpeed ?? 10,
+      autoSpeed: options.mediaType === "video",
+      gfm2Enabled: options.capacity?.gfm2 === true,
+      gfm3Enabled: options.capacity?.persistentCompression === true,
+      antiTearing: true,
+    });
+  } catch (error) {
+    throw new V1ProUsbError(
+      "gfm_fit_failed",
+      error instanceof Error ? error.message : "GFM 压缩容量适配失败。",
+      error,
+    );
+  }
+
+  const compressionNote = optimized.magic === "GFM1"
+    ? optimized.note
+    : `Flash ${optimized.magic} 持久压缩 · ${optimized.note}`;
   return {
-    frameCount,
-    fps: metadata.fps,
-    totalBytes: blob.size,
-    note: metadata.note || "浏览器 FFmpeg 本地转换",
+    frameCount: optimized.frameCount,
+    sourceFrameCount: optimized.sourceFrameCount,
+    fps: optimized.fps,
+    speed: optimized.speed,
+    storageFormat: optimized.magic,
+    totalBytes: optimized.bytes.length,
+    note: [metadata.note || "浏览器 FFmpeg 本地转换", compressionNote]
+      .filter(Boolean)
+      .join("；"),
     async *payloadChunks() {
-      const reader = blob.stream().getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value?.byteLength) yield value;
-        }
-      } finally {
-        reader.releaseLock();
+      for (let offset = 0; offset < optimized.bytes.length; offset += GFM_PAYLOAD_CHUNK_BYTES) {
+        yield optimized.bytes.subarray(
+          offset,
+          Math.min(optimized.bytes.length, offset + GFM_PAYLOAD_CHUNK_BYTES),
+        );
       }
     },
   };
@@ -99,11 +171,23 @@ async function planPrebuiltGfm1(blob, metadata = {}) {
  *   usableMb?: number,
  *   maxFrames?: number,
  *   model?: number,
+ *   lcdW?: number,
+ *   lcdH?: number,
  * }|null|undefined} capacity
  */
 export function formatDeviceCapacityLabel(capacity) {
   if (!capacity?.maxFrames) return "";
-  return `${capacity.maxFrames}帧`;
+  const width = capacity.lcdW || 320;
+  const height = capacity.lcdH || 170;
+  const sizeName = width === 320 && height === 170
+    ? "1.9寸"
+    : width === 320 && height === 240
+      ? "2.4寸"
+      : `${width}×${height}`;
+  if (capacity.persistentCompression) {
+    return `${sizeName} ${width}×${height} · GFM3 按实际字节计算（${capacity.maxFrames}帧为未压缩参考）`;
+  }
+  return `${capacity.maxFrames}帧 · ${sizeName} ${width}×${height}`;
 }
 
 function formatTransportNote(transport) {
@@ -173,6 +257,8 @@ export class V1ProWebTransfer {
       });
       if (!this.deviceCapacity) {
         this.capacityError = "设备未返回 JED 容量应答";
+      } else {
+        configurePanelGeometry(this.deviceCapacity.lcdW, this.deviceCapacity.lcdH);
       }
     } catch (err) {
       this.deviceCapacity = null;
@@ -209,6 +295,7 @@ export class V1ProWebTransfer {
     this.spectrumActive = false;
     this.spectrumSequence = 0;
     this.liveModeActive = false;
+    configurePanelGeometry(320, 170);
     await closeDevice(d);
   }
 
@@ -347,7 +434,7 @@ export class V1ProWebTransfer {
     if (prediction.totalBytes > this.deviceCapacity.maxPayloadBytes) {
       throw new V1ProUsbError(
         "gfm1_too_large",
-        "完整视频即使降至 20fps、5 倍速后仍无法装入设备，请选择更短的视频。"
+        "完整视频即使降至 20fps、10 倍速后仍无法装入设备，请选择更短的视频。"
       );
     }
     return prediction;
@@ -432,6 +519,7 @@ export class V1ProWebTransfer {
           probeNote = probe.note || "设备未应答 PING，已跳过探测并尝试直接传输";
         } else if (probe.capacity) {
           this.deviceCapacity = probe.capacity;
+          configurePanelGeometry(probe.capacity.lcdW, probe.capacity.lcdH);
         }
       }
 
@@ -445,18 +533,30 @@ export class V1ProWebTransfer {
       const maxFrames = opts.maxFrames ?? capacity?.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
       const maxPayloadBytes = capacity?.maxPayloadBytes;
       const capacityNote = formatDeviceCapacityLabel(this.deviceCapacity);
-      if (onProgress && !opts.prebuiltGfm1) {
+      if (onProgress) {
+        const prepareNote = opts.prebuiltGfm1 && capacity?.persistentCompression
+          ? `正在 Worker 中测量 GFM3 实际压缩容量… ${capacityNote}`
+          : capacityNote
+            ? `准备编码… ${capacityNote}`
+            : "准备编码…";
         onProgress({
           phase: "encode",
           sent: 0,
           total: 1,
           ratio: 0,
-          note: capacityNote ? `准备编码… ${capacityNote}` : "准备编码…",
+          note: prepareNote,
         });
       }
 
       const plan = opts.prebuiltGfm1
-        ? await planPrebuiltGfm1(file, opts.prebuiltGfm1)
+        ? await planPrebuiltGfm1(file, opts.prebuiltGfm1, {
+            capacity,
+            maxPayloadBytes,
+            mediaType: opts.mediaType,
+            maxVideoFps: opts.maxVideoFps ?? capacity?.materialMaxFps ?? MAX_VIDEO_FPS,
+            minVideoFps: opts.minVideoFps,
+            maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
+          })
         : await planGfm1Encode(file, {
             maxFrames,
             maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
@@ -483,7 +583,10 @@ export class V1ProWebTransfer {
 
       const requestedVideoFps =
         isVideo && opts.maxVideoFps === opts.minVideoFps ? opts.maxVideoFps : null;
-      if (requestedVideoFps != null && plan.fps !== requestedVideoFps) {
+      if (
+        requestedVideoFps != null
+        && Math.abs(Number(plan.fps) - Number(requestedVideoFps)) > 0.51
+      ) {
         throw new V1ProUsbError(
           "video_fps_mismatch",
           `视频实际编码帧率不一致：选择 ${requestedVideoFps}fps，实际为 ${plan.fps ?? "未知"}fps。`
@@ -496,10 +599,10 @@ export class V1ProWebTransfer {
           `GFM1 过大（${plan.totalBytes} 字节），超过设备可用 Flash（约 ${this.deviceCapacity?.usableMb ?? "?"}MB）。`
         );
       }
-      if (preparedTotalBytes != null && plan.totalBytes !== preparedTotalBytes) {
+      if (preparedTotalBytes != null && plan.totalBytes > preparedTotalBytes) {
         throw new V1ProUsbError(
           "prediction_changed",
-          `视频实际转换大小与预测不一致（${plan.totalBytes}/${preparedTotalBytes} 字节），已停止写入。`
+          `视频实际转换大小超过预擦除范围（${plan.totalBytes}/${preparedTotalBytes} 字节），已停止写入。`
         );
       }
 
@@ -515,6 +618,7 @@ export class V1ProWebTransfer {
            * before the already encoded payload so firmware RX cannot time out. */
           startAlreadySent: false,
           prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
+          verificationTimeoutMs: plan.storageFormat === "GFM3" ? 60000 : 0,
           onProgress: (sent, total, currentTransport) => {
             if (!onProgress) return;
             const transferRatio = total > 0 ? sent / total : 0;
@@ -552,7 +656,10 @@ export class V1ProWebTransfer {
       return {
         bytes: plan.totalBytes,
         frameCount: plan.frameCount,
+        sourceFrameCount: plan.sourceFrameCount ?? plan.frameCount,
         fps: isVideo ? plan.fps : undefined,
+        speed: isVideo ? plan.speed : undefined,
+        storageFormat: plan.storageFormat ?? "GFM1",
         note,
       };
     } finally {

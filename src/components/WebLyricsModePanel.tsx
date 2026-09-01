@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   canvasToRgb565,
+  configureLyricsPanelGeometry,
   parseLrcText,
   readLrcFile,
   renderAppleLyricsCanvas,
@@ -16,6 +17,8 @@ interface WebLyricsModePanelProps {
   releaseClient: (client: V1ProWebTransferClient) => Promise<void>;
   onModeStateChange: (active: boolean, starting: boolean) => void;
   stopHandlerRef: MutableRefObject<(message?: string) => Promise<void>>;
+  panelWidth: number;
+  panelHeight: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -37,6 +40,8 @@ export function WebLyricsModePanel({
   releaseClient,
   onModeStateChange,
   stopHandlerRef,
+  panelWidth,
+  panelHeight,
 }: WebLyricsModePanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -129,8 +134,9 @@ export function WebLyricsModePanel({
   }, [stopHandlerRef, stopLyricsMode]);
 
   useEffect(() => {
+    configureLyricsPanelGeometry(panelWidth, panelHeight);
     drawCurrentFrame();
-  }, [drawCurrentFrame]);
+  }, [drawCurrentFrame, panelHeight, panelWidth]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -280,6 +286,10 @@ export function WebLyricsModePanel({
       if (!canvas) throw new Error("歌词预览画布未就绪。");
       const client = await acquireClient();
       clientRef.current = client;
+      const activeWidth = client.deviceCapacity?.lcdW || panelWidth;
+      const activeHeight = client.deviceCapacity?.lcdH || panelHeight;
+      configureLyricsPanelGeometry(activeWidth, activeHeight);
+      drawCurrentFrame();
       if (generationRef.current !== generation) throw new Error("歌词模式启动已取消。");
       await client.startLiveFrame(canvasToRgb565(canvas));
       if (generationRef.current !== generation) throw new Error("歌词模式启动已取消。");
@@ -287,7 +297,7 @@ export function WebLyricsModePanel({
       notifyModeState(true, false);
       lastFrameAtRef.current = 0;
       lastPositionRef.current = -1;
-      setMessage("歌词模式运行中 · 320×170 · Apple 风格");
+      setMessage(`歌词模式运行中 · ${activeWidth}×${activeHeight} · Apple 风格`);
       animationRef.current = requestAnimationFrame(runFrameLoop);
     } catch (error) {
       audio.pause();
@@ -308,7 +318,7 @@ export function WebLyricsModePanel({
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eeeaff] text-sm font-extrabold text-[#746cf2]">4</span>
         <div>
           <h2 className="text-[17px] font-extrabold">网页歌词模式</h2>
-          <p className="mt-1 text-xs text-[#8a93a8]">网页播放本地歌曲，Canvas 渲染 320×170 苹果风格歌词并实时发送到设备</p>
+          <p className="mt-1 text-xs text-[#8a93a8]">网页播放本地歌曲，Canvas 渲染 {panelWidth}×{panelHeight} 苹果风格歌词并实时发送到设备</p>
         </div>
       </div>
 
@@ -368,7 +378,13 @@ export function WebLyricsModePanel({
                 {starting ? "启动中" : active ? "运行中" : "待机"}
               </span>
             </div>
-            <canvas ref={canvasRef} width={320} height={170} className="block aspect-[320/170] w-full rounded-[14px] bg-[#10131c] shadow-inner" />
+            <canvas
+              ref={canvasRef}
+              width={panelWidth}
+              height={panelHeight}
+              className="block w-full rounded-[14px] bg-[#10131c] shadow-inner"
+              style={{ aspectRatio: `${panelWidth} / ${panelHeight}` }}
+            />
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className={`min-h-[1.25rem] text-[10.5px] leading-5 ${/失败|错误|不可用|超时|没有查到/.test(message) ? "text-rose-300" : "text-white/65"}`}>{message}</p>
               <div className="flex shrink-0 gap-2">

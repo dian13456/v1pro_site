@@ -1,5 +1,15 @@
-export const LYRICS_PANEL_WIDTH = 320;
-export const LYRICS_PANEL_HEIGHT = 170;
+export let LYRICS_PANEL_WIDTH = 320;
+export let LYRICS_PANEL_HEIGHT = 170;
+
+export function configureLyricsPanelGeometry(width: number, height: number): void {
+  const nextWidth = Math.trunc(Number(width));
+  const nextHeight = Math.trunc(Number(height));
+  if (!(nextWidth >= 100 && nextWidth <= 1024 && nextHeight >= 100 && nextHeight <= 1024)) {
+    throw new Error(`无效歌词画面尺寸：${width}x${height}`);
+  }
+  LYRICS_PANEL_WIDTH = nextWidth;
+  LYRICS_PANEL_HEIGHT = nextHeight;
+}
 
 export interface BrowserLrcLine {
   timeMs: number;
@@ -238,6 +248,9 @@ export function renderAppleLyricsCanvas(
   bg.addColorStop(1, "#071d2a");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, LYRICS_PANEL_WIDTH, LYRICS_PANEL_HEIGHT);
+  const contentOffsetY = Math.max(0, Math.floor((LYRICS_PANEL_HEIGHT - 170) / 2));
+  ctx.save();
+  ctx.translate(0, contentOffsetY);
   const glow = ctx.createRadialGradient(254, 22, 0, 254, 22, 155);
   glow.addColorStop(0, "rgba(118,92,255,.38)");
   glow.addColorStop(0.5, "rgba(38,184,224,.12)");
@@ -305,6 +318,7 @@ export function renderAppleLyricsCanvas(
   trackFill.addColorStop(1, "#63d7ff");
   ctx.fillStyle = trackFill;
   ctx.fillRect(14, 156, 292 * trackProgress, 3);
+  ctx.restore();
   return state;
 }
 

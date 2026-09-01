@@ -2,12 +2,37 @@ import { FFFSType, type ProgressEventCallback } from "@ffmpeg/ffmpeg";
 import { acquireBrowserFfmpeg } from "./ffmpegRuntime";
 import { readGifFrameDelays } from "./gifFrameTiming";
 
-const LCD_WIDTH = 320;
-const LCD_HEIGHT = 170;
-const FRAME_BYTES = LCD_WIDTH * LCD_HEIGHT * 2;
+let LCD_WIDTH = 320;
+let LCD_HEIGHT = 170;
+let FRAME_BYTES = LCD_WIDTH * LCD_HEIGHT * 2;
 const GFM1_HEADER_BYTES = 56;
 export const MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES = 50 * 1024 * 1024;
+// FFmpeg raw RGB565 output and the packed GFM1 buffer coexist briefly. Keep
+// the temporary source below this ceiling so a long, low-bitrate clip cannot
+// exhaust the browser process before the GFM2/GFM3 Worker starts fitting it.
+const MAX_BROWSER_GFM1_WORKING_BYTES = 192 * 1024 * 1024;
 const MAX_VIDEO_SPEED = 10;
+
+export interface BrowserPanelGeometry {
+  width: number;
+  height: number;
+}
+
+export function configureBrowserPanelGeometry(width: number, height: number): BrowserPanelGeometry {
+  const nextWidth = Math.trunc(Number(width));
+  const nextHeight = Math.trunc(Number(height));
+  if (!(nextWidth >= 100 && nextWidth <= 1024 && nextHeight >= 100 && nextHeight <= 1024)) {
+    throw new Error(`无效屏幕尺寸：${width}x${height}`);
+  }
+  LCD_WIDTH = nextWidth;
+  LCD_HEIGHT = nextHeight;
+  FRAME_BYTES = nextWidth * nextHeight * 2;
+  return { width: LCD_WIDTH, height: LCD_HEIGHT };
+}
+
+export function getBrowserPanelGeometry(): BrowserPanelGeometry {
+  return { width: LCD_WIDTH, height: LCD_HEIGHT };
+}
 
 export type BrowserVideoFitMode = "fill" | "contain";
 export type BrowserVideoColorProfile = "normal" | "vivid" | "professional";
@@ -186,7 +211,7 @@ function resizeFilters(fitMode: BrowserVideoFitMode, scalePercent = 100): string
 function colorFilters(profile: BrowserVideoColorProfile): string[] {
   const values = {
     // RGB565 loses tonal precision quickly. Keep contrast moderate, lift the
-    // midtones before quantisation, then sharpen only after the 320x170 resize.
+    // midtones before quantisation, then sharpen only after the LCD resize.
     normal: {
       saturation: 1.08, contrast: 1.05, brightness: 0.002, gamma: 1.01,
       red: 1.0, green: 1.0, blue: 1.0, sharpness: 0.15,
@@ -260,8 +285,15 @@ function buildGfm1HeaderWithDelays(delaysMs: number[]): Uint8Array {
 }
 
 function buildGfm1Header(frameCount: number, fps: number): Uint8Array {
-  const delayMs = normalizeDelayMs(1000 / fps);
-  return buildGfm1HeaderWithDelays(Array.from({ length: frameCount }, () => delayMs));
+  const safeFps = Math.max(1, Math.floor(fps));
+  const delaysMs: number[] = [];
+  let previousMs = 0;
+  for (let index = 1; index <= frameCount; index += 1) {
+    const elapsedMs = Math.ceil((index * 1000) / safeFps);
+    delaysMs.push(Math.max(1, elapsedMs - previousMs));
+    previousMs = elapsedMs;
+  }
+  return buildGfm1HeaderWithDelays(delaysMs);
 }
 
 function packGfm1Pixels(pixels: Uint8Array, delaysMs: number[]): Uint8Array {
@@ -557,6 +589,12 @@ export async function convertBrowserVideoWithFfmpeg(
   if (source.size <= 0) throw new Error("视频文件为空");
   if (source.size > MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES) {
     throw new Error("网页 FFmpeg 转换暂支持 50MB 以内的视频");
+  }
+  if (options.plan.totalBytes > MAX_BROWSER_GFM1_WORKING_BYTES) {
+    const estimatedMb = options.plan.totalBytes / (1024 * 1024);
+    throw new Error(
+      `视频解码后的临时素材约 ${estimatedMb.toFixed(0)}MB，超过网页安全上限；请缩短视频或使用本地软件传输。`,
+    );
   }
 
   const extension = inputExtension(options.fileName || "", source.type || "");

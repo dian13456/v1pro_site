@@ -35,7 +35,7 @@ interface ResourceDetailModalProps {
 }
 
 export interface ResourceWebUsbTransferOptions {
-  videoFps: VideoFpsOption;
+  videoFps: VideoFpsSelection;
   fitMode: "fill" | "contain";
   rotationDeg: 0 | 90 | 180 | 270;
   colorProfile: "normal" | "vivid" | "professional";
@@ -261,7 +261,7 @@ export function ResourceDetailModal({
                 onClick={() => setFpsSelection(COMPATIBLE_VIDEO_FPS)}
                 className={`mt-2 w-full rounded-[10px] border-[1.5px] px-3 py-[9px] text-[12.5px] font-semibold transition ${fpsSelection === COMPATIBLE_VIDEO_FPS ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
               >
-                兼容模式（20 / 25 / 30 fps）
+                兼容 / 新手自动
               </button>
               <div className="mt-2 grid grid-cols-3 gap-2">
                 {VIDEO_FPS_OPTIONS.map((value) => (
@@ -276,7 +276,7 @@ export function ResourceDetailModal({
                 ))}
               </div>
               {fpsSelection === COMPATIBLE_VIDEO_FPS ? (
-                <p className="mt-2 text-[11px] leading-5 text-[#8a93a8]">当前兼容编码为 {fps} fps；优先沿用分享者参数，无参数时按 GUI 新手模式 20 fps。</p>
+                <p className="mt-2 text-[11px] leading-5 text-[#8a93a8]">新固件会按 GUI 新手模式从设备上限开始，依据 GFM3 实际压缩字节降至 20fps，仍放不下才自动加速；旧固件继续使用 {fps}fps 兼容逻辑。</p>
               ) : null}
             </>
           ) : null}
@@ -318,9 +318,9 @@ export function ResourceDetailModal({
 
           <div className="rounded-xl border border-[#e6e9f2] bg-[#fafbfe] px-3.5 py-3 text-[12.5px] leading-[1.9]">
             <p className="text-slate-600 dark:text-slate-300">
-              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
+              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? fpsSelection === COMPATIBLE_VIDEO_FPS ? <> ｜ <strong>GUI 新手自动压缩适配</strong></> : <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
             </p>
-            {metricsKnown ? <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold">
+            {metricsKnown && fpsSelection !== COMPATIBLE_VIDEO_FPS ? <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold">
               {assessments.map((item) => (
                 <span key={item.capacity} className={item.originalSpeed ? "text-emerald-500" : item.fits ? "text-orange-500" : "text-rose-500"}>
                   {item.capacity} 帧设备：{item.originalSpeed
@@ -330,7 +330,9 @@ export function ResourceDetailModal({
                       : `无法装入 · 至少需要 ${item.minimumFrames} 帧容量`}
                 </span>
               ))}
-            </div> : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
+            </div> : fpsSelection === COMPATIBLE_VIDEO_FPS && isAnimated ? (
+              <p className="mt-2 text-xs font-semibold text-emerald-600">支持 GFM3 的设备将在转换后按真实压缩字节计算容量，不再受 77 / 154 / 308 原始帧数硬限制。</p>
+            ) : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
             <p className="mt-2 text-xs text-slate-500">✓ 所选帧率用于“网页直传”；“传输”将交给佳点 V1PRO 控制工具处理</p>
           </div>
 
@@ -365,7 +367,7 @@ export function ResourceDetailModal({
               type="button"
               disabled={webUsbTransferring || !canDirectTransfer}
               title="网页直传"
-              onClick={() => onWebUsbTransfer(resource, { videoFps: fps, fitMode, rotationDeg, colorProfile })}
+              onClick={() => onWebUsbTransfer(resource, { videoFps: fpsSelection, fitMode, rotationDeg, colorProfile })}
               className="rounded-[12px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)] disabled:opacity-50"
             >
               {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}

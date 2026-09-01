@@ -39,12 +39,12 @@ import {
   USBDL_URL_SUB_WRITE,
   USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.33";
+} from "./v1pro-constants.js?v=1.2.35";
 import {
   prepareTransportPayload,
   TRANSPORT_BLOCK_SIZE,
   TRANSPORT_VERSION,
-} from "./v1pro-transport-codec.js?v=1.2.33";
+} from "./v1pro-transport-codec.js?v=1.2.35";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -557,7 +557,7 @@ function parseLiveReply(reply) {
   throw new V1ProUsbError("live_reply_invalid", `设备返回了未知 LIVE 应答：${reply}`);
 }
 
-/** Push one 320x170 RGB565 frame without writing SPI flash. */
+/** Push one full-screen RGB565 frame using the detected panel geometry. */
 export async function sendLiveRgb565(device, pixels) {
   requireOpenDisplayDevice(device);
   await bulkOut(device, buildLiveFramePacket(pixels), {
@@ -974,6 +974,15 @@ export async function closeDevice(device) {
  *   totalMb: number,
  *   usableMb: number,
  *   productFrames: number,
+ *   lcdW: number,
+ *   lcdH: number,
+ *   capabilities: string[],
+ *   gfm2: boolean,
+ *   gfm3: boolean,
+ *   persistentCompression: boolean,
+ *   liveLz4: boolean,
+ *   hardwareVariant: "V1P"|"V2"|"UNKNOWN",
+ *   materialMaxFps: number,
  *   maxPayloadBytes: number,
  *   maxFrames: number,
  * }|null}
@@ -991,15 +1000,51 @@ export function parseJedecReply(text) {
   if (!Number.isFinite(productFrames) || productFrames <= 0) {
     return null;
   }
+  let lcdW = Number.parseInt(parts[6], 10) || 320;
+  let lcdH = Number.parseInt(parts[7], 10) || 170;
+  if (!(lcdW >= 100 && lcdW <= 1024 && lcdH >= 100 && lcdH <= 1024)) {
+    lcdW = 320;
+    lcdH = 170;
+  }
+
+  const capabilities = parts.slice(8).map((part) => part.trim()).filter(Boolean);
+  const upperCapabilities = capabilities.map((part) => part.toUpperCase());
+  const gfm2 = upperCapabilities.includes("GFM2");
+  const gfm3 = upperCapabilities.some((part) => part === "GFM3" || part === "LZ4P");
+  const liveLz4 = upperCapabilities.includes("LZ4L");
+  const hardwareTokens = upperCapabilities
+    .filter((part) => part.startsWith("HW="))
+    .map((part) => part.slice(3).trim());
+  let hardwareVariant;
+  if (hardwareTokens.length) {
+    hardwareVariant = new Set(hardwareTokens).size === 1 ? hardwareTokens[0] : "UNKNOWN";
+    if (hardwareVariant !== "V1P" && hardwareVariant !== "V2") hardwareVariant = "UNKNOWN";
+  } else if (lcdW === 320 && lcdH === 170) {
+    hardwareVariant = "V1P";
+  } else if (lcdW === 320 && lcdH === 240) {
+    hardwareVariant = "V2";
+  } else {
+    hardwareVariant = "UNKNOWN";
+  }
+  const expectedGeometry = hardwareVariant === "V1P"
+    ? [320, 170]
+    : hardwareVariant === "V2"
+      ? [320, 240]
+      : null;
+  if (expectedGeometry && (lcdW !== expectedGeometry[0] || lcdH !== expectedGeometry[1])) {
+    hardwareVariant = "UNKNOWN";
+  }
+  const persistentCompression = gfm2 && gfm3;
+  const materialMaxFps = hardwareVariant === "UNKNOWN" ? 30 : 45;
 
   const totalBytes = Number.isFinite(totalMb) && totalMb > 0 ? Math.floor(totalMb * 1024 * 1024) : 0;
   const maxPayloadBytes = Math.min(
     ANIM_FLASH_MAX_BYTES,
-    totalBytes > 0 ? totalBytes : ANIM_FLASH_MAX_BYTES,
+    totalBytes > 0 ? Math.max(0, totalBytes - 0x1000) : ANIM_FLASH_MAX_BYTES,
   );
   const framesByBytes = Math.max(
     1,
-    Math.floor((maxPayloadBytes - 56) / (2 + FRAME_PIXEL_BYTES)),
+    Math.floor((maxPayloadBytes - 56) / (2 + lcdW * lcdH * 2)),
   );
   // Use firmware product_frames; total_mb is the full animation region (77/154/308).
   const maxFrames = Math.max(1, Math.min(productFrames, framesByBytes));
@@ -1010,6 +1055,15 @@ export function parseJedecReply(text) {
     totalMb: Number.isFinite(totalMb) ? totalMb : 0,
     usableMb: Number.isFinite(usableMb) ? usableMb : 0,
     productFrames,
+    lcdW,
+    lcdH,
+    capabilities,
+    gfm2,
+    gfm3,
+    persistentCompression,
+    liveLz4,
+    hardwareVariant,
+    materialMaxFps,
     maxPayloadBytes,
     maxFrames,
   };
@@ -1321,7 +1375,7 @@ export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
  * @param {USBDevice} device
  * @param {number} totalBytes GFM1 payload size (excluding 8-byte START header)
  * @param {AsyncIterable<Uint8Array>} payloadChunks
- * @param {{ onProgress?: (sent: number, total: number, transport?: object) => void }} [opts]
+ * @param {{ onProgress?: (sent: number, total: number, transport?: object) => void, verificationTimeoutMs?: number }} [opts]
  */
 export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
@@ -1452,6 +1506,30 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   /* Wait for the device to finish draining its USB ring and commit playback.
    * Closing the interface immediately after transferOut can otherwise make the
    * firmware classify an otherwise complete browser transfer as interrupted. */
-  await ping(device, { requireAnimation: true });
+  const verificationTimeoutMs = Math.max(0, Math.trunc(opts.verificationTimeoutMs || 0));
+  if (!verificationTimeoutMs) {
+    await ping(device, { requireAnimation: true });
+  } else {
+    const deadline = Date.now() + verificationTimeoutMs;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      try {
+        await ping(device, { requireAnimation: true });
+        lastError = null;
+        break;
+      } catch (error) {
+        if (error instanceof V1ProUsbError && error.code === "gfm1_rejected") throw error;
+        lastError = error;
+        await sleep(250);
+      }
+    }
+    if (lastError) {
+      throw new V1ProUsbError(
+        "gfm_verify_timeout",
+        "设备仍在校验压缩素材或未返回完成状态，请保持连接后重试。",
+        lastError,
+      );
+    }
+  }
   return transport;
 }

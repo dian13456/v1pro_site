@@ -10,6 +10,15 @@ export interface V1ProDeviceCapacity {
   totalMb: number;
   usableMb: number;
   productFrames: number;
+  lcdW: number;
+  lcdH: number;
+  capabilities: string[];
+  gfm2: boolean;
+  gfm3: boolean;
+  persistentCompression: boolean;
+  liveLz4: boolean;
+  hardwareVariant: "V1P" | "V2" | "UNKNOWN";
+  materialMaxFps: number;
   maxPayloadBytes: number;
   maxFrames: number;
 }
@@ -38,7 +47,10 @@ export interface V1ProTransferProgress {
 export interface V1ProTransferResult {
   bytes: number;
   frameCount: number;
+  sourceFrameCount?: number;
   fps?: number;
+  speed?: number;
+  storageFormat?: "GFM1" | "GFM2" | "GFM3";
   note?: string;
 }
 
@@ -49,6 +61,7 @@ export interface V1ProTransferFileOptions {
   maxVideoFps?: number;
   minVideoFps?: number;
   maxVideoSpeed?: number;
+  beginnerAuto?: boolean;
   fitMode?: "fill" | "contain";
   rotationDeg?: 0 | 90 | 180 | 270;
   colorProfile?: "normal" | "vivid" | "professional";

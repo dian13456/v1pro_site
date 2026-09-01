@@ -38,12 +38,16 @@ export function WebUsbAlbumComposer({
   busy,
   canTransfer,
   capacityFrames,
+  panelWidth,
+  panelHeight,
   onTransfer,
   onNotice,
 }: {
   busy: boolean;
   canTransfer: boolean;
   capacityFrames?: number | null;
+  panelWidth: number;
+  panelHeight: number;
   onTransfer: (items: LocalAlbumTransferItem[]) => Promise<void> | void;
   onNotice?: (message: string, error?: boolean) => void;
 }) {
@@ -274,13 +278,16 @@ export function WebUsbAlbumComposer({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-[14px] font-extrabold text-[#3f4660]">屏幕预览</h3>
-            <p className="mt-1 text-[10.5px] text-[#8a93a8]">320 × 170 · 循环播放</p>
+            <p className="mt-1 text-[10.5px] text-[#8a93a8]">{panelWidth} × {panelHeight} · 循环播放</p>
           </div>
           <span className="rounded-full bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3974c8] shadow-sm">
             {capacityFrames ? `约 ${capacityFrames} 张画面` : "容量待读取"}
           </span>
         </div>
-        <div className="mt-4 grid aspect-[320/170] place-items-center overflow-hidden rounded-[12px] border-4 border-[#2f3544] bg-black shadow-[0_10px_24px_rgba(43,50,69,.18)]">
+        <div
+          className="mt-4 grid place-items-center overflow-hidden rounded-[12px] border-4 border-[#2f3544] bg-black shadow-[0_10px_24px_rgba(43,50,69,.18)]"
+          style={{ aspectRatio: `${panelWidth} / ${panelHeight}` }}
+        >
           {selectedItem ? (
             isVideo(selectedItem.file) ? (
               <video key={selectedItem.id} src={selectedItem.previewUrl} controls muted playsInline preload="metadata" className="h-full w-full object-contain" />
@@ -295,7 +302,7 @@ export function WebUsbAlbumComposer({
           {selectedItem ? `${items.indexOf(selectedItem) + 1} / ${items.length} · ${selectedItem.file.name}` : "0 / 0"}
         </p>
         <div className="mt-4 rounded-[12px] bg-white p-3 text-[10.5px] leading-5 text-[#7a849a] shadow-sm">
-          视频采用兼容模式：320×170、20 FPS、仅取前 15 秒；空间不足时自动提高倍速。容量只按画面张数显示。
+          视频采用兼容模式：{panelWidth}×{panelHeight}、20 FPS、仅取前 15 秒；空间不足时自动提高倍速。容量只按画面张数显示。
         </div>
         <button
           type="button"

@@ -3,7 +3,7 @@
 import { importWithRetry } from "../utils/dynamicImportRecovery";
 
 /** 与 public/webusb/v1pro-constants.js 中 WEBUSB_TRANSFER_VERSION 保持一致 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.33";
+export const WEBUSB_TRANSFER_VERSION = "1.2.35";
 
 type WebUsbSdkModule = {
   V1ProWebTransfer: new () => V1ProWebTransferClient;

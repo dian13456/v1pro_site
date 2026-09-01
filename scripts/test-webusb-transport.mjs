@@ -18,9 +18,25 @@ globalThis.window = {
 
 const {
   buildCompressedStartPreamble,
+  parseJedecReply,
   parseFirmwareInfoReply,
   sendGfm1PayloadStream,
 } = await import("../public/webusb/v1pro-usb.js");
+
+const compressedCapacity = parseJedecReply(
+  "JED,EF4017,64,8,7,77,320,170,GFM2,LZ4P,LZ4L,HW=V1P",
+);
+assert.ok(compressedCapacity);
+assert.equal(compressedCapacity.maxPayloadBytes, 8 * 1024 * 1024 - 0x1000);
+assert.equal(compressedCapacity.persistentCompression, true);
+assert.equal(compressedCapacity.liveLz4, true);
+assert.equal(compressedCapacity.hardwareVariant, "V1P");
+assert.equal(compressedCapacity.materialMaxFps, 45);
+
+const legacyCapacity = parseJedecReply("JED,EF4018,128,16,15,154,320,170");
+assert.ok(legacyCapacity);
+assert.equal(legacyCapacity.maxPayloadBytes, 16 * 1024 * 1024 - 0x1000);
+assert.equal(legacyCapacity.persistentCompression, false);
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");

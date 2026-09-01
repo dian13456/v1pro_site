@@ -13,6 +13,7 @@ import {
   WEBUSB_TRANSFER_VERSION,
 } from "../services/v1proWebTransferClient";
 import {
+  configureBrowserPanelGeometry,
   convertBrowserRasterWithFfmpeg,
   convertBrowserVideoWithFfmpeg,
   planBrowserFfmpegVideo,
@@ -31,6 +32,7 @@ import {
   type MusicSpectrumSource,
 } from "../services/browserMusicSpectrumService";
 import type {
+  V1ProDeviceCapacity,
   V1ProDisplayStatus,
   V1ProTransferResult,
   V1ProWebTransferClient,
@@ -49,6 +51,8 @@ type MaterialRotation = "auto" | 0 | 90 | 180 | 270;
 type MaterialFitMode = "fill" | "contain";
 type MaterialColorProfile = "normal" | "vivid" | "professional";
 const DEFAULT_BOOT_WEBSITE_URL = "https://www.jadot.cn/";
+const DEFAULT_PANEL_WIDTH = 320;
+const DEFAULT_PANEL_HEIGHT = 170;
 
 function deviceKey(device: USBDevice): string {
   return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
@@ -177,11 +181,15 @@ export default function WebUsbTransferTestPage() {
   const [materialTransferMode, setMaterialTransferMode] = useState<MaterialTransferMode>("auto");
   const [materialWorkspaceMode, setMaterialWorkspaceMode] = useState<MaterialWorkspaceMode>("single");
   const [deviceFrameCapacity, setDeviceFrameCapacity] = useState<number | null>(null);
+  const [devicePanelSize, setDevicePanelSize] = useState({
+    width: DEFAULT_PANEL_WIDTH,
+    height: DEFAULT_PANEL_HEIGHT,
+  });
   const [materialFpsSelection, setMaterialFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
   const materialFps = resolveVideoFps(materialFpsSelection);
   const [materialRotation, setMaterialRotation] = useState<MaterialRotation>("auto");
   const [materialScale, setMaterialScale] = useState<50 | 75 | 100 | 125 | 150>(100);
-  const [materialFitMode, setMaterialFitMode] = useState<MaterialFitMode>("contain");
+  const [materialFitMode, setMaterialFitMode] = useState<MaterialFitMode>("fill");
   const [materialColor, setMaterialColor] = useState<MaterialColorProfile>("normal");
   const [materialPlaybackSpeed, setMaterialPlaybackSpeed] = useState(1);
   const [spectrumSource, setSpectrumSource] = useState<MusicSpectrumSource>("system");
@@ -197,6 +205,15 @@ export default function WebUsbTransferTestPage() {
   const [lyricsStarting, setLyricsStarting] = useState(false);
 
   const webUsbSupported = isWebUsbSupported();
+
+  const applyDeviceCapacity = useCallback((capacity: V1ProDeviceCapacity | null | undefined) => {
+    if (!capacity) return;
+    const width = capacity.lcdW || DEFAULT_PANEL_WIDTH;
+    const height = capacity.lcdH || DEFAULT_PANEL_HEIGHT;
+    configureBrowserPanelGeometry(width, height);
+    setDevicePanelSize({ width, height });
+    if (capacity.maxFrames) setDeviceFrameCapacity(capacity.maxFrames);
+  }, []);
 
   const refreshAuthorizedDevices = useCallback(async () => {
     if (!webUsbSupported) return;
@@ -252,6 +269,7 @@ export default function WebUsbTransferTestPage() {
         try { await client?.stopMusicSpectrum(); } catch { /* USB close is final cleanup. */ }
         try { await client?.stopLiveMode(); } catch { /* USB close is final cleanup. */ }
         await client?.disconnect();
+        configureBrowserPanelGeometry(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
       })();
       if (spectrumAudioUrlRef.current) {
         URL.revokeObjectURL(spectrumAudioUrlRef.current);
@@ -276,9 +294,9 @@ export default function WebUsbTransferTestPage() {
     setConnected(Boolean(client?.connected));
     setBusy(Boolean(client?.busy));
     if (client?.deviceCapacity?.maxFrames) {
-      setDeviceFrameCapacity(client.deviceCapacity.maxFrames);
+      applyDeviceCapacity(client.deviceCapacity);
     }
-  }, []);
+  }, [applyDeviceCapacity]);
 
   const ensureClient = useCallback(async (): Promise<V1ProWebTransferClient> => {
     if (!clientRef.current) {
@@ -304,13 +322,14 @@ export default function WebUsbTransferTestPage() {
     if (!selectedDevice) throw new Error("请先从设备列表选择对应 SN 的 V1PRO。");
     const client = await ensureClient();
     if (!client.connected) await client.connect({ device: selectedDevice });
+    applyDeviceCapacity(client.deviceCapacity);
     setConnected(true);
     setBusy(false);
     setStatusText(`已连接：${deviceLabel(client)}`);
     setStatusKind("ok");
     if (client.device) setSelectedDeviceKey(deviceKey(client.device as USBDevice));
     return client;
-  }, [authorizedDevices, ensureClient, selectedDeviceKey]);
+  }, [applyDeviceCapacity, authorizedDevices, ensureClient, selectedDeviceKey]);
 
   const releaseLyricsClient = useCallback(async (client: V1ProWebTransferClient) => {
     if (clientRef.current === client) clientRef.current = null;
@@ -451,6 +470,7 @@ export default function WebUsbTransferTestPage() {
       if (!client.connected) {
         await client.connect({ device: selectedDevice });
       }
+      applyDeviceCapacity(client.deviceCapacity);
       if (spectrumGenerationRef.current !== generation) {
         throw new Error("音乐频谱启动已取消");
       }
@@ -600,7 +620,7 @@ export default function WebUsbTransferTestPage() {
       setStatusText(`已连接：${deviceLabel(client)}`);
       setStatusKind("ok");
       const capacityLabel = client.getCapacityLabel?.() ?? "";
-      if (client.deviceCapacity?.maxFrames) setDeviceFrameCapacity(client.deviceCapacity.maxFrames);
+      applyDeviceCapacity(client.deviceCapacity);
       setMetaText(
         capacityLabel
           ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（默认兼容 20/25/30fps，必要时自动倍速）。`
@@ -632,6 +652,8 @@ export default function WebUsbTransferTestPage() {
     setStatusText("已断开");
     setStatusKind("idle");
     setProgress(0);
+    configureBrowserPanelGeometry(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
+    setDevicePanelSize({ width: DEFAULT_PANEL_WIDTH, height: DEFAULT_PANEL_HEIGHT });
     setDisplayControlSupported(null);
     setDisplayControlMessage("连接设备后自动读取当前显示设置。");
     setBootWebsiteEnabled(false);
@@ -662,7 +684,7 @@ export default function WebUsbTransferTestPage() {
         return;
       }
       const label = client.getCapacityLabel?.() || `${capacity.maxFrames}帧`;
-      setDeviceFrameCapacity(capacity.maxFrames);
+      applyDeviceCapacity(capacity);
       setStatusText(`容量读取成功：${label}`);
       setStatusKind("ok");
       setMetaText(label);
@@ -813,21 +835,24 @@ export default function WebUsbTransferTestPage() {
         if (!capacity?.maxFrames) {
           throw new Error("无法读取设备容量，请重新连接设备后重试");
         }
-        setDeviceFrameCapacity(capacity.maxFrames);
+        applyDeviceCapacity(capacity);
         const rotationDeg = await resolveMaterialRotation(file, materialRotation);
         let transferSource: Blob = file;
         let preparedMedia: {
           mediaType: "image" | "gif" | "video";
-          maxFrames: number;
+          maxFrames?: number;
           frameCount: number;
           fps?: number;
           note: string;
         } | null = null;
         if (selectedRasterType) {
+          const encodeMaxFrames = capacity.persistentCompression
+            ? Math.max(capacity.maxFrames, 1000)
+            : capacity.maxFrames;
           const converted = await convertBrowserRasterWithFfmpeg(file, {
             fileName: file.name,
             mediaType: selectedRasterType,
-            maxFrames: capacity.maxFrames,
+            maxFrames: encodeMaxFrames,
             fitMode: materialFitMode,
             rotationDeg,
             scalePercent: materialScale,
@@ -839,17 +864,25 @@ export default function WebUsbTransferTestPage() {
           transferSource = converted.blob;
           preparedMedia = {
             mediaType: selectedRasterType,
-            maxFrames: capacity.maxFrames,
+            maxFrames: capacity.persistentCompression ? undefined : capacity.maxFrames,
             frameCount: converted.frameCount,
             note: converted.note,
           };
         } else if (selectedVideo) {
           setStatusText("正在读取视频信息…");
           const duration = await probeBrowserVideoDuration(file);
+          const beginnerAuto = materialFpsSelection === COMPATIBLE_VIDEO_FPS;
+          const persistentCompression = capacity.persistentCompression === true;
+          const candidateFps = beginnerAuto && persistentCompression
+            ? capacity.materialMaxFps
+            : materialFps;
+          const candidateFrameBudget = persistentCompression
+            ? Math.max(1, Math.ceil(duration * candidateFps))
+            : capacity.maxFrames;
           const plan = planBrowserFfmpegVideo(
             duration,
-            capacity.maxFrames,
-            materialFps,
+            candidateFrameBudget,
+            candidateFps,
             materialPlaybackSpeed,
           );
           const converted = await convertBrowserVideoWithFfmpeg(file, {
@@ -865,7 +898,7 @@ export default function WebUsbTransferTestPage() {
           transferSource = converted.blob;
           preparedMedia = {
             mediaType: "video",
-            maxFrames: capacity.maxFrames,
+            maxFrames: persistentCompression ? undefined : capacity.maxFrames,
             frameCount: converted.frameCount,
             fps: converted.fps,
             note: converted.note,
@@ -876,6 +909,18 @@ export default function WebUsbTransferTestPage() {
           fileName: file.name,
           mediaType: preparedMedia?.mediaType,
           maxFrames: preparedMedia?.maxFrames,
+          beginnerAuto:
+            preparedMedia?.mediaType === "video"
+            && materialFpsSelection === COMPATIBLE_VIDEO_FPS,
+          maxVideoFps: preparedMedia?.mediaType === "video"
+            ? (materialFpsSelection === COMPATIBLE_VIDEO_FPS
+              ? (capacity.materialMaxFps || 30)
+              : materialFps)
+            : undefined,
+          minVideoFps: preparedMedia?.mediaType === "video"
+            ? (materialFpsSelection === COMPATIBLE_VIDEO_FPS ? 20 : materialFps)
+            : undefined,
+          maxVideoSpeed: 10,
           prebuiltGfm1: preparedMedia ? {
             frameCount: preparedMedia.frameCount,
             fps: preparedMedia.fps,
@@ -926,11 +971,13 @@ export default function WebUsbTransferTestPage() {
       }
     },
     [
+      applyDeviceCapacity,
       authorizedDevices,
       ensureClient,
       materialColor,
       materialFitMode,
       materialFps,
+      materialFpsSelection,
       materialPlaybackSpeed,
       materialRotation,
       materialScale,
@@ -982,7 +1029,7 @@ export default function WebUsbTransferTestPage() {
 
         const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
         if (!capacity?.maxFrames) throw new Error("无法读取设备容量，请重新连接设备后重试");
-        setDeviceFrameCapacity(capacity.maxFrames);
+        applyDeviceCapacity(capacity);
 
         const prepared = await prepareLocalAlbumGfm1(items, {
           maxFrames: capacity.maxFrames,
@@ -1032,6 +1079,7 @@ export default function WebUsbTransferTestPage() {
       }
     },
     [
+      applyDeviceCapacity,
       authorizedDevices,
       ensureClient,
       materialColor,
@@ -1422,6 +1470,8 @@ export default function WebUsbTransferTestPage() {
             releaseClient={releaseLyricsClient}
             onModeStateChange={handleLyricsModeStateChange}
             stopHandlerRef={stopLyricsHandlerRef}
+            panelWidth={devicePanelSize.width}
+            panelHeight={devicePanelSize.height}
           />
 
           <section className="flex flex-col rounded-[18px] border border-[#e6e9f2] bg-white p-5 shadow-[0_8px_24px_rgba(43,50,69,.04)] sm:p-6 lg:col-span-2">
@@ -1475,7 +1525,7 @@ export default function WebUsbTransferTestPage() {
                       setMaterialTransferMode("auto");
                       setMaterialRotation("auto");
                       setMaterialScale(100);
-                      setMaterialFitMode("contain");
+                      setMaterialFitMode("fill");
                       setMaterialColor("normal");
                       setMaterialPlaybackSpeed(1);
                     }}
@@ -1510,7 +1560,7 @@ export default function WebUsbTransferTestPage() {
                       className={selectClassName}
                       aria-label="视频帧率"
                     >
-                      <option value={COMPATIBLE_VIDEO_FPS}>兼容模式（20/25/30 fps）</option>
+                      <option value={COMPATIBLE_VIDEO_FPS}>兼容 / GUI 新手自动</option>
                       {[20, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}
                     </select>
                   </label>
@@ -1605,7 +1655,7 @@ export default function WebUsbTransferTestPage() {
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
                   <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
-                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${materialFps} fps` : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? "GUI 新手自动 · 压缩字节适配" : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
                   <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
                 </div>
               </>
@@ -1623,6 +1673,8 @@ export default function WebUsbTransferTestPage() {
                     && !lyricsStarting
                 )}
                 capacityFrames={deviceFrameCapacity}
+                panelWidth={devicePanelSize.width}
+                panelHeight={devicePanelSize.height}
                 onTransfer={runAlbumTransfer}
                 onNotice={(message, isError) => {
                   setStatusText(message);

@@ -1,5 +1,5 @@
 /**
- * Browser-side GFM1 encoder (320×170 RGB565 LE).
+ * Browser-side GFM1 encoder (runtime 320×170 / 320×240 RGB565 LE).
  * Aligns with tools/usb_send_gif.py header layout.
  */
 import {
@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.33";
+} from "./v1pro-constants.js?v=1.2.35";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;
@@ -36,7 +36,7 @@ let transformCanvas = null;
 let transformCtx = null;
 
 function ensureSharedCanvases() {
-  if (!lcdCanvas) {
+  if (!lcdCanvas || lcdCanvas.width !== LCD_W || lcdCanvas.height !== LCD_H) {
     lcdCanvas = document.createElement("canvas");
     lcdCanvas.width = LCD_W;
     lcdCanvas.height = LCD_H;
@@ -46,6 +46,20 @@ function ensureSharedCanvases() {
     lcdCtx.imageSmoothingQuality = "high";
   }
   return lcdCtx;
+}
+
+/** Exact long-term integer-millisecond cadence used by the desktop GUI. */
+export function materialFrameDelayPattern(frameCount, requestedFps) {
+  const count = Math.max(0, Math.trunc(Number(frameCount) || 0));
+  const fps = Math.max(1, Math.trunc(Number(requestedFps) || MAX_VIDEO_FPS));
+  const delays = [];
+  let previousMs = 0;
+  for (let index = 1; index <= count; index += 1) {
+    const elapsedMs = Math.ceil((index * 1000) / fps);
+    delays.push(Math.max(1, elapsedMs - previousMs));
+    previousMs = elapsedMs;
+  }
+  return delays;
 }
 
 function ensureGifCanvases(gifW, gifH) {
@@ -527,8 +541,7 @@ async function planVideoWithSeek(blob, opts) {
       maxVideoSpeed,
     });
     const { frameCount, fps, sourceSpan } = schedule;
-    const delayMs = normalizeDelayMs(Math.round(1000 / fps));
-    const delaysMs = Array.from({ length: frameCount }, () => delayMs);
+    const delaysMs = materialFrameDelayPattern(frameCount, fps);
     const times = [];
     for (let i = 0; i < frameCount; i += 1) {
       times.push(frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, sourceSpan - 0.05));
