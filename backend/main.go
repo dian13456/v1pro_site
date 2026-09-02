@@ -82,6 +82,23 @@ const (
 	maxMessagesPerPage = 100
 )
 
+// profileShareQuotaFields returns a stable response shape for the profile
+// endpoint.  Unlimited accounts have no finite numeric ceiling, so their
+// limit/remaining values are explicit nulls while shareUnlimited remains true.
+func profileShareQuotaFields(quota service.AIShareQuotaStore, serial string, unlimited service.AIShareUnlimitedStore) map[string]interface{} {
+	fields := service.ShareQuotaFields(quota, serial, unlimited)
+	if _, exists := fields["shareUnlimited"]; !exists {
+		fields["shareUnlimited"] = false
+	}
+	if _, exists := fields["shareLimit"]; !exists {
+		fields["shareLimit"] = nil
+	}
+	if _, exists := fields["shareRemaining"]; !exists {
+		fields["shareRemaining"] = nil
+	}
+	return fields
+}
+
 type profilePostRequest struct {
 	DisplayName string `json:"displayName"`
 }
@@ -175,6 +192,14 @@ type userVideoShareRequest struct {
 
 type imageReviewActionRequest struct {
 	Note string `json:"note"`
+}
+
+// adminUploaderPurgeRequest intentionally contains no serial field. The
+// target uploader is always resolved server-side from the resource id in the
+// route, so a browser cannot ask an administrator endpoint to purge an
+// arbitrary SN by modifying JSON.
+type adminUploaderPurgeRequest struct {
+	Confirm json.RawMessage `json:"confirm"`
 }
 
 type runtimeResourceMap struct {
@@ -546,6 +571,47 @@ func ensureReviewAdmin(c *gin.Context, reviewAdminToken string) bool {
 	return true
 }
 
+// maskUploaderSerial keeps the private device identifier out of admin API
+// responses while still giving an operator enough information to confirm the
+// intended account. The suffix is returned separately for a typed
+// confirmation challenge in the web UI.
+func maskUploaderSerial(raw string) (masked, suffix string) {
+	serial := service.NormalizeUploadBanSerial(raw)
+	if serial == "" {
+		return "", ""
+	}
+	runes := []rune(serial)
+	visible := 4
+	if len(runes) < visible {
+		return strings.Repeat("*", len(runes)), serial
+	}
+	suffix = string(runes[len(runes)-visible:])
+	if len(runes) <= 8 {
+		return strings.Repeat("*", len(runes)-visible) + suffix, suffix
+	}
+	return string(runes[:4]) + "••••" + suffix, suffix
+}
+
+func adminPurgeConfirmationValid(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var confirmed bool
+	if err := json.Unmarshal(raw, &confirmed); err == nil && confirmed {
+		return true
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(text)) {
+	case "CONFIRM", "PURGE", "DELETE_AND_BAN":
+		return true
+	default:
+		return false
+	}
+}
+
 func parseCorsAllowOrigins(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "*" {
@@ -774,6 +840,10 @@ func main() {
 	if blockedUploadersPath == "" {
 		blockedUploadersPath = filepath.Join("config", "blocked_uploaders.json")
 	}
+	uploadBansPath := os.Getenv("UPLOAD_BANS_PATH")
+	if uploadBansPath == "" {
+		uploadBansPath = filepath.Join("config", "upload_bans.json")
+	}
 	followedUploadersPath := os.Getenv("FOLLOWED_UPLOADERS_PATH")
 	if followedUploadersPath == "" {
 		followedUploadersPath = filepath.Join("config", "followed_uploaders.json")
@@ -952,6 +1022,7 @@ func main() {
 		LikesPath:             resourceLikesPath,
 		FavoritesPath:         resourceFavoritesPath,
 		BlockedUploadersPath:  blockedUploadersPath,
+		UploadBansPath:        uploadBansPath,
 		FollowedUploadersPath: followedUploadersPath,
 		DownloadsPath:         resourceDownloadsPath,
 		MessagesPath:          messageBoardPath,
@@ -1169,6 +1240,11 @@ func main() {
 	var aiShareMu sync.Mutex
 	var aiCreditsMu sync.Mutex
 	var imageReviewMu sync.RWMutex
+	// uploadGate serializes destructive administrator uploader purges with the
+	// material upload/publish lifecycle.  Readers hold RLock while validating
+	// and publishing; a purge takes the write lock so no share can complete
+	// after the ban is recorded but before its catalog entry is removed.
+	var uploadGate sync.RWMutex
 	imageSignTTL := 10 * time.Minute
 
 	activityRepo, err := service.NewActivityRepo(filepath.Join("config"))
@@ -1201,6 +1277,22 @@ func main() {
 	mallService := service.NewMallService(mallRepo, jwtSecret)
 	if err := mallService.EnsureSeed(); err != nil {
 		log.Printf("warn: init mall seed products failed: %v", err)
+	}
+	wechatPayClient, err := service.NewWeChatPayClientFromEnv()
+	if err != nil {
+		log.Fatalf("init WeChat Pay failed: %v", err)
+	}
+	wechatPaymentExpire := durationFromEnv("WECHAT_PAY_EXPIRE", 15*time.Minute)
+	if wechatPayClient.Available() {
+		log.Printf("info: WeChat Pay enabled for physical mall")
+		stopMallPaymentReconciler := startMallPaymentReconciler(
+			wechatPayClient,
+			mallService,
+			durationFromEnv("WECHAT_PAY_RECONCILE_INTERVAL", time.Minute),
+		)
+		defer stopMallPaymentReconciler()
+	} else {
+		log.Printf("warn: WeChat Pay disabled; physical mall checkout will be unavailable")
 	}
 
 	promoRepo, err := service.NewPromoRepo(filepath.Join("config"))
@@ -1235,6 +1327,35 @@ func main() {
 		}
 		if !access.Enabled {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "请先到个人中心输入激活码，激活下载与传输功能"})
+			return false
+		}
+		return true
+	}
+
+	// Upload bans are enforced on the server for every material upload stage.
+	// The browser must never be trusted to carry (or omit) the SN; it is read
+	// from the signed authentication token above.  A storage read failure is a
+	// hard error rather than an implicit allow, otherwise a broken ban store
+	// could accidentally reopen a blocked account.
+	requireUploaderUploadAllowed := func(c *gin.Context, serial string) bool {
+		normalized := service.NormalizeUploadBanSerial(serial)
+		if normalized == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "设备 SN 无效"})
+			return false
+		}
+		banned, err := userDataRepo.IsUploaderBanned(normalized)
+		if err != nil {
+			log.Printf("warn: resolve uploader upload ban failed for %s: %v", normalized, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传权限读取失败，请稍后重试"})
+			return false
+		}
+		if banned {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success":       false,
+				"code":          "UPLOADER_UPLOAD_BANNED",
+				"uploadBlocked": true,
+				"message":       "该设备 SN 已被管理员禁止上传素材",
+			})
 			return false
 		}
 		return true
@@ -1378,6 +1499,14 @@ func main() {
 		credits := aiCredits.BalanceCredits(serial)
 		aiCreditsMu.Unlock()
 
+		// Keep the share quota response consistent with upload endpoints.  The
+		// quota stores are process-shared and can be reloaded by other workers, so
+		// reload and read them under aiShareMu before releasing the lock.
+		aiShareMu.Lock()
+		reloadShareStoresLocked()
+		shareQuotaFields := profileShareQuotaFields(aiShareQuota, serial, aiShareUnlimited)
+		aiShareMu.Unlock()
+
 		creditLedgerEntries, ledgerErr := userDataRepo.ListCreditLedger(serial, 50)
 		if ledgerErr != nil {
 			log.Printf("warn: list credit ledger failed: %v", ledgerErr)
@@ -1386,7 +1515,7 @@ func main() {
 		creditLedger := service.ToCreditLedgerViews(creditLedgerEntries)
 
 		c.Header("Cache-Control", "private, no-store")
-		c.JSON(http.StatusOK, gin.H{
+		profileResponse := gin.H{
 			"success":                   true,
 			"serial":                    serial,
 			"displayName":               displayName,
@@ -1406,7 +1535,11 @@ func main() {
 			"deviceRegisteredAt":        featureAccess.RegisteredAt,
 			"featureActivatedAt":        featureAccess.ActivatedAt,
 			"creditLedger":              creditLedger,
-		})
+		}
+		for key, value := range shareQuotaFields {
+			profileResponse[key] = value
+		}
+		c.JSON(http.StatusOK, profileResponse)
 	})
 
 	router.GET("/api/profile/feature-access", func(c *gin.Context) {
@@ -1715,6 +1848,8 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
 
 		var req profileUploadTitleRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -1854,6 +1989,8 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
 
 		var req profileUploadDeleteRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -1993,6 +2130,8 @@ func main() {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
 		}
+		uploadGate.Lock()
+		defer uploadGate.Unlock()
 		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
 		if parseErr != nil || resourceID <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
@@ -2057,6 +2196,8 @@ func main() {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
 		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
 		if parseErr != nil || resourceID <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
@@ -2115,6 +2256,360 @@ func main() {
 			"shareCount":     shareCount,
 			"shareLimit":     shareLimit,
 			"shareRemaining": remaining,
+		})
+	})
+
+	// Resolve an uploader only from a private catalog entry.  Public catalog
+	// responses deliberately strip this field, and the purge endpoint never
+	// accepts an SN supplied by the browser.
+	type adminUploaderSummary struct {
+		ResourceID             int64
+		UploaderSerial         string
+		UploaderSerialMasked   string
+		UploaderSerialSuffix   string
+		UploaderName           string
+		PublishedResourceCount int
+		Banned                 bool
+	}
+	catalogEntryUploaderSerial := func(entry map[string]any) string {
+		serial := service.PublishedUploadUploaderSerial(entry)
+		if serial != "" {
+			return serial
+		}
+		// Older catalog records used the underscored private key. Keep this
+		// compatibility path server-side only; never expose it publicly.
+		if raw, ok := entry["_uploaderSerial"]; ok {
+			if raw == nil {
+				return ""
+			}
+			text := strings.TrimSpace(fmt.Sprint(raw))
+			if text == "" || text == "<nil>" {
+				return ""
+			}
+			return service.NormalizeUploadBanSerial(text)
+		}
+		return ""
+	}
+	resolveAdminUploaderSummary := func(resourceID int64) (adminUploaderSummary, bool, error) {
+		items, err := loadResourceCatalog(resourcesPath)
+		if err != nil {
+			return adminUploaderSummary{}, false, fmt.Errorf("读取素材目录失败: %w", err)
+		}
+		entry, _, found := service.FindCatalogEntryByID(items, resourceID)
+		if !found {
+			return adminUploaderSummary{}, false, nil
+		}
+		uploaderSerial := catalogEntryUploaderSerial(entry)
+		if uploaderSerial == "" {
+			return adminUploaderSummary{}, true, fmt.Errorf("该素材没有可识别的上传人")
+		}
+		masked, suffix := maskUploaderSerial(uploaderSerial)
+		name := ""
+		profilesMu.RLock()
+		name = service.ResolveStoredDisplayName(userProfiles, uploaderSerial, strings.TrimSpace(fmt.Sprint(entry["author"])))
+		profilesMu.RUnlock()
+		if name == "" {
+			name = "未命名上传人"
+		}
+		count := 0
+		for _, candidate := range items {
+			if catalogEntryUploaderSerial(candidate) == uploaderSerial {
+				count++
+			}
+		}
+		banned, banErr := userDataRepo.IsUploaderBanned(uploaderSerial)
+		if banErr != nil {
+			return adminUploaderSummary{}, true, fmt.Errorf("读取上传封禁状态失败: %w", banErr)
+		}
+		return adminUploaderSummary{
+			ResourceID:             resourceID,
+			UploaderSerial:         uploaderSerial,
+			UploaderSerialMasked:   masked,
+			UploaderSerialSuffix:   suffix,
+			UploaderName:           name,
+			PublishedResourceCount: count,
+			Banned:                 banned,
+		}, true, nil
+	}
+
+	router.GET("/api/admin/resources/:id/uploader", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if parseErr != nil || resourceID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+			return
+		}
+		summary, found, resolveErr := resolveAdminUploaderSummary(resourceID)
+		if resolveErr != nil {
+			status := http.StatusUnprocessableEntity
+			if strings.Contains(resolveErr.Error(), "目录") || strings.Contains(resolveErr.Error(), "封禁") {
+				status = http.StatusInternalServerError
+			}
+			c.JSON(status, gin.H{"success": false, "message": resolveErr.Error()})
+			return
+		}
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在"})
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, gin.H{
+			"success":      true,
+			"resourceId":   summary.ResourceID,
+			"uploaderName": summary.UploaderName,
+			// uploaderSerial is intentionally the masked value. Keep the
+			// legacy field name for admin clients while never returning the
+			// private raw SN over HTTP.
+			"uploaderSerial":         summary.UploaderSerialMasked,
+			"uploaderSerialMasked":   summary.UploaderSerialMasked,
+			"uploaderSerialSuffix":   summary.UploaderSerialSuffix,
+			"resourceCount":          summary.PublishedResourceCount,
+			"publishedResourceCount": summary.PublishedResourceCount,
+			"blocked":                summary.Banned,
+			"banned":                 summary.Banned,
+		})
+	})
+
+	router.POST("/api/admin/resources/:id/purge-and-ban", func(c *gin.Context) {
+		if !ensureReviewAdmin(c, reviewAdminToken) {
+			return
+		}
+		var req adminUploaderPurgeRequest
+		if err := c.ShouldBindJSON(&req); err != nil || !adminPurgeConfirmationValid(req.Confirm) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"code":    "ADMIN_PURGE_CONFIRMATION_REQUIRED",
+				"message": "请提供 confirm=true（确认删除该上传人的全部素材并禁止上传）",
+			})
+			return
+		}
+		resourceID, parseErr := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if parseErr != nil || resourceID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "素材编号无效"})
+			return
+		}
+
+		// The write lock covers ban persistence, catalog deletion, review queue
+		// cleanup and session invalidation. Upload/share handlers hold RLock for
+		// their complete lifecycle, so no publish can race this purge.
+		uploadGate.Lock()
+		defer uploadGate.Unlock()
+
+		summary, found, resolveErr := resolveAdminUploaderSummary(resourceID)
+		if resolveErr != nil {
+			status := http.StatusUnprocessableEntity
+			if strings.Contains(resolveErr.Error(), "目录") || strings.Contains(resolveErr.Error(), "封禁") {
+				status = http.StatusInternalServerError
+			}
+			c.JSON(status, gin.H{"success": false, "message": resolveErr.Error()})
+			return
+		}
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "素材不存在"})
+			return
+		}
+
+		adminActor := strings.TrimSpace(c.GetHeader("X-Review-Admin-Actor"))
+		if len([]rune(adminActor)) > 191 {
+			adminActor = string([]rune(adminActor)[:191])
+		}
+		if adminActor == "" {
+			adminActor = "review-admin"
+		}
+		if err := userDataRepo.SetUploaderBanWithMetadata(
+			summary.UploaderSerial,
+			true,
+			"管理员删除该上传人全部素材并禁止继续上传",
+			adminActor,
+		); err != nil {
+			log.Printf("warn: persist uploader ban failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存上传封禁失败，未执行删除"})
+			return
+		}
+
+		warnings := make([]string, 0)
+		deletedResourceIDs := make([]int64, 0, summary.PublishedResourceCount)
+		// Reload after taking the write lock. This avoids deleting a stale
+		// snapshot when a previous attempt already removed some resources.
+		items, loadErr := loadResourceCatalog(resourcesPath)
+		if loadErr != nil {
+			warnings = append(warnings, "素材目录读取失败，已保留封禁状态")
+		} else {
+			resourceIDs := make([]int64, 0, summary.PublishedResourceCount)
+			for _, entry := range items {
+				if catalogEntryUploaderSerial(entry) != summary.UploaderSerial {
+					continue
+				}
+				// CatalogResourceIDString uses the numeric-aware conversion
+				// (including json.Number/float64), avoiding scientific notation
+				// surprises from fmt.Sprint on large JSON numbers.
+				idText := service.CatalogResourceIDString(entry["id"])
+				id, idErr := strconv.ParseInt(idText, 10, 64)
+				if idErr != nil || id <= 0 {
+					warnings = append(warnings, "发现无效素材编号，已跳过一条记录")
+					continue
+				}
+				resourceIDs = append(resourceIDs, id)
+			}
+			for _, id := range resourceIDs {
+				if err := service.DeleteOwnPublishedUpload(c.Request.Context(), service.DeleteOwnPublishedUploadInput{
+					ResourceID:      id,
+					ResourcesPath:   resourcesPath,
+					ResourceMapPath: resourceMapPath,
+					ImageMapPath:    imageMapPath,
+					Signers:         deleteSigners,
+					AllowAnyOwner:   true,
+				}); err != nil {
+					warnings = append(warnings, fmt.Sprintf("素材 %d 删除失败: %v", id, err))
+					continue
+				}
+				deletedResourceIDs = append(deletedResourceIDs, id)
+				warnings = append(warnings, cleanupDeletedResource(strconv.FormatInt(id, 10))...)
+			}
+		}
+
+		deletedSessionCount := 0
+		deletedSessionObjectCount := 0
+		deleteStagedObject := func(kind string, deleter service.COSObjectDeleter, key string) {
+			key = service.StripPublicObjectURL(strings.TrimSpace(key))
+			if key == "" {
+				return
+			}
+			if deleter == nil {
+				warnings = append(warnings, fmt.Sprintf("%s 临时对象删除器未配置", kind))
+				return
+			}
+			if err := deleter.DeleteObject(c.Request.Context(), key); err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s 临时对象删除失败: %v", kind, err))
+				return
+			}
+			deletedSessionObjectCount++
+		}
+		gifSessions := gifUploadSessionStore.DeleteForSerial(summary.UploaderSerial)
+		deletedSessionCount += len(gifSessions)
+		for _, session := range gifSessions {
+			deleteStagedObject("GIF", gifSigner, session.GifObjectKey)
+			deleteStagedObject("GIF 封面", gifCoverSigner, session.CoverObjectKey)
+		}
+		videoSessions := videoUploadSessionStore.DeleteForSerial(summary.UploaderSerial)
+		deletedSessionCount += len(videoSessions)
+		for _, session := range videoSessions {
+			deleteStagedObject("视频", videoSigner, session.VideoObjectKey)
+			deleteStagedObject("视频封面", videoCoverSigner, session.CoverObjectKey)
+		}
+
+		// Remove staged review objects first. If a COS delete fails, keep that
+		// review record so a later purge can retry it; this avoids silently
+		// losing an orphan reference that an operator needs to inspect.
+		imageReviewMu.RLock()
+		reviewCandidates := make([]service.PendingImageReview, 0)
+		for _, item := range imageReviewStore.Items {
+			if service.NormalizeUploadBanSerial(item.Serial) == summary.UploaderSerial {
+				reviewCandidates = append(reviewCandidates, item)
+			}
+		}
+		imageReviewMu.RUnlock()
+		removedReviewIDs := make(map[string]struct{}, len(reviewCandidates))
+		reviewDeleteReady := func(item service.PendingImageReview) bool {
+			missing := make([]string, 0, 2)
+			switch item.Action {
+			case service.ReviewActionShareUserGif:
+				if strings.TrimSpace(item.GifObjectKey) != "" && gifSigner == nil {
+					missing = append(missing, "GIF")
+				}
+				if strings.TrimSpace(item.CoverObjectKey) != "" && gifCoverSigner == nil {
+					missing = append(missing, "GIF 封面")
+				}
+			case service.ReviewActionShareUserVideo:
+				if strings.TrimSpace(item.GifObjectKey) != "" && videoSigner == nil {
+					missing = append(missing, "视频")
+				}
+				if strings.TrimSpace(item.CoverObjectKey) != "" && videoCoverSigner == nil {
+					missing = append(missing, "视频封面")
+				}
+			default:
+				if strings.TrimSpace(item.ImageObjectKey) != "" && imageSigner == nil {
+					missing = append(missing, "图片")
+				}
+			}
+			if len(missing) > 0 {
+				warnings = append(warnings, fmt.Sprintf("审核记录 %s 删除器未配置: %s", item.ID, strings.Join(missing, "、")))
+				return false
+			}
+			return true
+		}
+		for _, item := range reviewCandidates {
+			if !reviewDeleteReady(item) {
+				continue
+			}
+			if err := service.DeleteReviewObjects(c.Request.Context(), item, deleteSigners); err != nil {
+				warnings = append(warnings, fmt.Sprintf("审核记录 %s 对象删除失败: %v", item.ID, err))
+				continue
+			}
+			removedReviewIDs[item.ID] = struct{}{}
+		}
+		deletedReviewCount := 0
+		if len(removedReviewIDs) > 0 {
+			imageReviewMu.Lock()
+			originalReviews := imageReviewStore.Items
+			filteredReviews := make([]service.PendingImageReview, 0, len(originalReviews))
+			for _, item := range originalReviews {
+				if service.NormalizeUploadBanSerial(item.Serial) == summary.UploaderSerial {
+					if _, remove := removedReviewIDs[item.ID]; remove {
+						deletedReviewCount++
+						continue
+					}
+				}
+				filteredReviews = append(filteredReviews, item)
+			}
+			imageReviewStore.Items = filteredReviews
+			if saveErr := service.SaveImageReviewStore(imageReviewPath, imageReviewStore); saveErr != nil {
+				imageReviewStore.Items = originalReviews
+				deletedReviewCount = 0
+				warnings = append(warnings, "审核队列保存失败，已保留审核记录")
+			}
+			imageReviewMu.Unlock()
+		}
+
+		remainingCount := 0
+		if latestItems, latestErr := loadResourceCatalog(resourcesPath); latestErr == nil {
+			for _, entry := range latestItems {
+				if catalogEntryUploaderSerial(entry) == summary.UploaderSerial {
+					remainingCount++
+				}
+			}
+		} else {
+			warnings = append(warnings, "删除后素材目录复核失败")
+		}
+		masked, suffix := maskUploaderSerial(summary.UploaderSerial)
+		cleanupComplete := len(warnings) == 0 && remainingCount == 0
+		message := "已禁止该上传人继续上传"
+		if cleanupComplete {
+			message = "已删除该上传人的全部素材并禁止继续上传"
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, gin.H{
+			"success":                   true,
+			"message":                   message,
+			"uploaderName":              summary.UploaderName,
+			"uploaderSerial":            masked,
+			"uploaderSerialMasked":      masked,
+			"uploaderSerialSuffix":      suffix,
+			"resourceCount":             summary.PublishedResourceCount,
+			"banned":                    true,
+			"blocked":                   true,
+			"deletedResourceIds":        deletedResourceIDs,
+			"deletedResourceCount":      len(deletedResourceIDs),
+			"remainingResourceCount":    remainingCount,
+			"deletedReviewCount":        deletedReviewCount,
+			"invalidatedSessionCount":   deletedSessionCount,
+			"deletedSessionObjectCount": deletedSessionObjectCount,
+			"cleanupComplete":           cleanupComplete,
+			"cleanupWarnings":           warnings,
 		})
 	})
 
@@ -2777,6 +3272,11 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
+			return
+		}
 		if rateLimitRejected(c, aiTokenRateLimiter, aiIPRateLimiter, serial, "AI 图片请求过于频繁，请稍后再试") {
 			return
 		}
@@ -2857,6 +3357,11 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
 			return
 		}
 
@@ -2977,6 +3482,11 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
+			return
+		}
 		if gifSigner == nil || gifCoverSigner == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "GIF 存储未配置"})
 			return
@@ -3020,6 +3530,11 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
 			return
 		}
 		if gifSigner == nil || gifCoverSigner == nil {
@@ -3088,6 +3603,11 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
 			return
 		}
 		if gifSigner == nil || gifCoverSigner == nil {
@@ -3235,6 +3755,11 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
+			return
+		}
 		if videoSigner == nil || videoCoverSigner == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "视频存储未配置"})
 			return
@@ -3278,6 +3803,11 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
 			return
 		}
 		if videoSigner == nil || videoCoverSigner == nil {
@@ -3346,6 +3876,11 @@ func main() {
 		serial, ok := serialFromToken(token, jwtSecret, tokenTTL)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
+		if !requireUploaderUploadAllowed(c, serial) {
 			return
 		}
 		if videoSigner == nil || videoCoverSigner == nil {
@@ -3603,6 +4138,8 @@ func main() {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
 		reviewID := strings.TrimSpace(c.Param("id"))
 
 		var req imageReviewActionRequest
@@ -3619,6 +4156,23 @@ func main() {
 			item.Action == service.ReviewActionShareUser ||
 			item.Action == service.ReviewActionShareUserGif ||
 			item.Action == service.ReviewActionShareUserVideo {
+			banned, banErr := userDataRepo.IsUploaderBanned(item.Serial)
+			if banErr != nil {
+				imageReviewMu.Unlock()
+				log.Printf("warn: resolve uploader ban during review approval failed: %v", banErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "上传权限读取失败，请稍后重试"})
+				return
+			}
+			if banned {
+				imageReviewMu.Unlock()
+				c.JSON(http.StatusForbidden, gin.H{
+					"success":       false,
+					"code":          "UPLOADER_UPLOAD_BANNED",
+					"uploadBlocked": true,
+					"message":       "该设备 SN 已被管理员禁止上传，不能审核发布",
+				})
+				return
+			}
 			aiShareMu.Lock()
 			reloadShareStoresLocked()
 			if limitMsg := service.ShareLimitMessageWithUnlimited(aiShareQuota, aiShareUnlimited, item.Serial, service.MaxAISharesPerDevice); limitMsg != "" {
@@ -3702,6 +4256,8 @@ func main() {
 		if !ensureReviewAdmin(c, reviewAdminToken) {
 			return
 		}
+		uploadGate.RLock()
+		defer uploadGate.RUnlock()
 		reviewID := strings.TrimSpace(c.Param("id"))
 
 		var req imageReviewActionRequest
@@ -4663,6 +5219,8 @@ func main() {
 		imageCOSBucket:   imageCOSBucket,
 		imagePublicBase:  imagePublicBase,
 		imageSignTTL:     imageSignTTL,
+		wechatPay:        wechatPayClient,
+		paymentExpire:    wechatPaymentExpire,
 	})
 	registerPromoRoutes(router, promoRouteDeps{
 		promoService:     promoService,
@@ -4673,7 +5231,7 @@ func main() {
 		imagePublicBase:  imagePublicBase,
 	})
 
-	if err := runAPIHTTPServer(newAPIHTTPServer(":"+port, router)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := runAPIHTTPServer(newAPIHTTPServer(apiListenAddr(port), router)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server run failed: %v", err)
 	}
 }

@@ -3,7 +3,8 @@ import type { ResourceItem } from "../types/resource";
 export const DEVICE_FRAME_CAPACITIES = [77, 154, 308] as const;
 export const VIDEO_FPS_OPTIONS = [20, 25, 30] as const;
 export const COMPATIBLE_VIDEO_FPS = "compatible" as const;
-export const COMPATIBLE_VIDEO_FPS_FALLBACK = 20 as const;
+/** Legacy firmware keeps the stable 25fps compatibility path. */
+export const COMPATIBLE_VIDEO_FPS_FALLBACK = 25 as const;
 export const MAX_AUTOMATIC_SPEED = 10;
 
 export type DeviceFrameCapacity = (typeof DEVICE_FRAME_CAPACITIES)[number];
@@ -23,7 +24,7 @@ export function parseVideoFpsSelection(value: string): VideoFpsSelection {
 /**
  * This resolver is only a legacy/UI estimate. Direct WebUSB keeps the
  * `compatible` selection intact so a GFM3-capable device can run the GUI's
- * measured-byte beginner fitter; old devices still use this 20/25/30 fallback.
+ * measured-byte beginner fitter; old devices use the stable 25fps fallback.
  */
 export function resolveVideoFps(
   selection: VideoFpsSelection,

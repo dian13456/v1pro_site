@@ -33,24 +33,30 @@ type MallOrderItem struct {
 }
 
 type MallOrder struct {
-	ID         string          `json:"id"`
-	UserSerial string          `json:"userSerial"`
-	Status     string          `json:"status"`
-	Items      []MallOrderItem `json:"items"`
-	TotalCents int64           `json:"totalCents"`
-	NameEnc    string          `json:"nameEnc,omitempty"`
-	PhoneEnc   string          `json:"phoneEnc,omitempty"`
-	WechatEnc  string          `json:"wechatEnc,omitempty"`
-	QQEnc      string          `json:"qqEnc,omitempty"`
-	Province   string          `json:"province,omitempty"`
-	City       string          `json:"city,omitempty"`
-	AddressEnc string          `json:"addressEnc,omitempty"`
-	TrackingNo string          `json:"trackingNo,omitempty"`
-	Remark     string          `json:"remark,omitempty"`
-	CreatedAt  int64           `json:"createdAt"`
-	UpdatedAt  int64           `json:"updatedAt"`
-	PaidAt     int64           `json:"paidAt,omitempty"`
-	ShippedAt  int64           `json:"shippedAt,omitempty"`
+	ID                   string          `json:"id"`
+	UserSerial           string          `json:"userSerial"`
+	Status               string          `json:"status"`
+	Items                []MallOrderItem `json:"items"`
+	TotalCents           int64           `json:"totalCents"`
+	PaymentMethod        string          `json:"paymentMethod,omitempty"`
+	PaymentMode          string          `json:"paymentMode,omitempty"`
+	PaymentTradeNo       string          `json:"paymentTradeNo,omitempty"`
+	PaymentTransactionID string          `json:"paymentTransactionId,omitempty"`
+	PaymentExpiresAt     int64           `json:"paymentExpiresAt,omitempty"`
+	StockReserved        bool            `json:"stockReserved,omitempty"`
+	NameEnc              string          `json:"nameEnc,omitempty"`
+	PhoneEnc             string          `json:"phoneEnc,omitempty"`
+	WechatEnc            string          `json:"wechatEnc,omitempty"`
+	QQEnc                string          `json:"qqEnc,omitempty"`
+	Province             string          `json:"province,omitempty"`
+	City                 string          `json:"city,omitempty"`
+	AddressEnc           string          `json:"addressEnc,omitempty"`
+	TrackingNo           string          `json:"trackingNo,omitempty"`
+	Remark               string          `json:"remark,omitempty"`
+	CreatedAt            int64           `json:"createdAt"`
+	UpdatedAt            int64           `json:"updatedAt"`
+	PaidAt               int64           `json:"paidAt,omitempty"`
+	ShippedAt            int64           `json:"shippedAt,omitempty"`
 }
 
 type MallDataStore struct {
@@ -69,10 +75,12 @@ type MallShippingPlain struct {
 }
 
 type MallCreateOrderInput struct {
-	UserSerial string
-	Items      []MallOrderItem
-	Shipping   MallShippingPlain
-	Remark     string
+	UserSerial       string
+	Items            []MallOrderItem
+	Shipping         MallShippingPlain
+	Remark           string
+	PaymentMethod    string
+	PaymentExpiresAt int64
 }
 
 type MallPointRedemptionInput struct {
@@ -96,17 +104,22 @@ type MallProductPublic struct {
 }
 
 type MallOrderPublic struct {
-	ID         string          `json:"id"`
-	Status     string          `json:"status"`
-	Items      []MallOrderItem `json:"items"`
-	TotalCents int64           `json:"totalCents"`
-	Province   string          `json:"province,omitempty"`
-	City       string          `json:"city,omitempty"`
-	TrackingNo string          `json:"trackingNo,omitempty"`
-	Remark     string          `json:"remark,omitempty"`
-	CreatedAt  int64           `json:"createdAt"`
-	UpdatedAt  int64           `json:"updatedAt"`
-	PaidAt     int64           `json:"paidAt,omitempty"`
-	ShippedAt  int64           `json:"shippedAt,omitempty"`
-	HasAddress bool            `json:"hasAddress"`
+	ID                   string          `json:"id"`
+	Status               string          `json:"status"`
+	Items                []MallOrderItem `json:"items"`
+	TotalCents           int64           `json:"totalCents"`
+	PaymentMethod        string          `json:"paymentMethod,omitempty"`
+	PaymentMode          string          `json:"paymentMode,omitempty"`
+	PaymentTradeNo       string          `json:"paymentTradeNo,omitempty"`
+	PaymentTransactionID string          `json:"paymentTransactionId,omitempty"`
+	PaymentExpiresAt     int64           `json:"paymentExpiresAt,omitempty"`
+	Province             string          `json:"province,omitempty"`
+	City                 string          `json:"city,omitempty"`
+	TrackingNo           string          `json:"trackingNo,omitempty"`
+	Remark               string          `json:"remark,omitempty"`
+	CreatedAt            int64           `json:"createdAt"`
+	UpdatedAt            int64           `json:"updatedAt"`
+	PaidAt               int64           `json:"paidAt,omitempty"`
+	ShippedAt            int64           `json:"shippedAt,omitempty"`
+	HasAddress           bool            `json:"hasAddress"`
 }

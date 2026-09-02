@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,6 +187,40 @@ func (store *VideoUploadSessionStore) Consume(sessionID, serial string) (VideoUp
 	}
 	delete(store.sessions, sessionID)
 	return session, nil
+}
+
+// DeleteForSerial invalidates every in-memory video upload session owned by
+// the given uploader and returns the removed sessions so callers can
+// best-effort delete their staged COS objects.  Existing pre-signed COS PUT
+// URLs cannot be revoked, but the session cannot be finalized after removal.
+func (store *VideoUploadSessionStore) DeleteForSerial(serial string) []VideoUploadSession {
+	if store == nil {
+		return []VideoUploadSession{}
+	}
+	target := normalizeUploaderSerial(serial)
+	if target == "" {
+		return []VideoUploadSession{}
+	}
+	now := time.Now()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.purgeExpired(now)
+	removed := make([]VideoUploadSession, 0)
+	for id, session := range store.sessions {
+		if normalizeUploaderSerial(session.Serial) != target {
+			continue
+		}
+		removed = append(removed, session)
+		delete(store.sessions, id)
+	}
+	sort.Slice(removed, func(i, j int) bool { return removed[i].ID < removed[j].ID })
+	return removed
+}
+
+// DeleteSessionsForSerial is a descriptive alias kept for callers that prefer
+// an explicit plural method name.
+func (store *VideoUploadSessionStore) DeleteSessionsForSerial(serial string) []VideoUploadSession {
+	return store.DeleteForSerial(serial)
 }
 
 type ShareUserVideoInput struct {

@@ -359,6 +359,21 @@ assert.equal(autoSpeed.fps, 20);
 assert.deepEqual(decodeGfm(autoSpeed.bytes).delays, new Array(6).fill(50));
 assert.match(autoSpeed.note, /自动加速/);
 
+// Legacy compatible mode keeps the 25fps floor before applying its speed-up
+// fallback when the frame budget is smaller than the 25fps candidate.
+const legacyCompatible25 = optimizePrebuiltGfm1(
+  buildGfm1(indexedFrames, new Array(10).fill(25)),
+  {
+    gfm3Enabled: false,
+    antiTearing: false,
+    maxFps: 25,
+    fitMinFps: 25,
+    maxBytes: sixFrameBudget,
+  },
+);
+assert.equal(legacyCompatible25.fps, 25);
+assert.equal(legacyCompatible25.frameCount, 6);
+
 assert.throws(
   () =>
     optimizePrebuiltGfm1(buildGfm1(indexedFrames, new Array(10).fill(50)), {

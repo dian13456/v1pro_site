@@ -1,5 +1,5 @@
 import { getAuthState, hasValidLocalAuth } from "./authService";
-import { apiFetch } from "./httpClient";
+import { apiFetch, getDevAiShareQuotaProfileFields } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 
 import type { CreditLedgerEntry } from "../types/credits";
@@ -19,6 +19,10 @@ export interface ProfilePayload {
   credits?: number;
   creditsDefault?: number;
   creditCost?: number;
+  shareCount?: number;
+  shareLimit?: number | null;
+  shareRemaining?: number | null;
+  shareUnlimited?: boolean;
   likeRewardCredits?: number;
   actorLikeRewardCredits?: number;
   actorLikeDailyCapCredits?: number;
@@ -119,6 +123,7 @@ export async function fetchProfile(): Promise<ProfilePayload> {
       credits: readDevCredits(serial),
       creditsDefault: DEFAULT_AI_CREDITS,
       creditCost: AI_CREDIT_COST,
+      ...getDevAiShareQuotaProfileFields(serial),
       creditLedger: readDevCreditLedger(serial),
     };
   }

@@ -33,7 +33,6 @@ func TestCOSSignerPrefixIsAppliedToPresignedURL(t *testing.T) {
 	if parsed.Path != "/video/demo.mp4" {
 		t.Fatalf("unexpected object path: %s", parsed.Path)
 	}
-
 	putURL, err := signer.GeneratePutURL(context.Background(), "demo.mp4", "video/mp4", time.Minute)
 	if err != nil {
 		t.Fatal(err)

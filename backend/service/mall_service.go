@@ -25,6 +25,8 @@ const (
 	maxMallProductDescription = 5000
 	maxMallProductImages      = 10
 	maxMallImageURLRunes      = 2048
+	mallPaymentWechat         = "wechat"
+	mallPaymentManual         = "manual"
 )
 
 func NewMallService(repo *MallRepo, secret string) *MallService {
@@ -145,7 +147,10 @@ func (s *MallService) DeleteProduct(id string) error {
 func toPublicOrder(o MallOrder) MallOrderPublic {
 	return MallOrderPublic{
 		ID: o.ID, Status: o.Status, Items: o.Items, TotalCents: o.TotalCents,
-		Province: o.Province, City: o.City, TrackingNo: o.TrackingNo, Remark: o.Remark,
+		PaymentMethod: o.PaymentMethod, PaymentMode: o.PaymentMode,
+		PaymentTradeNo: o.PaymentTradeNo, PaymentTransactionID: o.PaymentTransactionID,
+		PaymentExpiresAt: o.PaymentExpiresAt,
+		Province:         o.Province, City: o.City, TrackingNo: o.TrackingNo, Remark: o.Remark,
 		CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt, PaidAt: o.PaidAt, ShippedAt: o.ShippedAt,
 		HasAddress: strings.TrimSpace(o.NameEnc) != "" && strings.TrimSpace(o.AddressEnc) != "",
 	}
@@ -161,6 +166,13 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	}
 	if len(input.Items) > maxMallOrderItems {
 		return MallOrderPublic{}, errors.New("单次订单商品种类过多")
+	}
+	paymentMethod := strings.ToLower(strings.TrimSpace(input.PaymentMethod))
+	if paymentMethod == "" {
+		paymentMethod = mallPaymentManual
+	}
+	if paymentMethod != mallPaymentManual && paymentMethod != mallPaymentWechat {
+		return MallOrderPublic{}, errors.New("支付方式无效")
 	}
 	name := strings.TrimSpace(input.Shipping.Name)
 	phone := strings.TrimSpace(input.Shipping.Phone)
@@ -242,24 +254,42 @@ func (s *MallService) CreateOrder(input MallCreateOrderInput) (MallOrderPublic, 
 	}
 
 	now := time.Now().UnixMilli()
+	orderID := mallNewID("ord")
 	order := MallOrder{
-		ID:         mallNewID("ord"),
-		UserSerial: serial,
-		Status:     MallOrderPendingPay,
-		Items:      resolved,
-		TotalCents: total,
-		NameEnc:    nameEnc,
-		PhoneEnc:   phoneEnc,
-		WechatEnc:  wechatEnc,
-		QQEnc:      qqEnc,
-		Province:   province,
-		City:       city,
-		AddressEnc: addressEnc,
-		Remark:     strings.TrimSpace(input.Remark),
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:            orderID,
+		UserSerial:    serial,
+		Status:        MallOrderPendingPay,
+		Items:         resolved,
+		TotalCents:    total,
+		PaymentMethod: paymentMethod,
+		NameEnc:       nameEnc,
+		PhoneEnc:      phoneEnc,
+		WechatEnc:     wechatEnc,
+		QQEnc:         qqEnc,
+		Province:      province,
+		City:          city,
+		AddressEnc:    addressEnc,
+		Remark:        strings.TrimSpace(input.Remark),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
-	if err := s.repo.CreateOrder(order, nil); err != nil {
+	stockDelta := map[string]int(nil)
+	if paymentMethod == mallPaymentWechat {
+		if total <= 0 {
+			return MallOrderPublic{}, errors.New("在线支付订单金额必须大于 0")
+		}
+		if input.PaymentExpiresAt <= now {
+			return MallOrderPublic{}, errors.New("支付有效期无效")
+		}
+		order.PaymentTradeNo = orderID
+		order.PaymentExpiresAt = input.PaymentExpiresAt
+		order.StockReserved = true
+		stockDelta = make(map[string]int, len(resolved))
+		for _, item := range resolved {
+			stockDelta[item.ProductID] -= item.Quantity
+		}
+	}
+	if err := s.repo.CreateOrder(order, stockDelta); err != nil {
 		return MallOrderPublic{}, err
 	}
 	return toPublicOrder(order), nil
@@ -443,6 +473,50 @@ func (s *MallService) GetMyOrder(serial, orderID string) (MallOrderPublic, error
 	return toPublicOrder(order), nil
 }
 
+func (s *MallService) PrepareWechatPayment(serial, orderID, mode string) (MallOrderPublic, error) {
+	order, ok, err := s.repo.GetOrder(strings.TrimSpace(orderID))
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	if !ok || order.UserSerial != strings.TrimSpace(serial) {
+		return MallOrderPublic{}, errors.New("订单不存在")
+	}
+	if order.PaymentMethod != mallPaymentWechat || order.Status != MallOrderPendingPay {
+		return MallOrderPublic{}, errors.New("当前订单不可发起微信支付")
+	}
+	if order.PaymentExpiresAt > 0 && time.Now().UnixMilli() >= order.PaymentExpiresAt {
+		return MallOrderPublic{}, errors.New("支付订单已过期，请取消后重新下单")
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "native" && mode != "h5" {
+		return MallOrderPublic{}, errors.New("微信支付场景无效")
+	}
+	if order.PaymentMode != mode {
+		order.PaymentMode = mode
+		order.UpdatedAt = time.Now().UnixMilli()
+		if err := s.repo.UpdateOrder(order, nil); err != nil {
+			return MallOrderPublic{}, err
+		}
+	}
+	return toPublicOrder(order), nil
+}
+
+func (s *MallService) MarkWechatOrderPaid(orderID, transactionID string, amountCents int64) (MallOrderPublic, error) {
+	order, err := s.repo.MarkWechatOrderPaid(strings.TrimSpace(orderID), strings.TrimSpace(transactionID), amountCents)
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	return toPublicOrder(order), nil
+}
+
+func (s *MallService) CancelMyPendingOrder(serial, orderID string) (MallOrderPublic, error) {
+	order, err := s.repo.CancelPendingWechatOrder(strings.TrimSpace(serial), strings.TrimSpace(orderID))
+	if err != nil {
+		return MallOrderPublic{}, err
+	}
+	return toPublicOrder(order), nil
+}
+
 func (s *MallService) ListAdminOrders() ([]MallOrder, error) {
 	items, err := s.repo.ListAllOrders()
 	if err != nil {
@@ -510,17 +584,24 @@ func (s *MallService) UpdateOrderStatus(orderID, status, trackingNo string) (Mal
 	if prevStatus == MallOrderCancelled && status != MallOrderCancelled {
 		return MallOrderPublic{}, errors.New("已取消订单不可再改状态")
 	}
+	if order.PaymentMethod == mallPaymentWechat && prevStatus == MallOrderPendingPay && status != MallOrderPendingPay {
+		return MallOrderPublic{}, errors.New("微信订单不能手动确认或取消，请等待支付回调或安全关单")
+	}
 	if status == MallOrderCancelled && prevStatus != MallOrderCancelled && isPointRedemptionOrder(order) {
 		return MallOrderPublic{}, errors.New("积分兑换订单不能直接取消，请先人工退还积分")
 	}
 	if status == MallOrderCancelled && prevStatus != MallOrderCancelled {
-		if prevStatus == MallOrderPaid || prevStatus == MallOrderShipped {
+		if order.PaymentMethod == mallPaymentWechat && (prevStatus == MallOrderPaid || prevStatus == MallOrderShipped) {
+			return MallOrderPublic{}, errors.New("微信支付订单请先完成原路退款，再取消订单")
+		}
+		if order.StockReserved || prevStatus == MallOrderPaid || prevStatus == MallOrderShipped {
 			for _, item := range order.Items {
 				stockDelta[item.ProductID] += item.Quantity
 			}
+			order.StockReserved = false
 		}
 	}
-	if (status == MallOrderPaid || status == MallOrderShipped) && prevStatus == MallOrderPendingPay {
+	if (status == MallOrderPaid || status == MallOrderShipped) && prevStatus == MallOrderPendingPay && !order.StockReserved {
 		for _, item := range order.Items {
 			stockDelta[item.ProductID] -= item.Quantity
 		}
@@ -539,6 +620,7 @@ func (s *MallService) UpdateOrderStatus(orderID, status, trackingNo string) (Mal
 				return MallOrderPublic{}, fmt.Errorf("「%s」库存不足（剩余 %d）", product.Title, product.Stock)
 			}
 		}
+		order.StockReserved = true
 	}
 	if status == MallOrderPaid && order.PaidAt <= 0 {
 		order.PaidAt = now

@@ -19,14 +19,19 @@ type mallCreateOrderRequest struct {
 		ProductID string `json:"productId"`
 		Quantity  int    `json:"quantity"`
 	} `json:"items"`
-	Name     string `json:"name"`
-	Phone    string `json:"phone"`
-	Wechat   string `json:"wechat"`
-	QQ       string `json:"qq"`
-	Province string `json:"province"`
-	City     string `json:"city"`
-	Address  string `json:"address"`
-	Remark   string `json:"remark"`
+	Name          string `json:"name"`
+	Phone         string `json:"phone"`
+	Wechat        string `json:"wechat"`
+	QQ            string `json:"qq"`
+	Province      string `json:"province"`
+	City          string `json:"city"`
+	Address       string `json:"address"`
+	Remark        string `json:"remark"`
+	PaymentMethod string `json:"paymentMethod"`
+}
+
+type mallWechatPayRequest struct {
+	Mode string `json:"mode"`
 }
 
 type mallProductUpsertRequest struct {
@@ -55,6 +60,8 @@ type mallRouteDeps struct {
 	imageCOSBucket   string
 	imagePublicBase  string
 	imageSignTTL     time.Duration
+	wechatPay        *service.WeChatPayClient
+	paymentExpire    time.Duration
 }
 
 func ensureMallImageAccess(c *gin.Context, deps mallRouteDeps) bool {
@@ -90,6 +97,20 @@ func signMallPublicProductsForResponse(c *gin.Context, deps mallRouteDeps, items
 }
 
 func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
+	router.GET("/api/mall/payment/config", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		if _, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL); !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		expireMinutes := int(deps.paymentExpire / time.Minute)
+		capabilities := service.WeChatPayCapabilities{Enabled: false, Modes: []string{}, ExpireMin: expireMinutes}
+		if deps.wechatPay != nil {
+			capabilities = deps.wechatPay.Capabilities(expireMinutes)
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "wechatPay": capabilities})
+	})
+
 	router.GET("/api/mall/products", func(c *gin.Context) {
 		token := parseBearerToken(c)
 		if _, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL); !ok {
@@ -123,6 +144,22 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 				Quantity:  item.Quantity,
 			})
 		}
+		paymentMethod := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
+		if paymentMethod == "" {
+			paymentMethod = "wechat"
+		}
+		if paymentMethod != "wechat" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "实物商城当前仅支持微信在线支付"})
+			return
+		}
+		if deps.wechatPay == nil || !deps.wechatPay.Available() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "微信在线支付尚未启用，请稍后再试"})
+			return
+		}
+		paymentExpire := deps.paymentExpire
+		if paymentExpire <= 0 {
+			paymentExpire = 15 * time.Minute
+		}
 		order, err := deps.mallService.CreateOrder(service.MallCreateOrderInput{
 			UserSerial: serial,
 			Items:      items,
@@ -130,7 +167,9 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 				Name: req.Name, Phone: req.Phone, Wechat: req.Wechat, QQ: req.QQ,
 				Province: req.Province, City: req.City, Address: req.Address,
 			},
-			Remark: req.Remark,
+			Remark:           req.Remark,
+			PaymentMethod:    paymentMethod,
+			PaymentExpiresAt: time.Now().Add(paymentExpire).UnixMilli(),
 		})
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
@@ -138,9 +177,104 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"message": "下单成功。当前为人工收款模式，请按页面说明完成付款，管理员确认后发货。",
+			"message": "订单已创建，请在有效期内完成微信支付。",
 			"order":   order,
 		})
+	})
+
+	router.POST("/api/mall/orders/:id/wechat-pay", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		if deps.wechatPay == nil || !deps.wechatPay.Available() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "微信在线支付尚未启用"})
+			return
+		}
+		var req mallWechatPayRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求格式错误"})
+			return
+		}
+		order, err := deps.mallService.PrepareWechatPayment(serial, c.Param("id"), req.Mode)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		description := "佳点电子实物商城订单"
+		if len(order.Items) > 0 && strings.TrimSpace(order.Items[0].Title) != "" {
+			description = "佳点电子-" + strings.TrimSpace(order.Items[0].Title)
+		}
+		clientIP := service.ClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+		payment, err := deps.wechatPay.CreatePayment(c.Request.Context(), order, req.Mode, clientIP, description)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "payment": payment, "order": order})
+	})
+
+	router.POST("/api/mall/orders/:id/cancel", func(c *gin.Context) {
+		token := parseBearerToken(c)
+		serial, ok := serialFromToken(token, deps.jwtSecret, deps.tokenTTL)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token 无效"})
+			return
+		}
+		order, err := deps.mallService.GetMyOrder(serial, c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if order.PaymentMethod != "wechat" || order.Status != service.MallOrderPendingPay {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "当前订单不可取消"})
+			return
+		}
+		if deps.wechatPay == nil || !deps.wechatPay.Available() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "微信支付服务不可用，暂时不能安全释放库存"})
+			return
+		}
+		transaction, queryErr := deps.wechatPay.QueryTransaction(c.Request.Context(), order.PaymentTradeNo)
+		if queryErr != nil && !service.IsWeChatPayAPIError(queryErr, "ORDER_NOT_EXIST") {
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "暂时无法确认微信支付状态，请稍后重试"})
+			return
+		}
+		if queryErr == nil {
+			switch transaction.TradeState {
+			case "SUCCESS":
+				paidOrder, markErr := deps.mallService.MarkWechatOrderPaid(transaction.OutTradeNo, transaction.TransactionID, transaction.Amount.Total)
+				if markErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": markErr.Error()})
+					return
+				}
+				c.JSON(http.StatusConflict, gin.H{"success": false, "message": "订单已经付款，不能取消", "order": paidOrder})
+				return
+			case "NOTPAY":
+				if err := deps.wechatPay.CloseTransaction(c.Request.Context(), order.PaymentTradeNo); err != nil {
+					c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "关闭微信支付订单失败，请稍后重试"})
+					return
+				}
+			case "CLOSED", "REVOKED", "PAYERROR":
+				// These states cannot become a successful payment, so reserved stock may be released.
+			case "USERPAYING":
+				c.JSON(http.StatusConflict, gin.H{"success": false, "message": "微信正在确认付款，请稍后再取消"})
+				return
+			case "REFUND":
+				c.JSON(http.StatusConflict, gin.H{"success": false, "message": "订单已进入退款流程，请联系客服处理"})
+				return
+			default:
+				c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "微信返回了未知支付状态，暂时不能释放库存"})
+				return
+			}
+		}
+		cancelled, err := deps.mallService.CancelMyPendingOrder(serial, order.ID)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "订单已取消，库存已释放", "order": cancelled})
 	})
 
 	router.GET("/api/mall/orders", func(c *gin.Context) {
@@ -171,6 +305,28 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "order": order})
+	})
+
+	router.POST("/api/mall/payments/wechat/notify", func(c *gin.Context) {
+		if deps.wechatPay == nil || !deps.wechatPay.Available() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "FAIL", "message": "微信支付未配置"})
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+		if err != nil || len(body) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "FAIL", "message": "回调内容无效"})
+			return
+		}
+		transaction, err := deps.wechatPay.ParseNotification(c.Request, body)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": "FAIL", "message": err.Error()})
+			return
+		}
+		if _, err := deps.mallService.MarkWechatOrderPaid(transaction.OutTradeNo, transaction.TransactionID, transaction.Amount.Total); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "FAIL", "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": "SUCCESS", "message": "成功"})
 	})
 
 	router.GET("/api/admin/mall/products", func(c *gin.Context) {
@@ -342,7 +498,9 @@ func registerMallRoutes(router *gin.Engine, deps mallRouteDeps) {
 		for _, o := range orders {
 			safe = append(safe, gin.H{
 				"id": o.ID, "userSerial": o.UserSerial, "status": o.Status, "items": o.Items,
-				"totalCents": o.TotalCents, "province": o.Province, "city": o.City,
+				"totalCents": o.TotalCents, "paymentMethod": o.PaymentMethod, "paymentMode": o.PaymentMode,
+				"paymentTradeNo": o.PaymentTradeNo, "paymentTransactionId": o.PaymentTransactionID,
+				"paymentExpiresAt": o.PaymentExpiresAt, "province": o.Province, "city": o.City,
 				"trackingNo": o.TrackingNo, "remark": o.Remark,
 				"createdAt": o.CreatedAt, "updatedAt": o.UpdatedAt,
 				"paidAt": o.PaidAt, "shippedAt": o.ShippedAt,

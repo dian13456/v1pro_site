@@ -25,6 +25,7 @@ import {
   prepareLocalAlbumGfm1,
   type LocalAlbumTransferItem,
 } from "../services/localAlbumGfm1Service";
+import { readGifFrameDelays } from "../services/gifFrameTiming";
 import {
   BrowserMusicSpectrumAnalyzer,
   MUSIC_SPECTRUM_BANDS,
@@ -39,6 +40,7 @@ import type {
 } from "../types/v1proWebTransfer";
 import {
   COMPATIBLE_VIDEO_FPS,
+  COMPATIBLE_VIDEO_FPS_FALLBACK,
   parseVideoFpsSelection,
   resolveVideoFps,
   type VideoFpsSelection,
@@ -623,7 +625,7 @@ export default function WebUsbTransferTestPage() {
       applyDeviceCapacity(client.deviceCapacity);
       setMetaText(
         capacityLabel
-          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（默认兼容 20/25/30fps，必要时自动倍速）。`
+          ? `设备容量 ${capacityLabel}。将图片、GIF 或视频拖入下方区域即可自动传输（按固件与实际压缩容量适配，必要时自动倍速）。`
           : "设备已连接，将图片、GIF 或视频拖入下方区域即可自动传输。",
       );
     } catch (err) {
@@ -846,6 +848,21 @@ export default function WebUsbTransferTestPage() {
           note: string;
         } | null = null;
         if (selectedRasterType) {
+          let estimatedFrames = 1;
+          if (selectedRasterType === "gif") {
+            try {
+              estimatedFrames = Math.max(1, (await readGifFrameDelays(file)).length);
+            } catch {
+              // transferFile will top up to the exact final size if this quick
+              // estimate cannot inspect the GIF.
+            }
+          }
+          setStatusText(
+            selectedRasterType === "gif"
+              ? `设备正在预擦除，同时转换 GIF（预计 ${estimatedFrames} 帧）…`
+              : "设备正在预擦除，同时转换图片…",
+          );
+          void client.beginPreparedTransfer(client.estimatePreeraseBytes(estimatedFrames));
           const encodeMaxFrames = capacity.persistentCompression
             ? Math.max(capacity.maxFrames, 1000)
             : capacity.maxFrames;
@@ -885,6 +902,8 @@ export default function WebUsbTransferTestPage() {
             candidateFps,
             materialPlaybackSpeed,
           );
+          setStatusText(`设备正在预擦除，同时本地转换 ${plan.frameCount} 帧视频…`);
+          void client.beginPreparedTransfer(client.estimatePreeraseBytes(plan.frameCount));
           const converted = await convertBrowserVideoWithFfmpeg(file, {
             plan,
             fileName: file.name,
@@ -918,7 +937,9 @@ export default function WebUsbTransferTestPage() {
               : materialFps)
             : undefined,
           minVideoFps: preparedMedia?.mediaType === "video"
-            ? (materialFpsSelection === COMPATIBLE_VIDEO_FPS ? 20 : materialFps)
+            ? (materialFpsSelection === COMPATIBLE_VIDEO_FPS
+              ? (capacity.persistentCompression ? 20 : COMPATIBLE_VIDEO_FPS_FALLBACK)
+              : materialFps)
             : undefined,
           maxVideoSpeed: 10,
           prebuiltGfm1: preparedMedia ? {
@@ -946,10 +967,7 @@ export default function WebUsbTransferTestPage() {
         });
 
         setProgress(100);
-        let message = `传输完成：${result.bytes} 字节，${result.frameCount} 帧`;
-        if (result.note) {
-          message += `（${result.note}）`;
-        }
+        const message = `网页直传完成：${result.frameCount} 帧`;
         setStatusText(message);
         setStatusKind("ok");
         setMetaText("设备应已开始播放。可继续拖入其他素材。");
@@ -1030,6 +1048,9 @@ export default function WebUsbTransferTestPage() {
         const capacity = client.deviceCapacity ?? await client.refreshDeviceCapacity();
         if (!capacity?.maxFrames) throw new Error("无法读取设备容量，请重新连接设备后重试");
         applyDeviceCapacity(capacity);
+
+        setStatusText("设备正在预擦除，同时准备相册素材…");
+        void client.beginPreparedTransfer(client.estimatePreeraseBytes(capacity.maxFrames));
 
         const prepared = await prepareLocalAlbumGfm1(items, {
           maxFrames: capacity.maxFrames,

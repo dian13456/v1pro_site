@@ -17,9 +17,13 @@ globalThis.window = {
 };
 
 const {
+  beginGfm1PayloadStream,
   buildCompressedStartPreamble,
+  estimateSizedEraseTimeoutMs,
+  isResetStreamReply,
   parseJedecReply,
   parseFirmwareInfoReply,
+  parseSizedEraseReply,
   sendGfm1PayloadStream,
 } = await import("../public/webusb/v1pro-usb.js");
 
@@ -193,7 +197,16 @@ assert.equal(
 );
 assert.equal(parseFirmwareInfoReply("PONG"), null);
 
-function createMockDevice(versionHex) {
+assert.equal(parseSizedEraseReply("OK_ERASE,6604942", 1), 6604942);
+assert.equal(parseSizedEraseReply("ok_erase", 6604942), 6604942);
+assert.equal(parseSizedEraseReply("BUSY", 6604942), null);
+assert.equal(isResetStreamReply("OK_ERASE"), true);
+assert.equal(isResetStreamReply("RST,2"), true);
+assert.equal(isResetStreamReply("rst,2,ready"), true);
+assert.equal(isResetStreamReply("RST,3"), false);
+assert.ok(estimateSizedEraseTimeoutMs(6604942) > 45000);
+
+function createMockDevice(versionHex, onWrite = null) {
   const writes = [];
   const replies = [];
   const readers = [];
@@ -229,6 +242,8 @@ function createMockDevice(versionHex) {
         copy[2] === 0x09
       ) {
         enqueueReply("PONG,A1");
+      } else if (typeof onWrite === "function") {
+        onWrite(copy, enqueueReply, writes);
       }
       return { status: "ok", bytesWritten: copy.length };
     },
@@ -238,6 +253,81 @@ function createMockDevice(versionHex) {
     },
   };
 }
+
+const eraseBytes = 0x0064ab12;
+const eraseAckDevice = createMockDevice("00002300", (write, enqueueReply) => {
+  if (write.length === 7 && write[2] === 0x04) {
+    enqueueReply(`OK_ERASE,${eraseBytes}`);
+  }
+});
+assert.equal(
+  await beginGfm1PayloadStream(eraseAckDevice, eraseBytes, { eraseTimeoutMs: 100 }),
+  eraseBytes,
+);
+const eraseCommand = eraseAckDevice.writes.find(
+  (write) => write.length === 7 && write[0] === 0xa5 && write[1] === 0x5a && write[2] === 0x04,
+);
+assert.deepEqual(
+  Array.from(eraseCommand),
+  [0xa5, 0x5a, 0x04, 0x12, 0xab, 0x64, 0x00],
+  "sized ERASE must encode the requested byte count as u32LE",
+);
+
+const bareEraseAckDevice = createMockDevice("00002300", (write, enqueueReply) => {
+  if (write.length === 7 && write[2] === 0x04) enqueueReply("ok_erase");
+});
+assert.equal(
+  await beginGfm1PayloadStream(bareEraseAckDevice, 4097, { eraseTimeoutMs: 100 }),
+  4097,
+  "bare OK_ERASE confirms the requested byte count",
+);
+
+let busyEraseAttempts = 0;
+const resetRetryDevice = createMockDevice("00002300", (write, enqueueReply) => {
+  if (write.length === 7 && write[2] === 0x04) {
+    busyEraseAttempts += 1;
+    enqueueReply(busyEraseAttempts === 1 ? "BUSY" : "OK_ERASE,8192");
+  } else if (write.length === 4 && write[2] === 0x03 && write[3] === 0xa6) {
+    enqueueReply("RST,2,ready");
+  }
+});
+assert.equal(
+  await beginGfm1PayloadStream(resetRetryDevice, 8192, {
+    eraseTimeoutMs: 100,
+    resetTimeoutMs: 100,
+  }),
+  8192,
+);
+assert.equal(busyEraseAttempts, 2, "BUSY must reset the stream and retry ERASE once");
+assert.equal(
+  resetRetryDevice.writes.filter((write) => write.length === 4 && write[2] === 0x03).length,
+  1,
+);
+
+let timeoutEraseAttempts = 0;
+const timeoutRetryDevice = createMockDevice("00002300", (write, enqueueReply) => {
+  if (write.length === 7 && write[2] === 0x04) {
+    timeoutEraseAttempts += 1;
+    if (timeoutEraseAttempts === 2) enqueueReply("OK_ERASE,12288");
+  } else if (write.length === 4 && write[2] === 0x03 && write[3] === 0xa6) {
+    enqueueReply("OK_ERASE");
+  }
+});
+assert.equal(
+  await beginGfm1PayloadStream(timeoutRetryDevice, 12288, {
+    eraseTimeoutMs: 25,
+    resetTimeoutMs: 100,
+  }),
+  12288,
+);
+assert.equal(timeoutEraseAttempts, 2, "erase ACK timeout must reset and retry once");
+
+const acklessDevice = createMockDevice("00002200");
+assert.equal(
+  await beginGfm1PayloadStream(acklessDevice, 16384, { waitForAck: false }),
+  16384,
+  "legacy compatibility mode returns the requested byte count without waiting",
+);
 
 const compressedDevice = createMockDevice("00002300");
 const compressedProgress = [];
@@ -272,5 +362,113 @@ const legacyStart = legacyDevice.writes.find(
 assert.ok(legacyStart, "V0.0.34 must remain on raw START");
 assert.equal(legacyStats.compressed, false);
 assert.equal(legacyStats.streamBytes, reference.length + 8);
+
+const { V1ProWebTransfer } = await import("../public/webusb/v1pro-web-transfer.js");
+const { buildGfm1Blob } = await import("../public/webusb/v1pro-gfm1.js");
+const preeraseEstimator = new V1ProWebTransfer();
+preeraseEstimator.deviceCapacity = {
+  lcdW: 320,
+  lcdH: 240,
+  maxFrames: 218,
+  maxPayloadBytes: 32 * 1024 * 1024 - 4096,
+  persistentCompression: true,
+};
+assert.equal(
+  preeraseEstimator.estimatePreeraseBytes(35),
+  6604942,
+  "35 source frames on a 320x240 panel must reserve the GUI-compatible 43-frame range",
+);
+
+function makeTransferClient(device, overrides = {}) {
+  const client = new V1ProWebTransfer();
+  client.device = device;
+  client.deviceCapacity = {
+    lcdW: 320,
+    lcdH: 170,
+    maxFrames: 77,
+    maxPayloadBytes: 8 * 1024 * 1024 - 4096,
+    materialMaxFps: 45,
+    gfm2: false,
+    persistentCompression: false,
+    ...overrides,
+  };
+  return client;
+}
+
+function sizedEraseWrites(device) {
+  return device.writes.filter(
+    (write) => write.length === 7 && write[0] === 0xa5 && write[1] === 0x5a && write[2] === 0x04,
+  );
+}
+
+function sizedEraseValue(write) {
+  return new DataView(write.buffer, write.byteOffset, write.byteLength).getUint32(3, true);
+}
+
+const oneFrame = new Uint8Array(320 * 170 * 2);
+for (let index = 0; index < oneFrame.length; index += 1) oneFrame[index] = index & 0xff;
+const oneFrameGfm1 = buildGfm1Blob([oneFrame], [100]);
+
+const topupDevice = createMockDevice("00002200");
+const topupClient = makeTransferClient(topupDevice);
+void topupClient.beginPreparedTransfer(4096);
+const topupResult = await topupClient.transferFile(new Blob([oneFrameGfm1]), {
+  fileName: "topup.gfm1",
+  mediaType: "image",
+  prebuiltGfm1: { frameCount: 1 },
+  pingFirst: false,
+});
+const topupErases = sizedEraseWrites(topupDevice);
+assert.equal(topupResult.bytes, oneFrameGfm1.length);
+assert.equal(topupErases.length, 2, "an undersized estimate must issue one tail top-up ERASE");
+assert.equal(sizedEraseValue(topupErases[0]), 4096);
+assert.equal(
+  sizedEraseValue(topupErases[1]),
+  oneFrameGfm1.length,
+  "tail top-up must carry the final total length, not the byte difference",
+);
+
+const reuseDevice = createMockDevice("00002200");
+const reuseClient = makeTransferClient(reuseDevice);
+void reuseClient.beginPreparedTransfer(oneFrameGfm1.length + 4096);
+await reuseClient.transferFile(new Blob([oneFrameGfm1]), {
+  fileName: "reuse.gfm1",
+  mediaType: "image",
+  prebuiltGfm1: { frameCount: 1 },
+  pingFirst: false,
+});
+assert.equal(
+  sizedEraseWrites(reuseDevice).length,
+  1,
+  "a confirmed estimate covering the final blob must be reused",
+);
+
+let failedEraseAttempts = 0;
+const fallbackStartDevice = createMockDevice("00002300", (write, enqueueReply) => {
+  if (write.length === 7 && write[2] === 0x04) {
+    failedEraseAttempts += 1;
+    enqueueReply("ERR,erase");
+  } else if (write.length === 4 && write[2] === 0x03 && write[3] === 0xa6) {
+    enqueueReply("OK_ERASE");
+  }
+});
+const fallbackStartClient = makeTransferClient(fallbackStartDevice, {
+  gfm2: true,
+  persistentCompression: true,
+});
+void fallbackStartClient.beginPreparedTransfer(oneFrameGfm1.length);
+await fallbackStartClient.transferFile(new Blob([oneFrameGfm1]), {
+  fileName: "fallback.gfm1",
+  mediaType: "image",
+  prebuiltGfm1: { frameCount: 1 },
+  pingFirst: false,
+});
+assert.equal(failedEraseAttempts, 2, "failed pre-erase retries only once");
+assert.ok(
+  fallbackStartDevice.writes.some(
+    (write) => (write.length === 8 || write.length === 16) && write[0] === 0xa5 && (write[2] === 0x01 || write[2] === 0x02),
+  ),
+  "START must remain the safety fallback after pre-erase failure",
+);
 
 console.log("WebUSB compressed transport tests passed.");

@@ -10,6 +10,22 @@ import (
 
 const catalogUploaderSerialKey = "uploaderSerial"
 
+// catalogUploaderSerialValue reads the private uploader key from both the
+// current field and the legacy underscored field.  The latter was used by
+// older catalog writers and must remain readable for ownership, moderation,
+// and administrator purge operations.  Callers should never expose the
+// returned value in a public catalog response.
+func catalogUploaderSerialValue(item map[string]any) string {
+	if item == nil {
+		return ""
+	}
+	value := stringifyCatalogValue(item[catalogUploaderSerialKey])
+	if value == "" {
+		value = stringifyCatalogValue(item["_uploaderSerial"])
+	}
+	return normalizeUploaderSerial(value)
+}
+
 // FindUploaderSerial returns the uploader device SN for a catalog resource id.
 func FindUploaderSerial(items []map[string]any, resourceID string) string {
 	target := strings.TrimSpace(resourceID)
@@ -24,7 +40,7 @@ func FindUploaderSerial(items []map[string]any, resourceID string) string {
 		if idText == "" || idText != target {
 			continue
 		}
-		return normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		return catalogUploaderSerialValue(item)
 	}
 	return ""
 }
@@ -46,7 +62,7 @@ func ResourceIDsByUploaderSerials(items []map[string]any, uploaderSerials []stri
 		if item == nil {
 			continue
 		}
-		uploader := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		uploader := catalogUploaderSerialValue(item)
 		if _, ok := blocked[uploader]; !ok {
 			continue
 		}
@@ -73,7 +89,7 @@ func PrimaryCatalogAuthorsByUploaderSerial(items []map[string]any) map[string]st
 		if item == nil {
 			continue
 		}
-		serial := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		serial := catalogUploaderSerialValue(item)
 		author := strings.TrimSpace(stringifyCatalogValue(item["author"]))
 		if serial == "" || author == "" {
 			continue
@@ -126,7 +142,7 @@ func LoadUploaderSerialWithPresenceFromCatalogFile(path, resourceID string) (str
 		if item == nil || stringifyCatalogID(item["id"]) != target {
 			continue
 		}
-		return normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey])), true, nil
+		return catalogUploaderSerialValue(item), true, nil
 	}
 	return "", false, nil
 }
@@ -150,6 +166,15 @@ func stringifyCatalogID(value any) string {
 		}
 		return text
 	}
+}
+
+// CatalogResourceIDString returns the canonical decimal resource identifier
+// from a decoded catalog value. Catalog JSON is decoded into interface values,
+// so large numeric ids arrive as float64; callers must not use fmt.Sprint on
+// those values because it may produce scientific notation that cannot be
+// parsed back into the original id.
+func CatalogResourceIDString(value any) string {
+	return stringifyCatalogID(value)
 }
 
 func stringifyCatalogValue(value any) string {

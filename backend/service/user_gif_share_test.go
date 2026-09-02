@@ -37,16 +37,42 @@ func TestGifUploadSessionConsume(t *testing.T) {
 	}
 }
 
+func TestGifUploadSessionDeleteForSerial(t *testing.T) {
+	store := NewGifUploadSessionStore()
+	store.mu.Lock()
+	store.sessions["b"] = GifUploadSession{ID: "b", Serial: "TARGET", CreatedAt: time.Now()}
+	store.sessions["a"] = GifUploadSession{ID: "a", Serial: "target", CreatedAt: time.Now()}
+	store.sessions["other"] = GifUploadSession{ID: "other", Serial: "OTHER", CreatedAt: time.Now()}
+	store.mu.Unlock()
+
+	removed := store.DeleteForSerial(" target ")
+	if len(removed) != 2 {
+		t.Fatalf("expected two removed sessions, got %d", len(removed))
+	}
+	if removed[0].ID != "a" || removed[1].ID != "b" {
+		t.Fatalf("expected deterministic id order, got %+v", removed)
+	}
+	if _, err := store.Get("other", "OTHER"); err != nil {
+		t.Fatalf("unrelated session was removed: %v", err)
+	}
+	if _, err := store.Get("a", "TARGET"); err == nil {
+		t.Fatal("deleted session should no longer be usable")
+	}
+	if got := store.DeleteSessionsForSerial("target"); len(got) != 0 {
+		t.Fatalf("second deletion should be idempotent, got %d", len(got))
+	}
+}
+
 func TestCreateGifUploadSessionRejectsNonGif(t *testing.T) {
 	store := NewGifUploadSessionStore()
 	_, err := CreateGifUploadSession(
 		context.Background(),
 		store,
 		CreateGifUploadSessionInput{
-			Serial:   "ABC",
-			FileName: "demo.mp4",
-			FileSize: 1024,
-			GifSigner: &COSSigner{},
+			Serial:      "ABC",
+			FileName:    "demo.mp4",
+			FileSize:    1024,
+			GifSigner:   &COSSigner{},
 			CoverSigner: &COSSigner{},
 		},
 	)

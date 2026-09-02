@@ -39,12 +39,12 @@ import {
   USBDL_URL_SUB_WRITE,
   USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.35";
+} from "./v1pro-constants.js?v=1.2.36";
 import {
   prepareTransportPayload,
   TRANSPORT_BLOCK_SIZE,
   TRANSPORT_VERSION,
-} from "./v1pro-transport-codec.js?v=1.2.35";
+} from "./v1pro-transport-codec.js?v=1.2.36";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;
@@ -57,6 +57,10 @@ const DISPLAY_COMMAND_TIMEOUT_MS = 2000;
 const FIRMWARE_INFO_TIMEOUT_MS = 1800;
 const LIVE_COMMAND_TIMEOUT_MS = 4000;
 const MIN_COMPRESSED_TRANSPORT_VERSION_WORD = 0x00002300; // V0.0.35
+const USBDL_CMD_RESET_STREAM = 0x03;
+const ERASE_SECTOR_BYTES = 4096;
+const ERASE_BLOCK_32K_BYTES = 32 * 1024;
+const ERASE_BLOCK_64K_BYTES = 64 * 1024;
 
 /**
  * @typedef {{
@@ -352,6 +356,7 @@ async function drainInQuick(device) {
  */
 async function readTextReply(device, prefixes, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  const normalizedPrefixes = prefixes.map((prefix) => prefix.toUpperCase());
   /** @type {string[]} */
   const seen = [];
   while (Date.now() < deadline) {
@@ -373,7 +378,8 @@ async function readTextReply(device, prefixes, timeoutMs) {
         .trim();
       if (!text) continue;
       seen.push(text);
-      if (prefixes.some((prefix) => text.startsWith(prefix))) {
+      const normalizedText = text.toUpperCase();
+      if (normalizedPrefixes.some((prefix) => normalizedText.startsWith(prefix))) {
         return text;
       }
     } catch {
@@ -1349,6 +1355,98 @@ function validateStreamSize(totalBytes, maxPayloadBytes) {
 }
 
 /**
+ * Estimate a safe wait for the firmware's mixed 64K/32K/4K erase plan. The
+ * fixed margin also covers slower flash parts and USB scheduling jitter.
+ * @param {number} totalBytes
+ */
+export function estimateSizedEraseTimeoutMs(totalBytes) {
+  const alignedBytes = Math.ceil(totalBytes / ERASE_SECTOR_BYTES) * ERASE_SECTOR_BYTES;
+  const blocks64K = Math.floor(alignedBytes / ERASE_BLOCK_64K_BYTES);
+  let remaining = alignedBytes - blocks64K * ERASE_BLOCK_64K_BYTES;
+  const blocks32K = Math.floor(remaining / ERASE_BLOCK_32K_BYTES);
+  remaining -= blocks32K * ERASE_BLOCK_32K_BYTES;
+  const sectors4K = Math.ceil(remaining / ERASE_SECTOR_BYTES);
+  const estimatedSeconds = blocks64K * 0.42 + blocks32K * 0.24 + sectors4K * 0.1;
+  return Math.max(20000, Math.ceil(estimatedSeconds * 1500 + 45000));
+}
+
+/** @param {number} totalBytes */
+function buildSizedEraseCommand(totalBytes) {
+  const erase = new Uint8Array(7);
+  const view = new DataView(erase.buffer);
+  erase[0] = USBDL_MAGIC0;
+  erase[1] = USBDL_MAGIC1;
+  erase[2] = USBDL_CMD_ERASE;
+  view.setUint32(3, totalBytes, true);
+  return erase;
+}
+
+/**
+ * @param {string|null} reply
+ * @param {number} requestedBytes
+ */
+export function parseSizedEraseReply(reply, requestedBytes) {
+  if (typeof reply !== "string") return null;
+  const fields = reply.trim().split(",");
+  if (fields[0]?.toUpperCase() !== "OK_ERASE") return null;
+  if (fields.length === 1 || fields[1]?.trim() === "") return requestedBytes;
+  const confirmedBytes = Number(fields[1]);
+  return Number.isSafeInteger(confirmedBytes) && confirmedBytes >= 0
+    ? confirmedBytes
+    : null;
+}
+
+/** @param {string|null} reply */
+export function isResetStreamReply(reply) {
+  if (typeof reply !== "string") return false;
+  const normalized = reply.trim().toUpperCase();
+  return normalized === "OK_ERASE" || normalized === "RST,2" || normalized.startsWith("RST,2,");
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {number} timeoutMs
+ */
+async function resetTransferStream(device, timeoutMs) {
+  const reset = Uint8Array.of(USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_RESET_STREAM, 0xa6);
+  await bulkOut(device, reset);
+  const reply = await readTextReply(
+    device,
+    ["OK_ERASE", "RST,2", "ERR", "BUSY", "FAIL"],
+    timeoutMs
+  );
+  if (!isResetStreamReply(reply)) {
+    throw new V1ProUsbError(
+      "erase_reset_failed",
+      reply ? `设备复位擦除状态失败：${reply}` : "设备复位擦除状态超时。"
+    );
+  }
+}
+
+/**
+ * @param {USBDevice} device
+ * @param {Uint8Array} command
+ * @param {number} requestedBytes
+ * @param {number} timeoutMs
+ */
+async function sendSizedEraseAndWait(device, command, requestedBytes, timeoutMs) {
+  await bulkOut(device, command);
+  const reply = await readTextReply(
+    device,
+    ["OK_ERASE", "BUSY", "ERR", "FAIL"],
+    timeoutMs
+  );
+  const confirmedBytes = parseSizedEraseReply(reply, requestedBytes);
+  if (confirmedBytes == null) {
+    throw new V1ProUsbError(
+      "erase_failed",
+      reply ? `设备预擦除失败：${reply}` : "设备预擦除确认超时。"
+    );
+  }
+  return confirmedBytes;
+}
+
+/**
  * Start a sized erase without entering GFM1 receive state. New firmware erases
  * in parallel with download/encode; old firmware safely ignores this command
  * and performs its normal erase when START arrives later.
@@ -1357,15 +1455,30 @@ export async function beginGfm1PayloadStream(device, totalBytes, opts = {}) {
   const maxPayloadBytes = opts.maxPayloadBytes ?? ANIM_FLASH_MAX_BYTES;
   validateStreamSize(totalBytes, maxPayloadBytes);
   await drainInQuick(device);
-  const erase = new Uint8Array(7);
-  erase[0] = USBDL_MAGIC0;
-  erase[1] = USBDL_MAGIC1;
-  erase[2] = USBDL_CMD_ERASE;
-  erase[3] = totalBytes & 0xff;
-  erase[4] = (totalBytes >>> 8) & 0xff;
-  erase[5] = (totalBytes >>> 16) & 0xff;
-  erase[6] = (totalBytes >>> 24) & 0xff;
-  await bulkOut(device, erase);
+  const erase = buildSizedEraseCommand(totalBytes);
+  if (opts.waitForAck === false) {
+    await bulkOut(device, erase);
+    return totalBytes;
+  }
+
+  const eraseTimeoutMs = opts.eraseTimeoutMs ?? estimateSizedEraseTimeoutMs(totalBytes);
+  const resetTimeoutMs = opts.resetTimeoutMs ?? Math.min(5000, eraseTimeoutMs);
+  try {
+    return await sendSizedEraseAndWait(device, erase, totalBytes, eraseTimeoutMs);
+  } catch (firstError) {
+    try {
+      await resetTransferStream(device, resetTimeoutMs);
+      // Consume a delayed erase/reset response before issuing the single retry.
+      await drainInQuick(device);
+      return await sendSizedEraseAndWait(device, erase, totalBytes, eraseTimeoutMs);
+    } catch (retryError) {
+      throw new V1ProUsbError(
+        "erase_failed",
+        retryError instanceof Error ? retryError.message : "设备预擦除失败。",
+        firstError
+      );
+    }
+  }
 }
 
 /**

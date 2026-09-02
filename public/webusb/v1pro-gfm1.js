@@ -16,7 +16,7 @@ import {
   FRAME_PIXEL_BYTES,
   LCD_H,
   LCD_W,
-} from "./v1pro-constants.js?v=1.2.35";
+} from "./v1pro-constants.js?v=1.2.36";
 
 /** @type {HTMLCanvasElement|null} */
 let lcdCanvas = null;

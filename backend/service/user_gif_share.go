@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -180,6 +181,41 @@ func (store *GifUploadSessionStore) Consume(sessionID, serial string) (GifUpload
 	}
 	delete(store.sessions, sessionID)
 	return session, nil
+}
+
+// DeleteForSerial invalidates every in-memory GIF upload session owned by the
+// given uploader and returns the removed sessions so callers can best-effort
+// delete their staged COS objects.  It is used when an administrator bans an
+// uploader; direct COS PUT URLs already issued cannot be revoked, but their
+// server-side session can no longer be consumed.
+func (store *GifUploadSessionStore) DeleteForSerial(serial string) []GifUploadSession {
+	if store == nil {
+		return []GifUploadSession{}
+	}
+	target := normalizeUploaderSerial(serial)
+	if target == "" {
+		return []GifUploadSession{}
+	}
+	now := time.Now()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.purgeExpired(now)
+	removed := make([]GifUploadSession, 0)
+	for id, session := range store.sessions {
+		if normalizeUploaderSerial(session.Serial) != target {
+			continue
+		}
+		removed = append(removed, session)
+		delete(store.sessions, id)
+	}
+	sort.Slice(removed, func(i, j int) bool { return removed[i].ID < removed[j].ID })
+	return removed
+}
+
+// DeleteSessionsForSerial is a descriptive alias kept for callers that prefer
+// an explicit plural method name.
+func (store *GifUploadSessionStore) DeleteSessionsForSerial(serial string) []GifUploadSession {
+	return store.DeleteForSerial(serial)
 }
 
 type ShareUserGifInput struct {

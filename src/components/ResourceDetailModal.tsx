@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ResourceItem } from "../types/resource";
 import { createImageUrl } from "../services/imageService";
@@ -6,18 +6,10 @@ import { probeResourceMedia } from "../services/resourceMediaProbe";
 import { fetchMessages, MAX_MESSAGE_LENGTH, postMessage } from "../services/messageBoardService";
 import type { BoardMessage } from "../types/messageBoard";
 import {
-  assessDeviceCapacities,
   formatMediaDuration,
   mergeResourceMetrics,
-  COMPATIBLE_VIDEO_FPS,
-  parseVideoFpsSelection,
-  requiredFramesForResource,
-  resolveVideoFps,
   resourceMetricsFromCatalog,
-  VIDEO_FPS_OPTIONS,
   type ResourceMediaMetrics,
-  type VideoFpsOption,
-  type VideoFpsSelection,
 } from "../utils/resourceCapacity";
 import { defaultTransferFitMode } from "../utils/transferFitMode";
 import { useDeviceFeatureAccess } from "../services/featureAccessService";
@@ -35,7 +27,6 @@ interface ResourceDetailModalProps {
 }
 
 export interface ResourceWebUsbTransferOptions {
-  videoFps: VideoFpsSelection;
   fitMode: "fill" | "contain";
   rotationDeg: 0 | 90 | 180 | 270;
   colorProfile: "normal" | "vivid" | "professional";
@@ -76,8 +67,6 @@ export function ResourceDetailModal({
   const { access } = useDeviceFeatureAccess();
   const featureEnabled = access?.enabled === true;
   const transferMediaKind = resource.materialType === "v1pro-pack" ? "image" : resource.materialType;
-  const [fpsSelection, setFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
-  const fps: VideoFpsOption = resolveVideoFps(fpsSelection, resource.transferDefaults?.videoFps);
   const [fitMode, setFitMode] = useState<ResourceWebUsbTransferOptions["fitMode"]>(() =>
     resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind),
   );
@@ -95,7 +84,6 @@ export function ResourceDetailModal({
   const isAnimated = resource.materialType === "video" || resource.materialType === "gif";
 
   useEffect(() => {
-    setFpsSelection(COMPATIBLE_VIDEO_FPS);
     setFitMode(resource.transferDefaults?.fitMode ?? defaultTransferFitMode(transferMediaKind));
     setRotationDeg(resource.transferDefaults?.rotationDeg ?? 0);
     setColorProfile(resource.transferDefaults?.colorProfile ?? "normal");
@@ -173,13 +161,12 @@ export function ResourceDetailModal({
     };
   }, [resource.id]);
 
-  const assessments = useMemo(
-    () => assessDeviceCapacities(resource, metrics, fps),
-    [fps, metrics, resource],
-  );
-  const measuredFrames = requiredFramesForResource(resource, metrics, fps);
-  const requiredFrames = measuredFrames ?? 0;
-  const metricsKnown = measuredFrames != null;
+  // The card intentionally does not estimate a fixed frame rate. Direct
+  // WebUSB transfers choose the firmware-compatible beginner strategy at
+  // transfer time (GFM3 byte fitting or the legacy compatibility path).
+  // Static images always occupy one frame; only animated media needs a
+  // metadata probe before we can report its duration/frame count.
+  const metricsKnown = !isAnimated || metrics.durationSec != null || metrics.sourceFrameCount != null;
   const durationText = formatMediaDuration(metrics.durationSec);
   const canDirectTransfer = resource.materialType === "image" || resource.materialType === "gif" || resource.materialType === "video";
 
@@ -234,7 +221,6 @@ export function ResourceDetailModal({
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{materialLabel(resource)}</span>
                 <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">{resource.columnTag || "其他"}</span>
                 {durationText ? <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">◷ {durationText}</span> : null}
-                {metricsKnown && requiredFrames > 308 ? <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-500 dark:bg-orange-500/10">大占用 {requiredFrames}帧</span> : null}
               </div>
             </div>
             <button type="button" onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 dark:hover:text-white" aria-label="关闭素材详情">×</button>
@@ -252,34 +238,6 @@ export function ResourceDetailModal({
           </dl>
 
           {resource.transferDefaults ? <p className="text-xs font-semibold text-emerald-600">✓ 已载入分享者推荐的下传参数，可在下方继续调整</p> : null}
-
-          {isAnimated ? (
-            <>
-              <p className="text-xs font-bold tracking-[1px] text-[#8a93a8]">下传设备帧率（实际编码）</p>
-              <button
-                type="button"
-                onClick={() => setFpsSelection(COMPATIBLE_VIDEO_FPS)}
-                className={`mt-2 w-full rounded-[10px] border-[1.5px] px-3 py-[9px] text-[12.5px] font-semibold transition ${fpsSelection === COMPATIBLE_VIDEO_FPS ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
-              >
-                兼容 / 新手自动
-              </button>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {VIDEO_FPS_OPTIONS.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setFpsSelection(parseVideoFpsSelection(String(value)))}
-                    className={`rounded-[10px] border-[1.5px] px-2 py-[9px] text-[12.5px] font-semibold transition ${fpsSelection === value ? "border-[#ff8a5c] bg-[#fff7f2] text-[#ff8a5c] ring-2 ring-orange-100" : "border-[#e6e9f2] text-[#4a5270]"}`}
-                  >
-                    {value} fps
-                  </button>
-                ))}
-              </div>
-              {fpsSelection === COMPATIBLE_VIDEO_FPS ? (
-                <p className="mt-2 text-[11px] leading-5 text-[#8a93a8]">新固件会按 GUI 新手模式从设备上限开始，依据 GFM3 实际压缩字节降至 20fps，仍放不下才自动加速；旧固件继续使用 {fps}fps 兼容逻辑。</p>
-              ) : null}
-            </>
-          ) : null}
 
           <div className="grid grid-cols-2 gap-2.5">
             <label className="text-xs font-bold tracking-[1px] text-[#8a93a8]">
@@ -318,22 +276,13 @@ export function ResourceDetailModal({
 
           <div className="rounded-xl border border-[#e6e9f2] bg-[#fafbfe] px-3.5 py-3 text-[12.5px] leading-[1.9]">
             <p className="text-slate-600 dark:text-slate-300">
-              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? fpsSelection === COMPATIBLE_VIDEO_FPS ? <> ｜ <strong>GUI 新手自动压缩适配</strong></> : <> ｜ {fps} fps → 原速需要 <strong>{metricsKnown ? `${requiredFrames} 帧` : "待解析"}</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
+              素材时长: <strong>{durationText || (isAnimated ? "待解析" : "静态")}</strong>{isAnimated ? <> ｜ <strong>自动兼容设备</strong></> : <> ｜ 实际写入 <strong>1 帧</strong></>}
             </p>
-            {metricsKnown && fpsSelection !== COMPATIBLE_VIDEO_FPS ? <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold">
-              {assessments.map((item) => (
-                <span key={item.capacity} className={item.originalSpeed ? "text-emerald-500" : item.fits ? "text-orange-500" : "text-rose-500"}>
-                  {item.capacity} 帧设备：{item.originalSpeed
-                    ? `原速写入 ${item.encodedFrames} 帧`
-                    : item.fits
-                      ? `实际写入 ${item.encodedFrames} 帧 · 自动加速 ${item.speed.toFixed(2)}×${item.playbackSec ? `(${item.playbackSec.toFixed(1)}s)` : ""}`
-                      : `无法装入 · 至少需要 ${item.minimumFrames} 帧容量`}
-                </span>
-              ))}
-            </div> : fpsSelection === COMPATIBLE_VIDEO_FPS && isAnimated ? (
-              <p className="mt-2 text-xs font-semibold text-emerald-600">支持 GFM3 的设备将在转换后按真实压缩字节计算容量，不再受 77 / 154 / 308 原始帧数硬限制。</p>
-            ) : <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析时长与设备容量。</p>}
-            <p className="mt-2 text-xs text-slate-500">✓ 所选帧率用于“网页直传”；“传输”将交给佳点 V1PRO 控制工具处理</p>
+            {isAnimated ? (
+              <p className="mt-2 text-xs font-semibold text-emerald-600">✓ 网页直传会根据设备自动适配。</p>
+            ) : !metricsKnown ? (
+              <p className="mt-2 text-xs font-semibold text-amber-600">素材源暂不可访问，连接资源服务后会自动解析素材信息。</p>
+            ) : null}
           </div>
 
           {webUsbProgress != null ? (
@@ -367,7 +316,7 @@ export function ResourceDetailModal({
               type="button"
               disabled={webUsbTransferring || !canDirectTransfer}
               title="网页直传"
-              onClick={() => onWebUsbTransfer(resource, { videoFps: fpsSelection, fitMode, rotationDeg, colorProfile })}
+              onClick={() => onWebUsbTransfer(resource, { fitMode, rotationDeg, colorProfile })}
               className="rounded-[12px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,113,227,.3)] disabled:opacity-50"
             >
               {!canDirectTransfer ? "该格式不支持网页直传" : webUsbTransferring ? "网页直传中…" : "网页直传"}

@@ -102,6 +102,16 @@ func (m *mysqlStore) migrate(ctx context.Context) error {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
 		return fmt.Errorf("migrate followed uploaders failed: %w", err)
 	}
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS upload_bans (
+		serial VARCHAR(191) NOT NULL PRIMARY KEY,
+		reason VARCHAR(512) NOT NULL DEFAULT '',
+		admin_actor VARCHAR(191) NOT NULL DEFAULT '',
+		created_at BIGINT NOT NULL DEFAULT 0,
+		updated_at BIGINT NOT NULL DEFAULT 0,
+		KEY idx_upload_bans_updated (updated_at DESC)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate upload bans failed: %w", err)
+	}
 	var resourceIDColumnCount int
 	if err := m.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
@@ -389,6 +399,55 @@ func (m *mysqlStore) setUploaderBlocked(ctx context.Context, serial, uploaderSer
 		return nil, err
 	}
 	return m.listBlockedUploaders(ctx, serial)
+}
+
+// isUploaderBanned checks the dedicated administrator ban table.  The table
+// stores only active bans, so a missing row means the uploader is allowed.
+func (m *mysqlStore) isUploaderBanned(ctx context.Context, serial string) (bool, error) {
+	var marker int
+	err := m.db.QueryRowContext(ctx,
+		`SELECT 1 FROM upload_bans WHERE serial = ? LIMIT 1`,
+		serial,
+	).Scan(&marker)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return marker == 1, nil
+}
+
+func (m *mysqlStore) getUploaderBan(ctx context.Context, serial string) (UploadBan, bool, error) {
+	var entry UploadBan
+	entry.Serial = serial
+	err := m.db.QueryRowContext(ctx,
+		`SELECT reason, admin_actor, created_at, updated_at
+		 FROM upload_bans WHERE serial = ? LIMIT 1`,
+		serial,
+	).Scan(&entry.Reason, &entry.AdminActor, &entry.CreatedAt, &entry.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return UploadBan{}, false, nil
+	}
+	if err != nil {
+		return UploadBan{}, false, err
+	}
+	return entry, true, nil
+}
+
+func (m *mysqlStore) setUploaderBanned(ctx context.Context, serial string, banned bool, reason, adminActor string) error {
+	if banned {
+		now := time.Now().Unix()
+		_, err := m.db.ExecContext(ctx,
+			`INSERT INTO upload_bans (serial, reason, admin_actor, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON DUPLICATE KEY UPDATE reason = VALUES(reason), admin_actor = VALUES(admin_actor), updated_at = VALUES(updated_at)`,
+			serial, reason, adminActor, now, now,
+		)
+		return err
+	}
+	_, err := m.db.ExecContext(ctx, `DELETE FROM upload_bans WHERE serial = ?`, serial)
+	return err
 }
 
 func (m *mysqlStore) listFollowedUploaders(ctx context.Context, serial string) ([]string, error) {

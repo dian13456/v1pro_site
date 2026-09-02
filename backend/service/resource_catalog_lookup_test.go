@@ -1,10 +1,21 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestCatalogResourceIDStringPreservesLargeJSONNumbers(t *testing.T) {
+	const want = "2605310117326672"
+	if got := CatalogResourceIDString(float64(2605310117326672)); got != want {
+		t.Fatalf("float64 id = %q, want %q", got, want)
+	}
+	if got := CatalogResourceIDString(json.Number(want)); got != want {
+		t.Fatalf("json.Number id = %q, want %q", got, want)
+	}
+}
 
 func TestFindUploaderSerial(t *testing.T) {
 	items := []map[string]any{

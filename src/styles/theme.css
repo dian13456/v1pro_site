@@ -210,6 +210,20 @@ html[data-theme] .resource-library-shell::before {
   background: rgba(100, 116, 139, 0.28);
 }
 
+/* Let the available content width decide how many material cards fit. The
+   sidebar and optional album panel can shrink the content area independently
+   of the viewport, so fixed Tailwind breakpoints would leave either unused
+   space or cards that are too narrow. */
+.resource-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  align-items: start;
+}
+
+.resource-card-grid > * {
+  min-width: 0;
+}
+
 .resource-card-apple {
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1),

@@ -22,6 +22,17 @@ export function SiteFooter() {
           安装佳点 V1PRO 控制工具
         </a>
       </p>
+      <p className="mt-3">
+        <a
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/55 px-3 py-1.5 font-medium text-slate-600 shadow-sm transition-colors hover:border-violet-300 hover:text-violet-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-violet-400/50 dark:hover:text-violet-200"
+          aria-label="前往工信部备案官网查询粤ICP备2026121845号"
+        >
+          粤ICP备2026121845号
+        </a>
+      </p>
     </footer>
   );
 }

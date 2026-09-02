@@ -54,6 +54,12 @@ export interface V1ProTransferResult {
   note?: string;
 }
 
+export interface V1ProPreeraseResult {
+  requestedBytes: number;
+  confirmedBytes: number;
+  error?: unknown;
+}
+
 export interface V1ProTransferFileOptions {
   fileName?: string;
   mediaType?: "image" | "gif" | "video";
@@ -67,7 +73,6 @@ export interface V1ProTransferFileOptions {
   colorProfile?: "normal" | "vivid" | "professional";
   pingFirst?: boolean;
   requirePing?: boolean;
-  preparedTotalBytes?: number;
   prebuiltGfm1?: {
     frameCount: number;
     fps?: number;
@@ -127,6 +132,8 @@ export interface V1ProWebTransferClient {
     url: string,
     opts?: Pick<V1ProTransferFileOptions, "maxFrames" | "maxVideoFps" | "minVideoFps" | "maxVideoSpeed">,
   ): Promise<V1ProVideoTransferPrediction>;
-  beginPreparedVideoTransfer(totalBytes: number): Promise<void>;
+  estimatePreeraseBytes(estimatedFrames: number): number;
+  beginPreparedTransfer(totalBytes: number): Promise<V1ProPreeraseResult>;
+  beginPreparedVideoTransfer(totalBytes: number): Promise<V1ProPreeraseResult>;
   transferFile(file: Blob, opts?: V1ProTransferFileOptions): Promise<V1ProTransferResult>;
 }

@@ -39,6 +39,11 @@ export interface MallOrder {
   status: MallOrderStatus | string;
   items: MallOrderItem[];
   totalCents: number;
+  paymentMethod?: "wechat" | "manual" | string;
+  paymentMode?: "native" | "h5" | string;
+  paymentTradeNo?: string;
+  paymentTransactionId?: string;
+  paymentExpiresAt?: number;
   province?: string;
   city?: string;
   trackingNo?: string;
@@ -48,6 +53,20 @@ export interface MallOrder {
   paidAt?: number;
   shippedAt?: number;
   hasAddress?: boolean;
+}
+
+export interface MallWeChatPayCapabilities {
+  enabled: boolean;
+  modes: Array<"native" | "h5" | string>;
+  expireMinutes: number;
+}
+
+export interface MallWeChatPayment {
+  mode: "native" | "h5" | string;
+  outTradeNo: string;
+  codeUrl?: string;
+  h5Url?: string;
+  expiresAt: number;
 }
 
 export interface MallShippingInput {
@@ -78,8 +97,8 @@ export interface MallCartLine {
 }
 
 export const MALL_ORDER_STATUS_LABEL: Record<string, string> = {
-  pending_pay: "已下单",
-  paid: "已确认付款待发货",
+  pending_pay: "待支付",
+  paid: "已付款待发货",
   shipped: "已发货",
   cancelled: "已取消",
 };

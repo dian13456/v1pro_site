@@ -12,12 +12,12 @@ import {
   PREFETCH_CHUNKS_BEFORE_START,
   SPECTRUM_BANDS,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.35";
+} from "./v1pro-constants.js?v=1.2.36";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.35";
-import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.35";
+} from "./v1pro-gfm1.js?v=1.2.36";
+import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.36";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -39,7 +39,7 @@ import {
   sendLiveRgb565,
   exitLiveMode,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.35";
+} from "./v1pro-usb.js?v=1.2.36";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -53,7 +53,7 @@ async function optimizePrebuiltGfm1InWorker(sourceBytes, options) {
   let worker;
   try {
     worker = new Worker(
-      new URL("./v1pro-gfm-compression-worker.js?v=1.2.35", import.meta.url),
+      new URL("./v1pro-gfm-compression-worker.js?v=1.2.36", import.meta.url),
       { type: "module", name: "v1pro-gfm-compression" },
     );
   } catch {
@@ -121,12 +121,21 @@ async function planPrebuiltGfm1(blob, metadata = {}, options = {}) {
   }
 
   const sourceBytes = new Uint8Array(await blob.arrayBuffer());
+  // The material-card path deliberately omits a user-selected FPS. Keep its
+  // beginner floor firmware-aware here as a defensive fallback: GFM3 devices
+  // may measure down to 20fps, while legacy devices retain the stable 25fps
+  // compatibility floor. Explicit callers still win via minVideoFps.
+  const automaticMinFps = options.beginnerAuto
+    ? (options.capacity?.persistentCompression ? 20 : 25)
+    : undefined;
   let optimized;
   try {
     optimized = await optimizePrebuiltGfm1InWorker(sourceBytes, {
       maxBytes: options.maxPayloadBytes,
       maxFps: options.maxVideoFps,
-      fitMinFps: options.mediaType === "video" ? (options.minVideoFps ?? 20) : 15,
+      fitMinFps: options.mediaType === "video"
+        ? (options.minVideoFps ?? automaticMinFps ?? 20)
+        : 15,
       maxSpeed: options.maxVideoSpeed ?? 10,
       autoSpeed: options.mediaType === "video",
       gfm2Enabled: options.capacity?.gfm2 === true,
@@ -204,6 +213,14 @@ export class V1ProWebTransfer {
     /** @type {import("./v1pro-usb.js").parseJedecReply extends (t: infer T) => infer R ? R : never|null} */
     this.deviceCapacity = null;
     this.preparedTransferBytes = null;
+    /**
+     * @type {{
+     *   requestedBytes: number,
+     *   transferStarted: boolean,
+     *   promise: Promise<{requestedBytes: number, confirmedBytes: number, error?: unknown}>,
+     * }|null}
+     */
+    this.preparedTransfer = null;
     /** @type {string|null} */
     this.capacityError = null;
     this.spectrumActive = false;
@@ -274,6 +291,18 @@ export class V1ProWebTransfer {
 
   async disconnect() {
     const d = this.device;
+    const preparedTransfer = this.preparedTransfer;
+    if (preparedTransfer?.promise) {
+      try {
+        // WebUSB cannot cancel an in-flight transferIn. Join the sized erase
+        // before releasing the interface so its delayed ACK cannot steal the
+        // next device command or leak the USB handle to the desktop GUI.
+        await preparedTransfer.promise;
+      } catch {
+        // beginPreparedTransfer resolves failures for START fallback, but keep
+        // disconnect defensive if a future implementation rejects instead.
+      }
+    }
     if (d?.opened && this.spectrumActive) {
       try {
         await stopSpectrum(d);
@@ -292,6 +321,8 @@ export class V1ProWebTransfer {
     this.deviceCapacity = null;
     this.capacityError = null;
     this.preparedTransferBytes = null;
+    this.preparedTransfer = null;
+    this.busy = false;
     this.spectrumActive = false;
     this.spectrumSequence = 0;
     this.liveModeActive = false;
@@ -440,24 +471,65 @@ export class V1ProWebTransfer {
     return prediction;
   }
 
-  async beginPreparedVideoTransfer(totalBytes) {
+  estimatePreeraseBytes(estimatedFrames) {
+    const capacity = this.deviceCapacity;
+    if (!capacity?.maxPayloadBytes) {
+      throw new V1ProUsbError("capacity_unavailable", "无法读取设备容量，不能计算预擦除范围。");
+    }
+    const width = Math.max(1, Math.trunc(capacity.lcdW || LCD_W));
+    const height = Math.max(1, Math.trunc(capacity.lcdH || LCD_H));
+    let eraseFrames = Math.ceil(Math.max(1, Number(estimatedFrames) || 1) * 1.2) + 1;
+    if (Number.isFinite(capacity.maxFrames) && capacity.maxFrames > 0) {
+      eraseFrames = Math.min(eraseFrames, Math.trunc(capacity.maxFrames));
+    }
+    const referenceBytes = GFM1_HEADER_BYTES + eraseFrames * (2 + width * height * 2);
+    return Math.min(capacity.maxPayloadBytes, referenceBytes);
+  }
+
+  beginPreparedTransfer(totalBytes) {
     if (!this.device || !this.device.opened) {
       throw new V1ProUsbError("not_connected", "请先连接设备。");
     }
-    if (this.busy || this.preparedTransferBytes != null) {
+    if (this.busy || this.preparedTransfer != null) {
       throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
     }
     const maxPayloadBytes = this.deviceCapacity?.maxPayloadBytes;
     if (!maxPayloadBytes) {
       throw new V1ProUsbError("capacity_unavailable", "无法读取设备容量，不能开始预擦除。");
     }
-    this.busy = true;
-    try {
-      await beginGfm1PayloadStream(this.device, totalBytes, { maxPayloadBytes });
-      this.preparedTransferBytes = totalBytes;
-    } finally {
-      this.busy = false;
+    const requestedBytes = Math.trunc(Number(totalBytes));
+    if (!Number.isFinite(requestedBytes) || requestedBytes <= 0 || requestedBytes > maxPayloadBytes) {
+      throw new V1ProUsbError(
+        "invalid_preerase_size",
+        `预擦除范围无效（${totalBytes}/${maxPayloadBytes} 字节）。`,
+      );
     }
+    const waitForAck = this.deviceCapacity?.gfm2 === true
+      || this.deviceCapacity?.persistentCompression === true;
+    this.busy = true;
+    const state = {
+      requestedBytes,
+      transferStarted: false,
+      promise: Promise.resolve({ requestedBytes, confirmedBytes: 0 }),
+    };
+    state.promise = beginGfm1PayloadStream(this.device, requestedBytes, {
+      maxPayloadBytes,
+      waitForAck,
+    }).then((confirmedBytes) => ({
+      requestedBytes,
+      confirmedBytes: Number.isFinite(confirmedBytes) ? Number(confirmedBytes) : requestedBytes,
+    })).catch((error) => ({
+      requestedBytes,
+      confirmedBytes: 0,
+      error,
+    }));
+    this.preparedTransferBytes = requestedBytes;
+    this.preparedTransfer = state;
+    return state.promise;
+  }
+
+  beginPreparedVideoTransfer(totalBytes) {
+    return this.beginPreparedTransfer(totalBytes);
   }
 
   /**
@@ -468,7 +540,8 @@ export class V1ProWebTransfer {
     if (!this.device || !this.device.opened) {
       throw new V1ProUsbError("not_connected", "请先连接设备。");
     }
-    if (this.busy) {
+    const preparedTransfer = this.preparedTransfer;
+    if (this.busy && (!preparedTransfer || preparedTransfer.transferStarted)) {
       throw new V1ProUsbError("busy", "当前有传输任务正在进行。");
     }
     if (!(file instanceof Blob) || file.size <= 0) {
@@ -491,17 +564,7 @@ export class V1ProWebTransfer {
       opts.mediaType === "video" ||
       lowerType.startsWith("video/") ||
       /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
-    const preparedTotalBytes = opts.preparedTotalBytes ?? null;
-    if (
-      this.preparedTransferBytes != null &&
-      preparedTotalBytes !== this.preparedTransferBytes
-    ) {
-      throw new V1ProUsbError(
-        "prepared_transfer_mismatch",
-        "预擦除任务与当前视频不一致，请重新连接设备后重试。"
-      );
-    }
-
+    if (preparedTransfer) preparedTransfer.transferStarted = true;
     this.busy = true;
     let probeNote;
     try {
@@ -530,6 +593,9 @@ export class V1ProWebTransfer {
         );
       }
       const capacity = this.deviceCapacity;
+      const automaticMinVideoFps = opts.beginnerAuto
+        ? (capacity?.persistentCompression ? 20 : 25)
+        : undefined;
       const maxFrames = opts.maxFrames ?? capacity?.maxFrames ?? DEFAULT_MAX_GIF_FRAMES;
       const maxPayloadBytes = capacity?.maxPayloadBytes;
       const capacityNote = formatDeviceCapacityLabel(this.deviceCapacity);
@@ -554,13 +620,14 @@ export class V1ProWebTransfer {
             maxPayloadBytes,
             mediaType: opts.mediaType,
             maxVideoFps: opts.maxVideoFps ?? capacity?.materialMaxFps ?? MAX_VIDEO_FPS,
-            minVideoFps: opts.minVideoFps,
+            minVideoFps: opts.minVideoFps ?? automaticMinVideoFps,
+            beginnerAuto: opts.beginnerAuto === true,
             maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
           })
         : await planGfm1Encode(file, {
             maxFrames,
             maxVideoFps: opts.maxVideoFps ?? MAX_VIDEO_FPS,
-            minVideoFps: opts.minVideoFps,
+            minVideoFps: opts.minVideoFps ?? automaticMinVideoFps,
             maxVideoSpeed: opts.maxVideoSpeed ?? MAX_VIDEO_SPEED,
             maxPayloadBytes,
             fileName,
@@ -599,11 +666,31 @@ export class V1ProWebTransfer {
           `GFM1 过大（${plan.totalBytes} 字节），超过设备可用 Flash（约 ${this.deviceCapacity?.usableMb ?? "?"}MB）。`
         );
       }
-      if (preparedTotalBytes != null && plan.totalBytes > preparedTotalBytes) {
-        throw new V1ProUsbError(
-          "prediction_changed",
-          `视频实际转换大小超过预擦除范围（${plan.totalBytes}/${preparedTotalBytes} 字节），已停止写入。`
-        );
+      if (preparedTransfer) {
+        if (onProgress) {
+          onProgress({
+            phase: "encode",
+            sent: 0,
+            total: 1,
+            ratio: 0,
+            frameCount: plan.frameCount,
+            note: "正在等待设备预擦除完成…",
+          });
+        }
+        const preerase = await preparedTransfer.promise;
+        if (!preerase.error && preerase.confirmedBytes < plan.totalBytes) {
+          try {
+            // Firmware treats a larger repeated ERASE value as the new total
+            // boundary and only erases the missing tail. START remains the
+            // final safety net if this optional top-up fails.
+            await beginGfm1PayloadStream(this.device, plan.totalBytes, {
+              maxPayloadBytes,
+              waitForAck: capacity?.gfm2 === true || capacity?.persistentCompression === true,
+            });
+          } catch (error) {
+            console.warn("[V1PRO] pre-erase top-up failed; START will complete erase", error);
+          }
+        }
       }
 
       const baseNote = [capacityNote, plan.note, probeNote].filter(Boolean).join("；") || undefined;
@@ -664,6 +751,9 @@ export class V1ProWebTransfer {
       };
     } finally {
       this.preparedTransferBytes = null;
+      if (this.preparedTransfer === preparedTransfer) {
+        this.preparedTransfer = null;
+      }
       this.busy = false;
     }
   }

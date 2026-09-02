@@ -60,9 +60,15 @@ export default function AiImagePage() {
   const [images, setImages] = useState<GeneratedAiImage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [credits, setCredits] = useState<number | null>(null);
+  const [shareRemaining, setShareRemaining] = useState<number | null>(null);
+  const [shareUnlimited, setShareUnlimited] = useState(false);
+  const [shareQuotaLoading, setShareQuotaLoading] = useState(true);
 
   useEffect(() => {
-    if (!hasValidLocalAuth()) return;
+    if (!hasValidLocalAuth()) {
+      setShareQuotaLoading(false);
+      return;
+    }
     void fetchProfile()
       .then((profile) => {
         if (typeof profile.credits === "number") {
@@ -70,12 +76,27 @@ export default function AiImagePage() {
         } else {
           setCredits(DEFAULT_AI_CREDITS);
         }
+        const unlimited = profile.shareUnlimited === true;
+        setShareUnlimited(unlimited);
+        setShareRemaining(
+          unlimited || typeof profile.shareRemaining !== "number"
+            ? null
+            : Math.max(0, Math.floor(profile.shareRemaining)),
+        );
       })
-      .catch(() => setCredits(DEFAULT_AI_CREDITS));
+      .catch(() => {
+        setCredits(DEFAULT_AI_CREDITS);
+        // A failed quota read must not permanently disable the page. The
+        // server remains authoritative and rejects an exhausted request.
+        setShareUnlimited(false);
+        setShareRemaining(null);
+      })
+      .finally(() => setShareQuotaLoading(false));
   }, []);
 
   const creditsKnown = typeof credits === "number";
   const canGenerate = creditsKnown ? credits > 0 : true;
+  const shareQuotaExhausted = !shareUnlimited && shareRemaining !== null && shareRemaining <= 0;
 
   const handleGenerate = async () => {
     if (loading) return;
@@ -147,7 +168,7 @@ export default function AiImagePage() {
   };
 
   const handleShare = async (image: GeneratedAiImage) => {
-    if (sharingId || sharedIds.has(image.id)) return;
+    if (sharingId || sharedIds.has(image.id) || shareQuotaLoading || shareQuotaExhausted) return;
     if (!hasValidLocalAuth()) {
       navigate("/auth", { replace: true });
       return;
@@ -165,6 +186,13 @@ export default function AiImagePage() {
         typeof result.shareRemaining === "number"
           ? result.shareRemaining
           : undefined;
+      if (result.shareUnlimited === true) {
+        setShareUnlimited(true);
+        setShareRemaining(null);
+      } else if (remaining !== undefined) {
+        setShareUnlimited(false);
+        setShareRemaining(Math.max(0, Math.floor(remaining)));
+      }
       setShareNotice(
         remaining !== undefined
           ? `已分享到素材库（#${result.resourceId || ""}），剩余分享次数 ${remaining}`
@@ -178,6 +206,12 @@ export default function AiImagePage() {
         return;
       }
       const message = formatClientError(err, "分享失败");
+      // Keep the button state in sync when another tab consumed the final
+      // slot between the profile read and this request.
+      if (/分享额度已用完|上传次数已用完|最多分享|分享次数/.test(message)) {
+        setShareUnlimited(false);
+        setShareRemaining(0);
+      }
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -292,15 +326,20 @@ export default function AiImagePage() {
                     </SiteButton>
                     <SiteButton
                       type="button"
-                      disabled={isBusy || sharedIds.has(image.id)}
-                      className="rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm"
+                      disabled={isBusy || sharedIds.has(image.id) || shareQuotaLoading || shareQuotaExhausted}
+                      title={shareQuotaLoading ? "正在读取分享额度…" : shareQuotaExhausted ? "上传次数已用完，请到积分商城兑换上传次数" : undefined}
+                      className={`rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm ${shareQuotaExhausted ? "!bg-slate-300 !text-slate-500 !shadow-none" : ""}`}
                       onClick={() => void handleShare(image)}
                     >
                       {sharingId === image.id
                         ? "分享中..."
                         : sharedIds.has(image.id)
                           ? "已分享"
-                          : "一键分享"}
+                          : shareQuotaLoading
+                            ? "读取额度…"
+                            : shareQuotaExhausted
+                              ? "上传次数已用完"
+                              : "一键分享"}
                     </SiteButton>
                   </div>
                 </SiteCard>

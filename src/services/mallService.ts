@@ -1,4 +1,10 @@
-import type { MallOrder, MallProduct, MallShippingInput } from "../types/mall";
+import type {
+  MallOrder,
+  MallProduct,
+  MallShippingInput,
+  MallWeChatPayCapabilities,
+  MallWeChatPayment,
+} from "../types/mall";
 import { getAuthState, hasValidLocalAuth } from "./authService";
 import { API_BASE, apiFetch, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
@@ -76,12 +82,69 @@ export async function createMallOrder(
   const payload = await apiFetch<{ success: boolean; order: MallOrder; message?: string }>("/api/mall/orders", {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ items, ...shipping }),
+    body: JSON.stringify({ items, ...shipping, paymentMethod: "wechat" }),
   });
   if (!payload.success || !payload.order) {
     throw new Error(payload.message || "下单失败");
   }
   return { order: payload.order, message: payload.message || "下单成功" };
+}
+
+export async function fetchMallPaymentCapabilities(): Promise<MallWeChatPayCapabilities> {
+  if (!hasValidLocalAuth() || isStaticMode()) {
+    return { enabled: false, modes: [], expireMinutes: 15 };
+  }
+  const payload = await apiFetch<{
+    success: boolean;
+    wechatPay?: MallWeChatPayCapabilities;
+    message?: string;
+  }>("/api/mall/payment/config", { method: "GET", headers: authHeaders() });
+  if (!payload.success || !payload.wechatPay) {
+    throw new Error(payload.message || "读取在线支付配置失败");
+  }
+  return payload.wechatPay;
+}
+
+export async function createMallWeChatPayment(
+  orderId: string,
+  mode: "native" | "h5",
+): Promise<{ order: MallOrder; payment: MallWeChatPayment }> {
+  const payload = await apiFetch<{
+    success: boolean;
+    order?: MallOrder;
+    payment?: MallWeChatPayment;
+    message?: string;
+  }>(`/api/mall/orders/${encodeURIComponent(orderId)}/wechat-pay`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!payload.success || !payload.order || !payload.payment) {
+    throw new Error(payload.message || "创建微信支付失败");
+  }
+  return { order: payload.order, payment: payload.payment };
+}
+
+export async function fetchMallOrder(orderId: string): Promise<MallOrder> {
+  const payload = await apiFetch<{ success: boolean; order?: MallOrder; message?: string }>(
+    `/api/mall/orders/${encodeURIComponent(orderId)}`,
+    { method: "GET", headers: authHeaders() },
+  );
+  if (!payload.success || !payload.order) {
+    throw new Error(payload.message || "读取订单状态失败");
+  }
+  return payload.order;
+}
+
+export async function cancelMallOrder(orderId: string): Promise<MallOrder> {
+  const payload = await apiFetch<{ success: boolean; order?: MallOrder; message?: string }>(
+    `/api/mall/orders/${encodeURIComponent(orderId)}/cancel`,
+    { method: "POST", headers: authHeaders() },
+  );
+  if (!payload.success || !payload.order) {
+    throw new Error(payload.message || "取消订单失败");
+  }
+  return payload.order;
 }
 
 export async function fetchMyMallOrders(): Promise<MallOrder[]> {

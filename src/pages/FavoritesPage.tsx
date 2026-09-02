@@ -125,7 +125,7 @@ export default function FavoritesPage() {
                 <p className="mt-1 text-xs text-[#8a93a8]">点击星标可取消收藏，操作后列表会立即更新</p>
               </div>
             </div>
-            <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <section className="resource-card-grid gap-5">
             {favoriteResources.map((resource) => (
               <ResourceCard
                 key={resource.id}

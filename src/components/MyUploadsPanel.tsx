@@ -216,14 +216,20 @@ export function MyUploadsPanel() {
     setErrorMessage("");
     setNoticeMessage("");
     try {
+      let result;
       if (item.kind === "published") {
-        await deleteMyUpload({ kind: "published", resourceId: item.resource.id });
+        result = await deleteMyUpload({ kind: "published", resourceId: item.resource.id });
       } else {
-        await deleteMyUpload({ kind: "review", reviewId: item.review.reviewId });
+        result = await deleteMyUpload({ kind: "review", reviewId: item.review.reviewId });
       }
-      setNoticeMessage("素材已删除");
-      window.setTimeout(() => setNoticeMessage(""), 3000);
       await loadUploads();
+      if (!result.cleanupComplete) {
+        const details = result.cleanupWarnings.join("、");
+        setErrorMessage(details ? `素材已删除，但${details}` : "素材已删除，部分关联数据清理失败");
+      } else {
+        setNoticeMessage(result.message);
+        window.setTimeout(() => setNoticeMessage(""), 3000);
+      }
     } catch (err) {
       setErrorMessage((err as Error)?.message || "删除失败");
     } finally {

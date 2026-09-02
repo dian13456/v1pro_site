@@ -20,6 +20,25 @@ func (d *testObjectDeleter) DeleteObject(_ context.Context, key string) error {
 	return d.err
 }
 
+func TestDeleteReviewObjectsExportedWrapper(t *testing.T) {
+	gif := &testObjectDeleter{}
+	cover := &testObjectDeleter{}
+	item := PendingImageReview{
+		Action:         ReviewActionShareUserGif,
+		GifObjectKey:   "gif/demo.gif",
+		CoverObjectKey: "covers/demo.jpg",
+	}
+	if err := DeleteReviewObjects(context.Background(), item, UploadDeleteSigners{Gif: gif, GifCover: cover}); err != nil {
+		t.Fatalf("delete review objects: %v", err)
+	}
+	if !strings.EqualFold(strings.Join(gif.keys, ","), "gif/demo.gif") {
+		t.Fatalf("unexpected gif keys: %v", gif.keys)
+	}
+	if !strings.EqualFold(strings.Join(cover.keys, ","), "covers/demo.jpg") {
+		t.Fatalf("unexpected cover keys: %v", cover.keys)
+	}
+}
+
 func TestFilterCatalogByUploaderSerial(t *testing.T) {
 	items := []map[string]any{
 		{"id": 1, "title": "mine", "uploaderSerial": "abc123"},

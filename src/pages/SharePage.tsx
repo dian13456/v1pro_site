@@ -20,6 +20,7 @@ import {
   matchesAuthenticatedUsbDevice,
 } from "../services/authService";
 import { formatClientError } from "../services/httpClient";
+import { fetchProfile } from "../services/profileService";
 import {
   MAX_GIF_UPLOAD_BYTES,
   shareGifToCatalog,
@@ -44,6 +45,7 @@ import { defaultTransferFitMode } from "../utils/transferFitMode";
 import type { ResourceTransferDefaults } from "../types/resource";
 import {
   COMPATIBLE_VIDEO_FPS,
+  COMPATIBLE_VIDEO_FPS_FALLBACK,
   parseVideoFpsSelection,
   resolveVideoFps,
   type VideoFpsSelection,
@@ -115,6 +117,11 @@ function kindLabel(kind: ShareMediaKind): string {
   }
 }
 
+function normalizeShareRemaining(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.floor(value));
+}
+
 export default function SharePage() {
   const navigate = useNavigate();
   const { columnTagOptions } = useColumnTags();
@@ -138,8 +145,11 @@ export default function SharePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [shareRemaining, setShareRemaining] = useState<number | null>(null);
   const [shareUnlimited, setShareUnlimited] = useState(false);
+  const [shareQuotaLoading, setShareQuotaLoading] = useState(true);
   const [transferring, setTransferring] = useState(false);
   const [targetFrameOptions, setTargetFrameOptions] = useState<number[]>([77, 154, 308]);
+  // The share form keeps its creator-side FPS preference. Material-card
+  // transfers intentionally omit this value and use automatic compatibility.
   const [videoFpsSelection, setVideoFpsSelection] = useState<VideoFpsSelection>(COMPATIBLE_VIDEO_FPS);
   const videoFps = resolveVideoFps(videoFpsSelection);
   const [fitMode, setFitMode] = useState<"fill" | "contain">("fill");
@@ -165,6 +175,38 @@ export default function SharePage() {
     setCustomCoverPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [customCoverFile]);
+
+  useEffect(() => {
+    let active = true;
+    if (!hasValidLocalAuth()) {
+      setShareQuotaLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    void fetchProfile()
+      .then((profile) => {
+        if (!active) return;
+        const unlimited = profile.shareUnlimited === true;
+        setShareUnlimited(unlimited);
+        setShareRemaining(unlimited ? null : normalizeShareRemaining(profile.shareRemaining));
+      })
+      .catch(() => {
+        // An unavailable profile endpoint must not permanently lock sharing;
+        // the upload endpoint remains the final source of truth for quota.
+        if (!active) return;
+        setShareUnlimited(false);
+        setShareRemaining(null);
+      })
+      .finally(() => {
+        if (active) setShareQuotaLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const selectFile = (file?: File) => {
     setErrorMessage("");
@@ -216,6 +258,14 @@ export default function SharePage() {
 
   const handleShare = async () => {
     if (!selectedFile || !mediaKind || uploading) return;
+    if (shareQuotaLoading) {
+      setErrorMessage("正在读取分享额度，请稍候再试");
+      return;
+    }
+    if (!shareUnlimited && shareRemaining !== null && shareRemaining <= 0) {
+      setErrorMessage("上传次数已用完，请到积分商城兑换上传次数后再分享");
+      return;
+    }
     if (!title.trim()) {
       setErrorMessage("请填写素材标题，标题不会再自动使用文件名称");
       return;
@@ -291,7 +341,7 @@ export default function SharePage() {
       if (unlimited) {
         setShareRemaining(null);
       } else if (typeof remaining === "number") {
-        setShareRemaining(remaining);
+        setShareRemaining(normalizeShareRemaining(remaining));
       }
       setSelectedFile(null);
       setMediaKind(null);
@@ -307,7 +357,15 @@ export default function SharePage() {
         setCustomCoverFile(null);
         return;
       }
-      setErrorMessage(formatClientError(err, `${kindLabel(mediaKind)} 分享失败`));
+      const message = formatClientError(err, `${kindLabel(mediaKind)} 分享失败`);
+      // Another tab/device may have consumed the last slot after this page
+      // loaded its profile. Synchronize the local UI with the server's
+      // authoritative rejection so the action turns gray immediately.
+      if (/分享额度已用完|上传次数已用完|最多分享|分享次数/.test(message)) {
+        setShareUnlimited(false);
+        setShareRemaining(0);
+      }
+      setErrorMessage(message);
     } finally {
       setUploading(false);
       setProgress("");
@@ -361,7 +419,26 @@ export default function SharePage() {
           throw new Error("超过 50MB 的视频请先完成分享压缩，再从素材中心进行网页直传");
         }
         const duration = await probeBrowserVideoDuration(selectedFile);
-        const plan = planBrowserFfmpegVideo(duration, detectedFrames, videoFps);
+        const compatibleSelection = videoFpsSelection === COMPATIBLE_VIDEO_FPS;
+        const persistentCompression = client.deviceCapacity?.persistentCompression === true;
+        const beginnerAuto = compatibleSelection;
+        const maxVideoFps = compatibleSelection
+          ? (persistentCompression ? (client.deviceCapacity?.materialMaxFps || 30) : COMPATIBLE_VIDEO_FPS_FALLBACK)
+          : videoFps;
+        const minVideoFps = compatibleSelection
+          ? (persistentCompression ? 20 : COMPATIBLE_VIDEO_FPS_FALLBACK)
+          : videoFps;
+        // GFM3 devices start at their reported upper bound. Keep a full
+        // upper-bound candidate so the SDK can measure compressed bytes and
+        // lower to 20fps only when the final payload needs it.
+        const candidateFrameBudget = compatibleSelection && persistentCompression
+          ? Math.max(1, Math.ceil(duration * maxVideoFps))
+          : detectedFrames;
+        // Keep the same upper-bound budget for the non-FFmpeg fallback. The
+        // transfer SDK can then apply its GFM3 measured-byte fitter instead
+        // of prematurely truncating a modern device to 77/154/308 frames.
+        const transferMaxFrames = candidateFrameBudget;
+        const plan = planBrowserFfmpegVideo(duration, candidateFrameBudget, maxVideoFps);
         let preparedTransferStarted = false;
         try {
           const converted = await convertBrowserVideoWithFfmpeg(selectedFile, {
@@ -373,17 +450,24 @@ export default function SharePage() {
             onStatus: setProgress,
             onProgress: (ratio) => setProgress(`FFmpeg 本地转换 ${Math.round(ratio * 100)}%`),
           });
+          // The FFmpeg result is an uncompressed GFM1 candidate.  On GFM3
+          // firmware it can legitimately be larger than Flash before the
+          // measured-byte optimizer reduces it, so never reject the transfer
+          // by trying to erase the raw blob size.  Start a bounded estimate;
+          // transferFile waits for it and tops up the tail after compression.
           setProgress("本地转换完成，正在准备设备存储…");
           preparedTransferStarted = true;
-          await client.beginPreparedVideoTransfer(converted.totalBytes);
+          void client.beginPreparedTransfer(
+            client.estimatePreeraseBytes(converted.frameCount),
+          );
           result = await client.transferFile(converted.blob, {
             fileName: selectedFile.name,
             mediaType: "video",
-            maxFrames: detectedFrames,
-            maxVideoFps: videoFps,
-            minVideoFps: videoFps,
+            maxFrames: transferMaxFrames,
+            maxVideoFps,
+            minVideoFps,
+            beginnerAuto,
             pingFirst: false,
-            preparedTotalBytes: converted.totalBytes,
             prebuiltGfm1: {
               frameCount: converted.frameCount,
               fps: converted.fps,
@@ -397,9 +481,10 @@ export default function SharePage() {
           result = await client.transferFile(selectedFile, {
             fileName: selectedFile.name,
             mediaType: "video",
-            maxFrames: detectedFrames,
-            maxVideoFps: videoFps,
-            minVideoFps: videoFps,
+            maxFrames: transferMaxFrames,
+            maxVideoFps,
+            minVideoFps,
+            beginnerAuto,
             maxVideoSpeed: 10,
             fitMode,
             rotationDeg,
@@ -443,6 +528,15 @@ export default function SharePage() {
 
   const gifMb = Math.floor(MAX_GIF_UPLOAD_BYTES / (1024 * 1024));
   const videoMb = Math.floor(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024));
+  const shareQuotaExhausted = !shareUnlimited && shareRemaining !== null && shareRemaining <= 0;
+  const shareButtonDisabled =
+    !selectedFile ||
+    !mediaKind ||
+    uploading ||
+    transferring ||
+    !title.trim() ||
+    shareQuotaLoading ||
+    shareQuotaExhausted;
   const fieldClass = "w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] text-[#2b3245] outline-none transition focus:border-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-50";
   const fieldLabelClass = "mb-[7px] block text-[12.5px] font-semibold text-[#4a5270]";
 
@@ -459,7 +553,15 @@ export default function SharePage() {
             <p className="mt-1.5 text-xs leading-[1.6] text-[#8a93a8]">
               支持静态图片（8MB）、GIF（{gifMb}MB）、视频源文件（{videoMb}MB）；超过约 20MB 的视频会在浏览器本地压缩后直传 COS。
               他人点赞可增加 <b className="text-[#2b3245]">1 积分</b>，有效下载再增加 <b className="text-[#2b3245]">0.5 积分</b>。
-              {shareUnlimited ? " 当前分享次数：无限制。" : shareRemaining != null ? ` 当前剩余分享次数：${shareRemaining}。` : ""}
+              {shareQuotaLoading
+                ? " 正在读取分享额度…"
+                : shareUnlimited
+                  ? " 当前分享次数：无限制。"
+                  : shareRemaining != null
+                    ? shareRemaining <= 0
+                      ? " 上传次数已用完，请到积分商城兑换后再分享。"
+                      : ` 当前剩余分享次数：${shareRemaining}。`
+                    : ""}
             </p>
           </header>
 
@@ -584,7 +686,7 @@ export default function SharePage() {
                       className={`rounded-xl border-[1.5px] px-2.5 py-3 text-center transition ${selected ? "border-[#ff8a5c] bg-[#fff7f2] shadow-[0_0_0_2px_rgba(255,138,92,.18)]" : "border-[#e6e9f2] bg-white hover:border-[#ff8a5c]"}`}
                     >
                       <span className="block text-[19px] font-extrabold">{frames} 帧</span>
-                      <span className="mt-1 block text-[11px] leading-[1.5] text-[#8a93a8]">约 {frames} 张图片<br />{videoFps}fps 约 {(frames / videoFps).toFixed(1)}s</span>
+                      <span className="mt-1 block text-[11px] leading-[1.5] text-[#8a93a8]">最多存储 {frames} 帧画面</span>
                     </button>
                   );
                 })}
@@ -632,13 +734,14 @@ export default function SharePage() {
                 fitMode={fitMode}
                 rotationDeg={rotationDeg}
                 colorProfile={videoColorProfile}
-                videoFpsLabel={videoFpsSelection === COMPATIBLE_VIDEO_FPS ? `兼容模式 · ${videoFps} fps` : `${videoFps} fps`}
+                videoFpsLabel={videoFpsSelection === COMPATIBLE_VIDEO_FPS ? "兼容模式 · 自动" : `${videoFps} fps`}
                 targetFrameOptions={targetFrameOptions}
               />
             </div>
 
             {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
             {errorMessage ? <SiteAlert variant="error" className="mt-4">{errorMessage}</SiteAlert> : null}
+            {shareQuotaExhausted ? <SiteAlert variant="error" className="mt-4">上传次数已用完，请前往积分商城兑换上传次数后再分享。</SiteAlert> : null}
           </div>
 
           <footer className="flex flex-wrap justify-end gap-3 border-t border-[#e6e9f2] px-[26px] pb-[22px] pt-4">
@@ -646,8 +749,17 @@ export default function SharePage() {
             <button type="button" disabled={!selectedFile || !mediaKind || uploading || transferring || targetFrameOptions.length === 0} onClick={() => void handleDeviceTransfer()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">
               {transferring ? progress || "下传中…" : "⬇ 下载到当前设备"}
             </button>
-            <button type="button" disabled={!selectedFile || !mediaKind || uploading || !title.trim()} onClick={() => void handleShare()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.3)] disabled:opacity-50">
-              {uploading ? progress || "分享中…" : "🚀 分享到素材库"}
+            <button
+              type="button"
+              disabled={shareButtonDisabled}
+              onClick={() => void handleShare()}
+              title={shareQuotaLoading ? "正在读取分享额度…" : shareQuotaExhausted ? "上传次数已用完，请到积分商城兑换上传次数" : undefined}
+              className={`rounded-[10px] px-5 py-2.5 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${shareQuotaExhausted
+                ? "bg-[#c7ccd8] text-[#687083] shadow-none"
+                : "bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] text-white shadow-[0_4px_12px_rgba(255,138,92,.3)]"
+                }`}
+            >
+              {uploading ? progress || "分享中…" : shareQuotaLoading ? "读取额度…" : shareQuotaExhausted ? "上传次数已用完" : "🚀 分享到素材库"}
             </button>
           </footer>
         </section>

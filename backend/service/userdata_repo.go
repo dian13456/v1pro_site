@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 type UserDataPaths struct {
-	LikesPath             string
-	FavoritesPath         string
-	BlockedUploadersPath  string
+	LikesPath            string
+	FavoritesPath        string
+	BlockedUploadersPath string
+	// UploadBansPath stores administrator-enforced global upload bans when
+	// STORAGE_BACKEND=json. It is deliberately distinct from
+	// BlockedUploadersPath, which is a per-viewer hide list.
+	UploadBansPath        string
 	FollowedUploadersPath string
 	DownloadsPath         string
 	MessagesPath          string
@@ -27,11 +32,12 @@ type UserDataPaths struct {
 }
 
 type UserDataRepo struct {
-	backend    string
-	paths      UserDataPaths
-	mysql      *mysqlStore
-	blockedMu  sync.Mutex
-	followedMu sync.Mutex
+	backend      string
+	paths        UserDataPaths
+	mysql        *mysqlStore
+	blockedMu    sync.Mutex
+	uploadBansMu sync.Mutex
+	followedMu   sync.Mutex
 }
 
 func NewUserDataRepo(paths UserDataPaths) (*UserDataRepo, error) {
@@ -42,6 +48,9 @@ func NewUserDataRepo(paths UserDataPaths) (*UserDataRepo, error) {
 	repo := &UserDataRepo{
 		backend: backend,
 		paths:   paths,
+	}
+	if strings.TrimSpace(repo.paths.UploadBansPath) == "" {
+		repo.paths.UploadBansPath = filepath.Join("config", "upload_bans.json")
 	}
 	if backend == "mysql" {
 		mysqlStore, err := openMySQLStore(os.Getenv("MYSQL_DSN"))
@@ -167,6 +176,93 @@ func (r *UserDataRepo) SetUploaderBlocked(serial, uploaderSerial string, blocked
 		return nil, err
 	}
 	return BlockedUploaderSerialsForDevice(store, serial), nil
+}
+
+// IsUploaderBanned reports whether an administrator has disabled material
+// uploads for the given device SN.  This is intentionally separate from
+// ListBlockedUploaders/SetUploaderBlocked: those methods only hide another
+// uploader's resources for one viewer and must never gate uploads globally.
+func (r *UserDataRepo) IsUploaderBanned(serial string) (bool, error) {
+	serial = NormalizeUploadBanSerial(serial)
+	if serial == "" {
+		return false, fmt.Errorf("serial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.isUploaderBanned(ctx, serial)
+	}
+	r.uploadBansMu.Lock()
+	defer r.uploadBansMu.Unlock()
+	store, err := LoadUploadBanStore(r.paths.UploadBansPath)
+	if err != nil {
+		return false, err
+	}
+	return store.IsBanned(serial), nil
+}
+
+// GetUploaderBan returns active ban metadata, if present.  The bool is false
+// when the uploader is not currently banned.  It is useful to build an admin
+// response without exposing the private catalog field to clients.
+func (r *UserDataRepo) GetUploaderBan(serial string) (UploadBan, bool, error) {
+	serial = NormalizeUploadBanSerial(serial)
+	if serial == "" {
+		return UploadBan{}, false, fmt.Errorf("serial empty")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.getUploaderBan(ctx, serial)
+	}
+	r.uploadBansMu.Lock()
+	defer r.uploadBansMu.Unlock()
+	store, err := LoadUploadBanStore(r.paths.UploadBansPath)
+	if err != nil {
+		return UploadBan{}, false, err
+	}
+	entry, ok := store.Get(serial)
+	return entry, ok, nil
+}
+
+// SetUploaderBanned changes the active global upload ban.  Optional metadata
+// values are interpreted as reason, then administrator actor; accepting a
+// variadic tail keeps the simple two-argument API compatible with callers that
+// do not need audit metadata while allowing trusted routes to supply it.
+func (r *UserDataRepo) SetUploaderBanned(serial string, banned bool, metadata ...string) error {
+	reason, adminActor := "", ""
+	if len(metadata) > 0 {
+		reason = metadata[0]
+	}
+	if len(metadata) > 1 {
+		adminActor = metadata[1]
+	}
+	return r.SetUploaderBanWithMetadata(serial, banned, reason, adminActor)
+}
+
+// SetUploaderBanWithMetadata is the metadata-aware variant used by trusted
+// administrator paths.  A false value removes the active ban idempotently.
+func (r *UserDataRepo) SetUploaderBanWithMetadata(serial string, banned bool, reason, adminActor string) error {
+	serial = NormalizeUploadBanSerial(serial)
+	if serial == "" {
+		return fmt.Errorf("serial empty")
+	}
+	reason = strings.TrimSpace(reason)
+	adminActor = strings.TrimSpace(adminActor)
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.setUploaderBanned(ctx, serial, banned, reason, adminActor)
+	}
+	r.uploadBansMu.Lock()
+	defer r.uploadBansMu.Unlock()
+	store, err := LoadUploadBanStore(r.paths.UploadBansPath)
+	if err != nil {
+		return err
+	}
+	if _, err := store.SetBanned(serial, banned, reason, adminActor); err != nil {
+		return err
+	}
+	return SaveUploadBanStore(r.paths.UploadBansPath, store)
 }
 
 func (r *UserDataRepo) ListFollowedUploaders(serial string) ([]string, error) {
@@ -574,6 +670,15 @@ func (r *UserDataRepo) ImportJSONFiles() error {
 	}
 	if err := r.SaveAIShareUnlimited(unlimited); err != nil {
 		return fmt.Errorf("save shares unlimited: %w", err)
+	}
+	bans, err := LoadUploadBanStore(r.paths.UploadBansPath)
+	if err != nil {
+		return fmt.Errorf("upload bans: %w", err)
+	}
+	for serial, ban := range bans.Bans {
+		if err := r.SetUploaderBanWithMetadata(serial, true, ban.Reason, ban.AdminActor); err != nil {
+			return fmt.Errorf("save upload ban %s: %w", serial, err)
+		}
 	}
 	return nil
 }

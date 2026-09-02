@@ -33,7 +33,7 @@ func FilterCatalogByUploaderSerial(items []map[string]any, serial string) []map[
 		if item == nil {
 			continue
 		}
-		uploader := normalizeUploaderSerial(stringifyCatalogValue(item[catalogUploaderSerialKey]))
+		uploader := catalogUploaderSerialValue(item)
 		if uploader != target {
 			continue
 		}
@@ -367,7 +367,7 @@ func catalogEntryOwnedBySerial(entry map[string]any, serial string) bool {
 	if entry == nil {
 		return false
 	}
-	uploader := normalizeUploaderSerial(stringifyCatalogValue(entry[catalogUploaderSerialKey]))
+	uploader := catalogUploaderSerialValue(entry)
 	target := normalizeUploaderSerial(serial)
 	return uploader != "" && uploader == target
 }
@@ -378,7 +378,7 @@ func PublishedUploadUploaderSerial(entry map[string]any) string {
 	if entry == nil {
 		return ""
 	}
-	return normalizeUploaderSerial(stringifyCatalogValue(entry[catalogUploaderSerialKey]))
+	return catalogUploaderSerialValue(entry)
 }
 
 func tryDeleteObject(ctx context.Context, signer COSObjectDeleter, objectKey string) error {
@@ -646,6 +646,14 @@ func deleteReviewObjects(ctx context.Context, item PendingImageReview, signers U
 		deleteOne(signers.Image, item.ImageObjectKey)
 	}
 	return errors.Join(deleteErrs...)
+}
+
+// DeleteReviewObjects removes the staged COS objects referenced by a review
+// item.  It is exported for administrator bulk-purge paths; callers should
+// remove the review record only after this function succeeds so a transient
+// COS failure remains retryable.
+func DeleteReviewObjects(ctx context.Context, item PendingImageReview, signers UploadDeleteSigners) error {
+	return deleteReviewObjects(ctx, item, signers)
 }
 
 func RemoveDeviceReviewUpload(store *ImageReviewStore, reviewID, serial string) (PendingImageReview, error) {

@@ -26,7 +26,12 @@ import {
   type ResourceRecommendation,
 } from "../services/recommendationService";
 import { isStaticMode } from "../services/runtimeMode";
-import { adminDeleteResource, adminResetUploaderQuota } from "../services/adminResourceService";
+import {
+  adminDeleteResource,
+  adminFetchUploaderSummary,
+  adminPurgeAndBanUploader,
+  adminResetUploaderQuota,
+} from "../services/adminResourceService";
 import { useAdminSession } from "../hooks/useAdminSession";
 import type { ResourceItem } from "../types/resource";
 import {
@@ -105,6 +110,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const adminSession = useAdminSession();
   const [adminQuotaResettingId, setAdminQuotaResettingId] = useState<number | null>(null);
   const [adminDeletingId, setAdminDeletingId] = useState<number | null>(null);
+  const [adminUploaderPurgingId, setAdminUploaderPurgingId] = useState<number | null>(null);
   const [transferringId, setTransferringId] = useState<number | null>(null);
   const [webUsbTransferringId, setWebUsbTransferringId] = useState<number | null>(null);
   const [transferNotice, setTransferNotice] = useState("");
@@ -770,18 +776,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         updateTransferTask({ progress });
       },
     }, {
-      videoFps: resource.materialType === "video" ? options.videoFps : undefined,
       fitMode: options.fitMode,
       rotationDeg: options.rotationDeg,
       colorProfile: options.colorProfile,
     })
       .then((result) => {
-        let message = result.predictedFrameCount != null
-          ? `网页直传完成：预计 ${result.predictedFrameCount} 帧 · 实际 ${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`
-          : `网页直传完成：${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`;
-        if (result.note) {
-          message += `（${result.note}）`;
-        }
+        const message = `网页直传完成：${result.frameCount} 帧`;
         setTransferNotice(message);
         completeTransferTask(message);
         void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
@@ -1041,7 +1041,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
 
   const handleAdminDelete = async (resource: ResourceItem) => {
     const adminToken = adminSession.adminToken;
-    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null) return;
+    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null || adminUploaderPurgingId != null) return;
     const confirmed = window.confirm(
       `确定永久删除素材「${resource.title || resource.description}」吗？\n\n将同时删除 COS 原文件、封面及相关点赞、收藏、评论记录，此操作不可撤销。`,
     );
@@ -1072,7 +1072,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
 
   const handleAdminQuotaReset = async (resource: ResourceItem) => {
     const adminToken = adminSession.adminToken;
-    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null) return;
+    if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null || adminUploaderPurgingId != null) return;
     const uploaderName = resource.author?.trim() || "该上传人";
     const confirmed = window.confirm(
       `确定将「${uploaderName}」的剩余上传额度重置为 50 次吗？\n\n这会替换现有额外上传额度，但不会删除素材或清除历史上传记录。`,
@@ -1095,6 +1095,72 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     }
   };
 
+  const handleAdminPurgeUploader = async (resource: ResourceItem) => {
+    const adminToken = adminSession.adminToken;
+    if (
+      !adminMode
+      || !adminToken
+      || adminDeletingId != null
+      || adminQuotaResettingId != null
+      || adminUploaderPurgingId != null
+    ) return;
+
+    setAdminUploaderPurgingId(resource.id);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      // Resolve the uploader server-side first. The response contains only a
+      // masked serial, so the browser never needs to receive or submit the SN.
+      const summary = await adminFetchUploaderSummary(adminToken, resource.id);
+      const bannedText = summary.banned ? "（当前已禁止上传，将再次清理并保持禁止状态）" : "";
+      const confirmed = window.confirm(
+        `确定删除上传人「${summary.uploaderName}」的全部素材并禁止继续上传吗？\n\nSN：${summary.uploaderSerialMasked}\n当前公开素材：${summary.publishedResourceCount} 条${bannedText}\n\n将删除该上传人的公开素材、审核中的记录和临时对象，此操作不可撤销。`,
+      );
+      if (!confirmed) return;
+
+      const confirmedAgain = window.confirm(
+        `请再次确认：删除「${summary.uploaderName}」的全部素材，并永久禁止该上传人继续上传？\n\n确认后将立即执行，无法恢复。`,
+      );
+      if (!confirmedAgain) return;
+
+      const result = await adminPurgeAndBanUploader(adminToken, resource.id);
+      const deletedIds = result.deletedResourceIds.length > 0
+        ? result.deletedResourceIds
+        : [resource.id];
+      const deletedIdSet = new Set(deletedIds);
+      deletedIds.forEach((resourceId) => removeResource(resourceId));
+      setRecommendationResources((current) => current.filter((item) => !deletedIdSet.has(item.id)));
+      setRecommendationItems((current) => current.filter((item) => !deletedIdSet.has(item.resourceId)));
+      setServerPageState((current) => current
+        ? {
+            ...current,
+            result: {
+              ...current.result,
+              items: current.result.items.filter((item) => !deletedIdSet.has(item.id)),
+            },
+          }
+        : current);
+      setServerPageRefreshKey((value) => value + 1);
+      setRecommendationRefreshKey((value) => value + 1);
+      setSelectedResource((current) => current && deletedIdSet.has(current.id) ? null : current);
+      setAlbumSelectedIds((current) => current.filter((id) => !deletedIdSet.has(id)));
+      const warningText = result.cleanupWarnings.length > 0
+        ? `；注意：${result.cleanupWarnings.join("、")}`
+        : "";
+      setStatusMessage(
+        `${result.message}（上传人：${result.uploaderName} · SN：${result.uploaderSerialMasked} · 删除公开素材 ${result.deletedResourceCount} 条 · 清理审核记录 ${result.deletedReviewCount} 条）${warningText}`,
+      );
+    } catch (error) {
+      const message = (error as Error)?.message || "管理员清理上传人失败";
+      if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
+        adminSession.handleUnauthorized();
+      }
+      setErrorMessage(message);
+    } finally {
+      setAdminUploaderPurgingId(null);
+    }
+  };
+
   return (
     <div className="site-page-shell resource-library-shell min-h-screen text-[#2b3245]">
       <V1ProTransferNotice message={webUsbProgress == null ? transferNotice : ""} onDismiss={() => setTransferNotice("")} />
@@ -1111,12 +1177,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             {!adminSession.authenticated ? (
               <AdminLoginPanel
                 title="素材库管理员登录"
-                description="登录后可永久删除任意素材，并把指定上传人的剩余上传额度重置为 50 次。所有操作均由服务器验证管理员权限。"
+                description="登录后可永久删除任意素材、重置上传额度，或清理指定上传人的全部素材并禁止继续上传。所有操作均由服务器验证管理员权限。"
                 onLoggedIn={adminSession.refreshSession}
               />
             ) : (
               <SiteAlert variant="success" className="flex flex-wrap items-center justify-between gap-3">
-                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以重置上传人额度或永久删除素材。</span>
+                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以重置额度、删除单个素材，或清理上传人全部素材并禁止上传。</span>
                 <button
                   type="button"
                   onClick={adminSession.logout}
@@ -1343,12 +1409,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             {visibleCatalogError || errorMessage ? <SiteAlert variant="error" className="mb-5">{visibleCatalogError || errorMessage}</SiteAlert> : null}
             {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
             {showInitialLoader ? (
-              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label={recommendationsLoading ? "正在加载推荐素材" : "正在加载素材"}>
+              <section className="resource-card-grid gap-5" aria-label={recommendationsLoading ? "正在加载推荐素材" : "正在加载素材"}>
                 {Array.from({ length: 8 }, (_, index) => <CompactResourceCardSkeleton key={index} />)}
               </section>
             ) : null}
             {canRenderCards ? (
-              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <section className="resource-card-grid gap-5">
                 {displayedItems.map((resource) => (
                   <CompactResourceCard
                     key={resource.id}
@@ -1379,6 +1445,10 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                     adminDeleting={adminDeletingId === resource.id}
                     onAdminDelete={adminMode && adminSession.authenticated
                       ? (item) => void handleAdminDelete(item)
+                      : undefined}
+                    adminUploaderPurging={adminUploaderPurgingId === resource.id}
+                    onAdminPurgeUploader={adminMode && adminSession.authenticated && resource.uploaderBlockable
+                      ? (item) => void handleAdminPurgeUploader(item)
                       : undefined}
                     selectionMode={albumMode}
                     selected={albumSelectedIds.includes(resource.id)}

@@ -193,7 +193,13 @@ export async function renameMyUpload(input: RenameMyUploadInput): Promise<string
   return String(payload.title || title).trim();
 }
 
-export async function deleteMyUpload(input: DeleteMyUploadInput): Promise<void> {
+export interface DeleteMyUploadResult {
+  message: string;
+  cleanupComplete: boolean;
+  cleanupWarnings: string[];
+}
+
+export async function deleteMyUpload(input: DeleteMyUploadInput): Promise<DeleteMyUploadResult> {
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
   }
@@ -207,7 +213,12 @@ export async function deleteMyUpload(input: DeleteMyUploadInput): Promise<void> 
     throw new Error("认证状态无效，请重新验证设备");
   }
 
-  const payload = await apiFetch<{ success?: boolean; message?: string }>("/api/profile/uploads/delete", {
+  const payload = await apiFetch<{
+    success?: boolean;
+    message?: string;
+    cleanupComplete?: boolean;
+    cleanupWarnings?: string[];
+  }>("/api/profile/uploads/delete", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${auth.token}`,
@@ -223,4 +234,11 @@ export async function deleteMyUpload(input: DeleteMyUploadInput): Promise<void> 
   if (payload.success === false) {
     throw new Error(payload.message || "删除失败");
   }
+  return {
+    message: payload.message || "素材已删除",
+    cleanupComplete: payload.cleanupComplete !== false,
+    cleanupWarnings: Array.isArray(payload.cleanupWarnings)
+      ? payload.cleanupWarnings.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+      : [],
+  };
 }

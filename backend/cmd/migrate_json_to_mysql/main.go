@@ -14,14 +14,15 @@ func main() {
 	flag.Parse()
 
 	paths := service.UserDataPaths{
-		LikesPath:     filepath.Join(*configDir, "resource_likes.json"),
-		FavoritesPath: filepath.Join(*configDir, "resource_favorites.json"),
-		DownloadsPath: filepath.Join(*configDir, "resource_downloads.json"),
-		MessagesPath:  filepath.Join(*configDir, "message_board.json"),
-		ProfilesPath:  filepath.Join(*configDir, "user_profiles.json"),
-		CreditsPath:   filepath.Join(*configDir, "ai_image_credits.json"),
-		SharesPath:           filepath.Join(*configDir, "ai_image_share_counts.json"),
-		SharesUnlimitedPath:  filepath.Join(*configDir, "ai_image_share_unlimited.json"),
+		LikesPath:           filepath.Join(*configDir, "resource_likes.json"),
+		FavoritesPath:       filepath.Join(*configDir, "resource_favorites.json"),
+		DownloadsPath:       filepath.Join(*configDir, "resource_downloads.json"),
+		MessagesPath:        filepath.Join(*configDir, "message_board.json"),
+		ProfilesPath:        filepath.Join(*configDir, "user_profiles.json"),
+		CreditsPath:         filepath.Join(*configDir, "ai_image_credits.json"),
+		SharesPath:          filepath.Join(*configDir, "ai_image_share_counts.json"),
+		SharesUnlimitedPath: filepath.Join(*configDir, "ai_image_share_unlimited.json"),
+		UploadBansPath:      filepath.Join(*configDir, "upload_bans.json"),
 	}
 
 	if os.Getenv("STORAGE_BACKEND") == "" {

@@ -117,6 +117,16 @@ func (r *MallRepo) saveJSONLocked() error {
 	return os.WriteFile(r.path, append(raw, '\n'), 0o644)
 }
 
+func (r *MallRepo) commitJSONLocked(next MallDataStore) error {
+	previous := r.cache
+	r.cache = next
+	if err := r.saveJSONLocked(); err != nil {
+		r.cache = previous
+		return err
+	}
+	return nil
+}
+
 func mallNewID(prefix string) string {
 	buf := make([]byte, 8)
 	_, _ = rand.Read(buf)
@@ -282,18 +292,22 @@ func (r *MallRepo) CreateOrder(order MallOrder, stockDelta map[string]int) error
 	if err := r.loadJSONLocked(); err != nil {
 		return err
 	}
+	next := MallDataStore{
+		Products: append([]MallProduct(nil), r.cache.Products...),
+		Orders:   append([]MallOrder(nil), r.cache.Orders...),
+	}
 	for pid, delta := range stockDelta {
 		found := false
-		for i, p := range r.cache.Products {
+		for i, p := range next.Products {
 			if p.ID != pid {
 				continue
 			}
-			next := p.Stock + delta
-			if next < 0 {
+			stockAfter := p.Stock + delta
+			if stockAfter < 0 {
 				return fmt.Errorf("商品「%s」库存不足", p.Title)
 			}
-			r.cache.Products[i].Stock = next
-			r.cache.Products[i].UpdatedAt = time.Now().UnixMilli()
+			next.Products[i].Stock = stockAfter
+			next.Products[i].UpdatedAt = time.Now().UnixMilli()
 			found = true
 			break
 		}
@@ -301,8 +315,8 @@ func (r *MallRepo) CreateOrder(order MallOrder, stockDelta map[string]int) error
 			return fmt.Errorf("商品不存在：%s", pid)
 		}
 	}
-	r.cache.Orders = append(r.cache.Orders, order)
-	return r.saveJSONLocked()
+	next.Orders = append(next.Orders, order)
+	return r.commitJSONLocked(next)
 }
 
 func (r *MallRepo) ListOrdersByUser(serial string) ([]MallOrder, error) {
@@ -371,10 +385,14 @@ func (r *MallRepo) UpdateOrder(order MallOrder, stockDelta map[string]int) error
 	if err := r.loadJSONLocked(); err != nil {
 		return err
 	}
+	next := MallDataStore{
+		Products: append([]MallProduct(nil), r.cache.Products...),
+		Orders:   append([]MallOrder(nil), r.cache.Orders...),
+	}
 	found := false
-	for i, o := range r.cache.Orders {
+	for i, o := range next.Orders {
 		if o.ID == order.ID {
-			r.cache.Orders[i] = order
+			next.Orders[i] = order
 			found = true
 			break
 		}
@@ -387,16 +405,16 @@ func (r *MallRepo) UpdateOrder(order MallOrder, stockDelta map[string]int) error
 			continue
 		}
 		productFound := false
-		for i, p := range r.cache.Products {
+		for i, p := range next.Products {
 			if p.ID != pid {
 				continue
 			}
-			next := p.Stock + delta
-			if next < 0 {
+			stockAfter := p.Stock + delta
+			if stockAfter < 0 {
 				return fmt.Errorf("商品「%s」库存不足", p.Title)
 			}
-			r.cache.Products[i].Stock = next
-			r.cache.Products[i].UpdatedAt = time.Now().UnixMilli()
+			next.Products[i].Stock = stockAfter
+			next.Products[i].UpdatedAt = time.Now().UnixMilli()
 			productFound = true
 			break
 		}
@@ -404,7 +422,156 @@ func (r *MallRepo) UpdateOrder(order MallOrder, stockDelta map[string]int) error
 			return fmt.Errorf("商品不存在：%s", pid)
 		}
 	}
-	return r.saveJSONLocked()
+	return r.commitJSONLocked(next)
+}
+
+func (r *MallRepo) MarkWechatOrderPaid(orderID, transactionID string, amountCents int64) (MallOrder, error) {
+	if orderID == "" || transactionID == "" {
+		return MallOrder{}, errors.New("微信支付交易信息不完整")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.MarkWechatOrderPaid(ctx, orderID, transactionID, amountCents)
+	}
+	if err := r.loadJSONLocked(); err != nil {
+		return MallOrder{}, err
+	}
+	next := MallDataStore{
+		Products: append([]MallProduct(nil), r.cache.Products...),
+		Orders:   append([]MallOrder(nil), r.cache.Orders...),
+	}
+	orderIndex := -1
+	for i := range next.Orders {
+		if next.Orders[i].ID == orderID {
+			orderIndex = i
+			break
+		}
+	}
+	if orderIndex < 0 {
+		return MallOrder{}, errors.New("订单不存在")
+	}
+	order := next.Orders[orderIndex]
+	if order.PaymentMethod != mallPaymentWechat || order.PaymentTradeNo != orderID {
+		return MallOrder{}, errors.New("订单支付信息不匹配")
+	}
+	if amountCents <= 0 || order.TotalCents != amountCents {
+		return MallOrder{}, errors.New("微信支付金额与订单不一致")
+	}
+	if order.Status == MallOrderCancelled {
+		return MallOrder{}, errors.New("已取消订单收到付款通知，请人工核查并退款")
+	}
+	if order.PaymentTransactionID != "" && order.PaymentTransactionID != transactionID {
+		return MallOrder{}, errors.New("订单微信支付交易号冲突")
+	}
+	if order.Status == MallOrderPaid || order.Status == MallOrderShipped {
+		if order.PaymentTransactionID == "" {
+			order.PaymentTransactionID = transactionID
+			order.UpdatedAt = time.Now().UnixMilli()
+			next.Orders[orderIndex] = order
+			if err := r.commitJSONLocked(next); err != nil {
+				return MallOrder{}, err
+			}
+		}
+		return order, nil
+	}
+	if order.Status != MallOrderPendingPay {
+		return MallOrder{}, errors.New("当前订单状态无法确认微信付款")
+	}
+	if !order.StockReserved {
+		needed := map[string]int{}
+		for _, item := range order.Items {
+			needed[item.ProductID] += item.Quantity
+		}
+		for productID, quantity := range needed {
+			found := false
+			for _, product := range next.Products {
+				if product.ID != productID {
+					continue
+				}
+				found = true
+				if product.Stock < quantity {
+					return MallOrder{}, fmt.Errorf("微信付款成功但商品库存不足：%s", productID)
+				}
+				break
+			}
+			if !found {
+				return MallOrder{}, fmt.Errorf("商品不存在：%s", productID)
+			}
+		}
+		for productID, quantity := range needed {
+			for i := range next.Products {
+				if next.Products[i].ID == productID {
+					next.Products[i].Stock -= quantity
+					next.Products[i].UpdatedAt = time.Now().UnixMilli()
+					break
+				}
+			}
+		}
+	}
+	now := time.Now().UnixMilli()
+	order.Status = MallOrderPaid
+	order.PaymentTransactionID = transactionID
+	order.StockReserved = true
+	order.PaidAt = now
+	order.UpdatedAt = now
+	next.Orders[orderIndex] = order
+	if err := r.commitJSONLocked(next); err != nil {
+		return MallOrder{}, err
+	}
+	return order, nil
+}
+
+func (r *MallRepo) CancelPendingWechatOrder(serial, orderID string) (MallOrder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.CancelPendingWechatOrder(ctx, serial, orderID)
+	}
+	if err := r.loadJSONLocked(); err != nil {
+		return MallOrder{}, err
+	}
+	next := MallDataStore{
+		Products: append([]MallProduct(nil), r.cache.Products...),
+		Orders:   append([]MallOrder(nil), r.cache.Orders...),
+	}
+	orderIndex := -1
+	for i := range next.Orders {
+		if next.Orders[i].ID == orderID && next.Orders[i].UserSerial == serial {
+			orderIndex = i
+			break
+		}
+	}
+	if orderIndex < 0 {
+		return MallOrder{}, errors.New("订单不存在")
+	}
+	order := next.Orders[orderIndex]
+	if order.PaymentMethod != mallPaymentWechat || order.Status != MallOrderPendingPay {
+		return MallOrder{}, errors.New("当前订单不可取消")
+	}
+	if order.StockReserved {
+		for _, item := range order.Items {
+			for i := range next.Products {
+				if next.Products[i].ID == item.ProductID {
+					next.Products[i].Stock += item.Quantity
+					next.Products[i].UpdatedAt = time.Now().UnixMilli()
+					break
+				}
+			}
+		}
+	}
+	order.Status = MallOrderCancelled
+	order.StockReserved = false
+	order.UpdatedAt = time.Now().UnixMilli()
+	next.Orders[orderIndex] = order
+	if err := r.commitJSONLocked(next); err != nil {
+		return MallOrder{}, err
+	}
+	return order, nil
 }
 
 func (r *MallRepo) EnsureSeedProducts() error {

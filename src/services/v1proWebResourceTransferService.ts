@@ -2,6 +2,7 @@ import type { ResourceItem } from "../types/resource";
 import type { V1ProWebTransferClient } from "../types/v1proWebTransfer";
 import {
   COMPATIBLE_VIDEO_FPS,
+  COMPATIBLE_VIDEO_FPS_FALLBACK,
   resolveVideoFps,
   type VideoFpsSelection,
 } from "../utils/resourceCapacity";
@@ -23,6 +24,7 @@ import {
 } from "./v1proWebTransferClient";
 import { guessTransferFileName } from "./v1proTransferService";
 import { toMaterialCdnUrl } from "./materialCdnService";
+import { readGifFrameDelays } from "./gifFrameTiming";
 import {
   configureBrowserPanelGeometry,
   convertBrowserRasterWithFfmpeg,
@@ -513,6 +515,9 @@ export async function transferAlbumResourcesViaWebUsb(
         throw new Error(`当前延时和动画共需 ${requiredFrames} 帧，超过当前设备的 ${frameLimit} 帧容量，请缩短延时、关闭动画或减少图片`);
       }
 
+      callbacks.onStatus?.("设备正在预擦除，同时准备相册素材…");
+      void client.beginPreparedTransfer(client.estimatePreeraseBytes(requiredFrames));
+
       const { buildGfm1Blob } = await loadBrowserGfm1Module();
       const sourceFrames: Uint8Array[] = [];
 
@@ -677,17 +682,21 @@ export async function transferResourceViaWebUsb(
           client.deviceCapacity.lcdW || 320,
           client.deviceCapacity.lcdH || 170,
         );
+        const explicitFps = options.videoFps != null;
         const fpsSelection = options.videoFps ?? COMPATIBLE_VIDEO_FPS;
-        const fallbackFps = resolveVideoFps(fpsSelection, resource.transferDefaults?.videoFps);
-        const beginnerAuto = fpsSelection === COMPATIBLE_VIDEO_FPS;
+        const fallbackFps = explicitFps
+          ? resolveVideoFps(fpsSelection, resource.transferDefaults?.videoFps)
+          : COMPATIBLE_VIDEO_FPS_FALLBACK;
+        const beginnerAuto = !explicitFps;
         const persistentCompression = client.deviceCapacity.persistentCompression === true;
+        const beginnerMinFps = persistentCompression ? 20 : COMPATIBLE_VIDEO_FPS_FALLBACK;
         const candidateFps = beginnerAuto && persistentCompression
           ? client.deviceCapacity.materialMaxFps
           : fallbackFps;
         callbacks.onStatus?.(
           persistentCompression
-            ? `已识别 GFM3 持久压缩 · 新手模式将按实际压缩字节适配（最高 ${candidateFps}fps）`
-            : `当前固件使用兼容容量规划 · ${fallbackFps}fps · ${capacityLabel}`,
+            ? "已识别设备能力，正在自动适配素材"
+            : `正在使用设备兼容模式 · ${capacityLabel}`,
         );
         reportProgress(12);
         let prediction: Awaited<ReturnType<V1ProWebTransferClient["predictVideoUrl"]>> | null = null;
@@ -701,10 +710,10 @@ export async function transferResourceViaWebUsb(
             throw new Error(`视频帧率预处理不一致：选择 ${fallbackFps} fps，实际为 ${prediction.fps} fps。`);
           }
           callbacks.onStatus?.(
-            `本次预计写入：${prediction.frameCount} 帧 · ${prediction.fps}fps，正在启动设备预擦除…`,
+            `本次预计写入：${prediction.frameCount} 帧，正在启动设备预擦除…`,
           );
           reportProgress(16);
-          await client.beginPreparedVideoTransfer(prediction.totalBytes);
+          void client.beginPreparedTransfer(prediction.totalBytes);
           preEraseStarted = true;
         }
         callbacks.onStatus?.(
@@ -730,23 +739,32 @@ export async function transferResourceViaWebUsb(
         const fileName = guessTransferFileName(resource);
         reportProgress(40);
 
-        let result: Awaited<ReturnType<V1ProWebTransferClient["transferFile"]>>;
+        let convertedVideo: Awaited<ReturnType<typeof convertBrowserVideoWithFfmpeg>> | null = null;
+        let plan = prediction ? {
+          ...prediction,
+          note: beginnerAuto
+            ? `FFmpeg 本地转换 · ${prediction.frameCount} 帧`
+            : prediction.note || `FFmpeg 本地转换 · ${prediction.frameCount} 帧`,
+        } : null;
+        if (!plan) {
+          const duration = await probeBrowserVideoDuration(blob);
+          plan = planBrowserFfmpegVideo(
+            duration,
+            Math.max(1, Math.ceil(duration * candidateFps)),
+            candidateFps,
+            1,
+          );
+        }
+        if (!preEraseStarted) {
+          const estimatedBytes = client.estimatePreeraseBytes(plan.frameCount);
+          callbacks.onStatus?.(
+            `设备正在预擦除，同时本地转换 ${plan.frameCount} 帧视频…`,
+          );
+          void client.beginPreparedTransfer(estimatedBytes);
+          preEraseStarted = true;
+        }
         try {
-          let plan = prediction ? {
-            ...prediction,
-            note: prediction.note
-              || `FFmpeg 本地转换 · ${prediction.frameCount} 帧 · ${prediction.fps}fps`,
-          } : null;
-          if (!plan) {
-            const duration = await probeBrowserVideoDuration(blob);
-            plan = planBrowserFfmpegVideo(
-              duration,
-              Math.max(1, Math.ceil(duration * candidateFps)),
-              candidateFps,
-              1,
-            );
-          }
-          const converted = await convertBrowserVideoWithFfmpeg(blob, {
+          convertedVideo = await convertBrowserVideoWithFfmpeg(blob, {
             fileName,
             plan,
             fitMode: effectiveFitMode,
@@ -755,44 +773,54 @@ export async function transferResourceViaWebUsb(
             onStatus: callbacks.onStatus,
             onProgress: (ratio) => reportProgress(40 + ratio * 25),
           });
+        } catch {
+          callbacks.onStatus?.("浏览器 FFmpeg 不可用，已切换兼容转换…");
+        }
 
+        let result: Awaited<ReturnType<V1ProWebTransferClient["transferFile"]>>;
+        if (convertedVideo) {
           callbacks.onStatus?.(
             persistentCompression
-              ? "本地转换完成，正在按 GFM3 实际压缩字节适配容量…"
+              ? "本地转换完成，正在根据设备容量自动适配…"
               : "本地转换完成，正在通过 USB 传输…",
           );
-          result = await client.transferFile(converted.blob, {
+          result = await client.transferFile(convertedVideo.blob, {
             fileName,
             mediaType: "video",
             beginnerAuto,
             maxVideoFps: beginnerAuto ? (client.deviceCapacity?.materialMaxFps || 30) : fallbackFps,
-            minVideoFps: beginnerAuto ? 20 : fallbackFps,
+            minVideoFps: beginnerAuto ? beginnerMinFps : fallbackFps,
             maxVideoSpeed: 10,
             pingFirst: false,
-            preparedTotalBytes: prediction ? converted.totalBytes : undefined,
             prebuiltGfm1: {
-              frameCount: converted.frameCount,
-              fps: converted.fps,
-              note: converted.note,
+              frameCount: convertedVideo.frameCount,
+              fps: convertedVideo.fps,
+              note: convertedVideo.note,
             },
             onProgress: (info) => {
               if (info.note && info.sent === 0) {
-                callbacks.onStatus?.(info.note);
+                callbacks.onStatus?.(
+                  beginnerAuto ? "正在按设备实际压缩容量整理素材…" : info.note,
+                );
                 return;
               }
               callbacks.onStatus?.(`正在传输… ${(info.ratio * 100).toFixed(0)}%`);
               reportProgress(65 + info.ratio * 34);
             },
           });
-        } catch (ffmpegError) {
-          if (preEraseStarted) throw ffmpegError;
-          callbacks.onStatus?.("浏览器 FFmpeg 不可用，已切换兼容转换…");
+        } else {
+          if (!preEraseStarted) {
+            void client.beginPreparedTransfer(
+              client.estimatePreeraseBytes(client.deviceCapacity.maxFrames),
+            );
+            preEraseStarted = true;
+          }
           result = await client.transferFile(blob, {
             fileName,
             mediaType: "video",
             beginnerAuto,
             maxVideoFps: beginnerAuto ? (client.deviceCapacity?.materialMaxFps || 30) : fallbackFps,
-            minVideoFps: beginnerAuto ? 20 : fallbackFps,
+            minVideoFps: beginnerAuto ? beginnerMinFps : fallbackFps,
             maxVideoSpeed: 10,
             fitMode: effectiveFitMode,
             rotationDeg: options.rotationDeg ?? 0,
@@ -818,8 +846,7 @@ export async function transferResourceViaWebUsb(
         if (prediction && (result.sourceFrameCount ?? result.frameCount) !== prediction.frameCount) {
           throw new Error(`视频写入帧数不一致：预计 ${prediction.frameCount} 帧，实际 ${result.sourceFrameCount ?? result.frameCount} 帧。`);
         }
-        let message = `网页直传完成：${result.frameCount} 帧 · ${result.fps}fps`;
-        if (result.note) message += `（${result.note}）`;
+        const message = `网页直传完成：${result.frameCount} 帧`;
         callbacks.onStatus?.(message);
         reportProgress(100);
         return { ...result, predictedFrameCount: prediction?.frameCount };
@@ -873,6 +900,25 @@ export async function transferResourceViaWebUsb(
         ? Math.max(maxFrames, 1000)
         : maxFrames;
       const mediaType = resource.materialType === "gif" ? "gif" : "image";
+      let estimatedFrames = 1;
+      if (mediaType === "gif") {
+        estimatedFrames = Math.max(1, Math.trunc(resource.sourceFrameCount || 0));
+        if (estimatedFrames <= 1 && !resource.sourceFrameCount) {
+          try {
+            estimatedFrames = Math.max(1, (await readGifFrameDelays(blob)).length);
+          } catch {
+            // One-frame estimate is safe; transferFile tops up the erased tail
+            // once the exact converted byte length is known.
+          }
+        }
+      }
+      callbacks.onStatus?.(
+        mediaType === "gif"
+          ? `设备正在预擦除，同时转换 GIF（预计 ${estimatedFrames} 帧）…`
+          : "设备正在预擦除，同时转换图片…",
+      );
+      void client.beginPreparedTransfer(client.estimatePreeraseBytes(estimatedFrames));
+      preEraseStarted = true;
       const converted = await convertBrowserRasterWithFfmpeg(blob, {
         fileName,
         mediaType,
@@ -912,10 +958,7 @@ export async function transferResourceViaWebUsb(
         },
       });
 
-      let message = `网页直传完成：${result.frameCount} 帧`;
-      if (result.note) {
-        message += `（${result.note}）`;
-      }
+      const message = `网页直传完成：${result.frameCount} 帧`;
       callbacks.onStatus?.(message);
       reportProgress(100);
       return result;

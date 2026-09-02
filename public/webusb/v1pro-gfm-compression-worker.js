@@ -1,4 +1,4 @@
-import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.35";
+import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.36";
 
 self.addEventListener("message", (event) => {
   try {

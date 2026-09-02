@@ -34,7 +34,53 @@ func openMallMySQLStore(dsn string) (*mallMySQLStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &mallMySQLStore{db: db}, nil
+	store := &mallMySQLStore{db: db}
+	if err := store.ensurePaymentColumns(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func (s *mallMySQLStore) ensurePaymentColumns(ctx context.Context) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"payment_method", "VARCHAR(32) NOT NULL DEFAULT '' AFTER total_cents"},
+		{"payment_mode", "VARCHAR(16) NOT NULL DEFAULT '' AFTER payment_method"},
+		{"payment_trade_no", "VARCHAR(64) NOT NULL DEFAULT '' AFTER payment_mode"},
+		{"payment_transaction_id", "VARCHAR(64) NOT NULL DEFAULT '' AFTER payment_trade_no"},
+		{"payment_expires_at", "BIGINT NOT NULL DEFAULT 0 AFTER payment_transaction_id"},
+		{"stock_reserved", "TINYINT(1) NOT NULL DEFAULT 0 AFTER payment_expires_at"},
+	}
+	for _, column := range columns {
+		var count int
+		if err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='mall_order' AND COLUMN_NAME=?`, column.name).Scan(&count); err != nil {
+			return fmt.Errorf("check mall_order.%s failed: %w", column.name, err)
+		}
+		if count > 0 {
+			continue
+		}
+		statement := "ALTER TABLE mall_order ADD COLUMN " + column.name + " " + column.definition
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("add mall_order.%s failed: %w", column.name, err)
+		}
+	}
+	var indexCount int
+	if err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='mall_order' AND INDEX_NAME='idx_mall_order_payment_trade'`).Scan(&indexCount); err != nil {
+		return fmt.Errorf("check mall_order payment index failed: %w", err)
+	}
+	if indexCount == 0 {
+		if _, err := s.db.ExecContext(ctx, `CREATE INDEX idx_mall_order_payment_trade ON mall_order(payment_trade_no)`); err != nil {
+			return fmt.Errorf("add mall_order payment index failed: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *mallMySQLStore) Close() error {
@@ -228,10 +274,13 @@ func (s *mallMySQLStore) CreateOrder(ctx context.Context, order MallOrder, stock
 	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO mall_order
-(id, user_serial, status, items_json, total_cents, name_enc, phone_enc, wechat_enc, qq_enc,
+(id, user_serial, status, items_json, total_cents, payment_method, payment_mode, payment_trade_no,
+ payment_transaction_id, payment_expires_at, stock_reserved, name_enc, phone_enc, wechat_enc, qq_enc,
  province, city, address_enc, tracking_no, remark, created_at, updated_at, paid_at, shipped_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		order.ID, order.UserSerial, order.Status, string(itemsJSON), order.TotalCents,
+		order.PaymentMethod, order.PaymentMode, order.PaymentTradeNo, order.PaymentTransactionID,
+		order.PaymentExpiresAt, order.StockReserved,
 		order.NameEnc, order.PhoneEnc, order.WechatEnc, order.QQEnc,
 		order.Province, order.City, order.AddressEnc, order.TrackingNo, order.Remark,
 		order.CreatedAt, order.UpdatedAt, order.PaidAt, order.ShippedAt,
@@ -249,6 +298,8 @@ func scanMallOrder(scanner interface {
 	var itemsJSON string
 	err := scanner.Scan(
 		&o.ID, &o.UserSerial, &o.Status, &itemsJSON, &o.TotalCents,
+		&o.PaymentMethod, &o.PaymentMode, &o.PaymentTradeNo, &o.PaymentTransactionID,
+		&o.PaymentExpiresAt, &o.StockReserved,
 		&o.NameEnc, &o.PhoneEnc, &o.WechatEnc, &o.QQEnc,
 		&o.Province, &o.City, &o.AddressEnc, &o.TrackingNo, &o.Remark,
 		&o.CreatedAt, &o.UpdatedAt, &o.PaidAt, &o.ShippedAt,
@@ -265,7 +316,9 @@ func scanMallOrder(scanner interface {
 
 func (s *mallMySQLStore) ListOrdersByUser(ctx context.Context, serial string) ([]MallOrder, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, user_serial, status, items_json, total_cents, name_enc, phone_enc, wechat_enc, qq_enc,
+SELECT id, user_serial, status, items_json, total_cents,
+ payment_method, payment_mode, payment_trade_no, payment_transaction_id, payment_expires_at, stock_reserved,
+ name_enc, phone_enc, wechat_enc, qq_enc,
  province, city, address_enc, tracking_no, remark, created_at, updated_at, paid_at, shipped_at
 FROM mall_order WHERE user_serial=? ORDER BY created_at DESC LIMIT 200`, serial)
 	if err != nil {
@@ -285,7 +338,9 @@ FROM mall_order WHERE user_serial=? ORDER BY created_at DESC LIMIT 200`, serial)
 
 func (s *mallMySQLStore) ListAllOrders(ctx context.Context) ([]MallOrder, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, user_serial, status, items_json, total_cents, name_enc, phone_enc, wechat_enc, qq_enc,
+SELECT id, user_serial, status, items_json, total_cents,
+ payment_method, payment_mode, payment_trade_no, payment_transaction_id, payment_expires_at, stock_reserved,
+ name_enc, phone_enc, wechat_enc, qq_enc,
  province, city, address_enc, tracking_no, remark, created_at, updated_at, paid_at, shipped_at
 FROM mall_order ORDER BY created_at DESC LIMIT 500`)
 	if err != nil {
@@ -305,7 +360,9 @@ FROM mall_order ORDER BY created_at DESC LIMIT 500`)
 
 func (s *mallMySQLStore) GetOrder(ctx context.Context, id string) (MallOrder, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_serial, status, items_json, total_cents, name_enc, phone_enc, wechat_enc, qq_enc,
+SELECT id, user_serial, status, items_json, total_cents,
+ payment_method, payment_mode, payment_trade_no, payment_transaction_id, payment_expires_at, stock_reserved,
+ name_enc, phone_enc, wechat_enc, qq_enc,
  province, city, address_enc, tracking_no, remark, created_at, updated_at, paid_at, shipped_at
 FROM mall_order WHERE id=?`, id)
 	o, err := scanMallOrder(row)
@@ -316,6 +373,132 @@ FROM mall_order WHERE id=?`, id)
 		return MallOrder{}, false, err
 	}
 	return o, true, nil
+}
+
+func getMallOrderForUpdate(ctx context.Context, tx *sql.Tx, id string) (MallOrder, error) {
+	row := tx.QueryRowContext(ctx, `
+SELECT id, user_serial, status, items_json, total_cents,
+ payment_method, payment_mode, payment_trade_no, payment_transaction_id, payment_expires_at, stock_reserved,
+ name_enc, phone_enc, wechat_enc, qq_enc,
+ province, city, address_enc, tracking_no, remark, created_at, updated_at, paid_at, shipped_at
+FROM mall_order WHERE id=? FOR UPDATE`, id)
+	return scanMallOrder(row)
+}
+
+func (s *mallMySQLStore) MarkWechatOrderPaid(ctx context.Context, orderID, transactionID string, amountCents int64) (MallOrder, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return MallOrder{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	order, err := getMallOrderForUpdate(ctx, tx, orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MallOrder{}, errors.New("订单不存在")
+	}
+	if err != nil {
+		return MallOrder{}, err
+	}
+	if order.PaymentMethod != mallPaymentWechat || order.PaymentTradeNo != orderID {
+		return MallOrder{}, errors.New("订单支付信息不匹配")
+	}
+	if order.TotalCents != amountCents || amountCents <= 0 {
+		return MallOrder{}, errors.New("微信支付金额与订单不一致")
+	}
+	if order.Status == MallOrderCancelled {
+		return MallOrder{}, errors.New("已取消订单收到付款通知，请人工核查并退款")
+	}
+	if order.PaymentTransactionID != "" && order.PaymentTransactionID != transactionID {
+		return MallOrder{}, errors.New("订单微信支付交易号冲突")
+	}
+	if order.Status == MallOrderPaid || order.Status == MallOrderShipped {
+		if order.PaymentTransactionID == "" {
+			order.PaymentTransactionID = transactionID
+			order.UpdatedAt = time.Now().UnixMilli()
+			if _, err := tx.ExecContext(ctx, `UPDATE mall_order SET payment_transaction_id=?, updated_at=? WHERE id=?`, transactionID, order.UpdatedAt, order.ID); err != nil {
+				return MallOrder{}, err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return MallOrder{}, err
+		}
+		return order, nil
+	}
+	if order.Status != MallOrderPendingPay {
+		return MallOrder{}, errors.New("当前订单状态无法确认微信付款")
+	}
+	if !order.StockReserved {
+		for _, item := range order.Items {
+			res, err := tx.ExecContext(ctx,
+				`UPDATE mall_product SET stock=stock-?, updated_at=? WHERE id=? AND stock>=?`,
+				item.Quantity, time.Now().UnixMilli(), item.ProductID, item.Quantity,
+			)
+			if err != nil {
+				return MallOrder{}, err
+			}
+			affected, _ := res.RowsAffected()
+			if affected == 0 {
+				return MallOrder{}, fmt.Errorf("微信付款成功但商品库存不足：%s", item.ProductID)
+			}
+		}
+	}
+	now := time.Now().UnixMilli()
+	order.Status = MallOrderPaid
+	order.PaymentTransactionID = transactionID
+	order.StockReserved = true
+	order.PaidAt = now
+	order.UpdatedAt = now
+	if _, err := tx.ExecContext(ctx, `
+UPDATE mall_order SET status=?, payment_transaction_id=?, stock_reserved=1, paid_at=?, updated_at=? WHERE id=?`,
+		order.Status, order.PaymentTransactionID, order.PaidAt, order.UpdatedAt, order.ID,
+	); err != nil {
+		return MallOrder{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return MallOrder{}, err
+	}
+	return order, nil
+}
+
+func (s *mallMySQLStore) CancelPendingWechatOrder(ctx context.Context, serial, orderID string) (MallOrder, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return MallOrder{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	order, err := getMallOrderForUpdate(ctx, tx, orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MallOrder{}, errors.New("订单不存在")
+	}
+	if err != nil {
+		return MallOrder{}, err
+	}
+	if order.UserSerial != serial {
+		return MallOrder{}, errors.New("订单不存在")
+	}
+	if order.PaymentMethod != mallPaymentWechat || order.Status != MallOrderPendingPay {
+		return MallOrder{}, errors.New("当前订单不可取消")
+	}
+	if order.StockReserved {
+		for _, item := range order.Items {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE mall_product SET stock=stock+?, updated_at=? WHERE id=?`,
+				item.Quantity, time.Now().UnixMilli(), item.ProductID,
+			); err != nil {
+				return MallOrder{}, err
+			}
+		}
+	}
+	order.Status = MallOrderCancelled
+	order.StockReserved = false
+	order.UpdatedAt = time.Now().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `UPDATE mall_order SET status=?, stock_reserved=0, updated_at=? WHERE id=?`, order.Status, order.UpdatedAt, order.ID); err != nil {
+		return MallOrder{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return MallOrder{}, err
+	}
+	return order, nil
 }
 
 func (s *mallMySQLStore) UpdateOrder(ctx context.Context, order MallOrder, stockDelta map[string]int) error {
@@ -348,8 +531,11 @@ func (s *mallMySQLStore) UpdateOrder(ctx context.Context, order MallOrder, stock
 	}
 	res, err := tx.ExecContext(ctx, `
 UPDATE mall_order SET status=?, items_json=?, total_cents=?, tracking_no=?, remark=?,
+	payment_method=?, payment_mode=?, payment_trade_no=?, payment_transaction_id=?, payment_expires_at=?, stock_reserved=?,
  updated_at=?, paid_at=?, shipped_at=? WHERE id=?`,
 		order.Status, string(itemsJSON), order.TotalCents, order.TrackingNo, order.Remark,
+		order.PaymentMethod, order.PaymentMode, order.PaymentTradeNo, order.PaymentTransactionID,
+		order.PaymentExpiresAt, order.StockReserved,
 		order.UpdatedAt, order.PaidAt, order.ShippedAt, order.ID,
 	)
 	if err != nil {

@@ -134,16 +134,13 @@ export default function CreatorPage() {
       resource,
       { onStatus: (message) => setTransferNotice(message), onProgress: setWebUsbProgress },
       {
-        videoFps: resource.materialType === "video" ? options.videoFps : undefined,
         fitMode: options.fitMode,
         rotationDeg: options.rotationDeg,
         colorProfile: options.colorProfile,
       },
     )
       .then((result) => {
-        const predicted = result.predictedFrameCount != null ? `预计 ${result.predictedFrameCount} 帧 · ` : "";
-        let message = `网页直传完成：${predicted}实际 ${result.frameCount} 帧${result.fps ? ` · ${result.fps}fps` : ""}`;
-        if (result.note) message += `（${result.note}）`;
+        const message = `网页直传完成：${result.frameCount} 帧`;
         setTransferNotice(message);
         setWebUsbProgress(100);
         window.setTimeout(() => {
@@ -211,7 +208,7 @@ export default function CreatorPage() {
           </section>
         ) : null}
         {!loading && authorResources.length > 0 ? (
-          <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="resource-card-grid gap-5">
             {authorResources.map((resource) => (
               <CompactResourceCard
                 key={resource.id}

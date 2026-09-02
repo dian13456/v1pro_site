@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -120,6 +122,7 @@ func newAPIHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 		ReadHeaderTimeout: durationFromEnv("HTTP_READ_HEADER_TIMEOUT", 10*time.Second),
 		ReadTimeout:       durationFromEnv("HTTP_READ_TIMEOUT", 2*time.Minute),
 		WriteTimeout:      durationFromEnv("HTTP_WRITE_TIMEOUT", 5*time.Minute),
@@ -128,10 +131,38 @@ func newAPIHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
+func apiListenAddr(port string) string {
+	if addr := strings.TrimSpace(os.Getenv("LISTEN_ADDR")); addr != "" {
+		return addr
+	}
+	return ":" + strings.TrimSpace(port)
+}
+
+func apiTLSFiles() (certFile string, keyFile string, err error) {
+	certFile = strings.TrimSpace(os.Getenv("TLS_CERT_FILE"))
+	keyFile = strings.TrimSpace(os.Getenv("TLS_KEY_FILE"))
+	if certFile == "" && keyFile == "" {
+		return "", "", nil
+	}
+	if certFile == "" || keyFile == "" {
+		return "", "", fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be configured together")
+	}
+	return certFile, keyFile, nil
+}
+
 func runAPIHTTPServer(server *http.Server) error {
+	certFile, keyFile, err := apiTLSFiles()
+	if err != nil {
+		return err
+	}
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("API listening on %s", server.Addr)
+		if certFile != "" {
+			log.Printf("API HTTPS listening on %s", server.Addr)
+			serverErrors <- server.ListenAndServeTLS(certFile, keyFile)
+			return
+		}
+		log.Printf("API HTTP listening on %s", server.Addr)
 		serverErrors <- server.ListenAndServe()
 	}()
 

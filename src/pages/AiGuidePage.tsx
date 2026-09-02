@@ -172,7 +172,7 @@ export default function AiGuidePage() {
             </div>
 
             {message.role === "assistant" && message.resourceIds && message.resourceIds.length > 0 ? (
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+              <div className="resource-card-grid gap-5">
                 {message.resourceIds.map((id) => {
                   const resource = resourceMap.get(id);
                   if (!resource) {

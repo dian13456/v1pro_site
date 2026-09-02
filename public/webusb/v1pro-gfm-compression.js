@@ -8,7 +8,7 @@
  * - duration-preserving measured-byte fitting down to 20 fps, followed by the
  *   minimum measured 20 fps speed-up only when the floor still does not fit.
  */
-import { lz4CompressBlock } from "./v1pro-transport-codec.js?v=1.2.35";
+import { lz4CompressBlock } from "./v1pro-transport-codec.js?v=1.2.36";
 
 const COMMON_HEADER_BYTES = 56;
 const GFM1_VERSION = 1;

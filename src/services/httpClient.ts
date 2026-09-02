@@ -84,6 +84,31 @@ function devAiCreditsBalance(serial: string): number {
   return DEV_AI_CREDITS_DEFAULT;
 }
 
+/**
+ * Read the per-device share counter used by the static/dev mock. Keep the
+ * quota shape identical to the production profile endpoint so pages can
+ * exercise the exhausted-quota state without contacting the backend.
+ */
+function devAiShareCount(serial: string): number {
+  try {
+    const map = JSON.parse(localStorage.getItem(DEV_AI_SHARE_COUNTS_KEY) || "{}") as Record<string, unknown>;
+    const value = Number(map[serial]);
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function getDevAiShareQuotaProfileFields(serial: string) {
+  const shareCount = devAiShareCount(serial);
+  return {
+    shareCount,
+    shareLimit: DEV_AI_SHARE_LIMIT,
+    shareRemaining: Math.max(0, DEV_AI_SHARE_LIMIT - shareCount),
+    shareUnlimited: false,
+  };
+}
+
 function readDevSoftwarePromptDismissedId(serial: string): number {
   try {
     const map = JSON.parse(localStorage.getItem(DEV_SOFTWARE_PROMPT_KEY) || "{}") as Record<string, number>;
@@ -109,6 +134,7 @@ function devAiCreditsProfileFields(serial: string) {
     credits: devAiCreditsBalance(serial),
     creditsDefault: DEV_AI_CREDITS_DEFAULT,
     creditCost: DEV_AI_CREDIT_COST,
+    ...getDevAiShareQuotaProfileFields(serial),
   };
 }
 
@@ -715,13 +741,15 @@ function createDevMockResponse(path: string, init: RequestInit): JsonValue | nul
     } catch {
       counts = {};
     }
-    const current = Math.max(0, Number(counts[serial] || 0));
+    const current = devAiShareCount(serial);
     if (current >= DEV_AI_SHARE_LIMIT) {
       return {
         success: false,
         message: `每台设备最多分享 ${DEV_AI_SHARE_LIMIT} 次，您的额度已用完（已用 ${current} 次）`,
         shareCount: current,
         shareLimit: DEV_AI_SHARE_LIMIT,
+        shareRemaining: 0,
+        shareUnlimited: false,
       };
     }
     const shareCount = current + 1;
