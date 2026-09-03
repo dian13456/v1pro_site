@@ -69,7 +69,7 @@ export function ResourceLibraryHeader({
   return (
     <>
     <header ref={headerRef} className="resource-library-header sticky top-0 z-[80] min-h-[64px] border-b border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex min-h-[64px] items-center gap-2.5 px-4 sm:px-6 xl:px-8">
+      <div className="flex min-w-0 min-h-[64px] items-center gap-2.5 px-4 sm:px-6 xl:px-8 max-[479px]:flex-wrap max-[479px]:gap-1.5 max-[479px]:py-2">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 text-xl font-extrabold tracking-[-0.025em] text-[#2b3245] dark:text-white">
           <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-gradient-to-b from-[#2997ff] to-[#0071e3] text-[17px] text-white shadow-[0_5px_14px_rgba(0,113,227,.25)]">🐱</span>
           <span className="hidden 2xl:inline">佳点电子素材库</span>

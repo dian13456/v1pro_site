@@ -213,11 +213,31 @@ html[data-theme] .resource-library-shell::before {
 /* Let the available content width decide how many material cards fit. The
    sidebar and optional album panel can shrink the content area independently
    of the viewport, so fixed Tailwind breakpoints would leave either unused
-   space or cards that are too narrow. */
+   space or cards that are too narrow. auto-fit also lets a short final row use
+   the available width instead of leaving empty tracks behind. */
 .resource-card-grid {
+  --resource-card-min-width: 220px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--resource-card-min-width)), 1fr));
   align-items: start;
+}
+
+/* Two columns remain comfortable on small tablets and wide phones; below
+   480px the minimum is lowered just enough to use two columns when they fit,
+   while a normal narrow phone still falls back to one full-width card. */
+@media (max-width: 479px) {
+  .resource-card-grid {
+    --resource-card-min-width: 200px;
+  }
+}
+
+/* Keep the desktop reading density from becoming too loose on wide screens. */
+@media (min-width: 1280px) {
+  .resource-card-grid {
+    --resource-card-min-width: 260px;
+  }
 }
 
 .resource-card-grid > * {

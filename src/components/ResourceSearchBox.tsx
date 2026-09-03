@@ -62,7 +62,7 @@ export function ResourceSearchBox({
   };
 
   return (
-    <div className="relative min-w-[80px] max-w-[390px] flex-1">
+    <div className="relative min-w-0 w-full max-w-[390px] flex-1 max-[479px]:order-last max-[479px]:basis-full max-[479px]:max-w-none">
       <form onSubmit={submit} className="flex h-10 w-full items-center rounded-full border border-black/[.055] bg-black/[.035] px-3 transition focus-within:border-[#0071e3]/30 focus-within:bg-white focus-within:ring-4 focus-within:ring-[#0071e3]/10 dark:border-white/10 dark:bg-white/[.06] dark:focus-within:bg-slate-900 sm:px-4">
         <ThemeIcon name="search" size={16} className="mr-2 shrink-0 text-slate-400" />
         <input
@@ -81,7 +81,7 @@ export function ResourceSearchBox({
         ) : null}
       </form>
       {open ? (
-        <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-[130] overflow-hidden rounded-[18px] border border-black/[.07] bg-white/96 p-2 shadow-[0_22px_60px_rgba(15,23,42,.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/96">
+        <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-[130] overflow-hidden rounded-[18px] border border-black/[.07] bg-white p-2 shadow-[0_22px_60px_rgba(15,23,42,.18)] dark:border-white/10 dark:bg-slate-900">
           <div className="flex items-center justify-between px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[.12em] text-slate-400">
             <span>{draft.trim() ? "搜索建议" : recent.length ? "最近与热门" : "热门搜索"}</span>
             {recent.length ? (
