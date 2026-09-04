@@ -60,8 +60,9 @@ import {
 
 const RANDOM_PAGE_SIZE = 4;
 const WEEKLY_TOP_LIMIT = 20;
-const DEFAULT_PAGE_SIZE = 16;
-const RECOMMENDATION_FETCH_SIZE = 16;
+const DEFAULT_PAGE_SIZE = 40;
+const RECOMMENDATION_FETCH_SIZE = 40;
+const PAGE_SIZE_OPTIONS = [16, 40, 64, 100] as const;
 const RECENT_RECOMMENDATIONS_KEY = "jiadian_recent_recommendations_v2";
 const CURRENT_DEVICE_NOT_FOUND_PATTERN = /^未找到当前认证的 V1PRO（SN .+），请重新认证该设备$/;
 
@@ -462,6 +463,11 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const visibleCatalogError = showingRecommendations && recommendationResources.length > 0 ? "" : error;
   const displayedTotalItems = currentPage === 0 ? recommendedResources.length : totalItems;
   const displayedTotalPages = currentPage === 0 ? 1 : totalPages;
+  const shouldShowPagination =
+    !loading &&
+    !randomMode &&
+    (currentPage === 0 || totalItems > 0) &&
+    (currentPage === 0 || sortMode !== "weeklyTop");
 
   const pageList = useMemo(() => {
     if (totalPages <= 7) {
@@ -691,6 +697,17 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       : Math.max(1, currentPage);
     setPageJumpInput(String(targetPage));
     setCurrentPage(targetPage);
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage <= 0) return;
+    if (currentPage === 1) handleRecommendationHome();
+    else setCurrentPage((value) => Math.max(0, value - 1));
+  };
+
+  const handleNextPage = () => {
+    if (currentPage >= totalPages) return;
+    setCurrentPage((value) => Math.min(totalPages, value + 1));
   };
 
   const handleExitRandomMode = () => {
@@ -1171,7 +1188,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           setCurrentPage(1);
         }}
       />
-      <main className="mx-auto max-w-[1488px] px-4 py-6 sm:px-6">
+      <main className="w-full px-4 py-6 sm:px-6">
         {adminMode ? (
           <div className="mb-5">
             {!adminSession.authenticated ? (
@@ -1251,7 +1268,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           </div>
         </details>
 
-        <div className={`grid items-start gap-6 lg:grid-cols-[218px_minmax(0,1fr)] ${albumMode ? "xl:grid-cols-[218px_minmax(0,1fr)_280px]" : ""}`}>
+        <div className={`grid items-start gap-6 lg:-ml-6 lg:w-[calc(100%+1.5rem)] lg:grid-cols-[218px_minmax(0,1fr)] ${albumMode ? "xl:grid-cols-[218px_minmax(0,1fr)_280px] 2xl:grid-cols-[218px_minmax(0,1fr)_280px_168px]" : "2xl:grid-cols-[218px_minmax(0,1fr)_168px]"}`}>
           <div className="resource-sidebar-scroll hidden self-start lg:sticky lg:top-[80px] lg:block lg:max-h-[calc(100vh-96px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <ResourceLibrarySidebar
               resources={resources}
@@ -1347,7 +1364,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                       setCurrentPage(1);
                       setPageSize(Number(event.target.value));
                     }} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                      {[16, 20, 40, 60, 100].map((size) => <option key={size} value={size}>{size} 张</option>)}
+                      {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size} 张</option>)}
                     </select>
                   </>
                 ) : null}
@@ -1469,17 +1486,14 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
               </div>
             ) : null}
 
-            {!loading && !randomMode && (currentPage === 0 || totalItems > 0) && (currentPage === 0 || sortMode !== "weeklyTop") ? (
+            {shouldShowPagination ? (
               <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
-                <button type="button" disabled={currentPage <= 0} onClick={() => {
-                  if (currentPage === 1) handleRecommendationHome();
-                  else setCurrentPage((value) => Math.max(0, value - 1));
-                }} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
+                <button type="button" disabled={currentPage <= 0} onClick={handlePreviousPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
                 <button type="button" onClick={handleRecommendationHome} className={`h-9 rounded-full px-3.5 text-sm ${currentPage === 0 ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>首页</button>
                 {pageList.map((page) => (
                   <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
                 ))}
-                <button type="button" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
+                <button type="button" disabled={currentPage >= totalPages} onClick={handleNextPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
                 <form noValidate onSubmit={handlePageJump} className="ml-1 flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                   <span>到</span>
                   <input
@@ -1541,6 +1555,29 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                 transferStatus={albumTransferStatus}
               />
             </div>
+          ) : null}
+
+          {shouldShowPagination ? (
+            <nav className="hidden 2xl:sticky 2xl:top-[84px] 2xl:flex 2xl:flex-col 2xl:gap-4" aria-label="快速翻页">
+              <button
+                type="button"
+                disabled={currentPage <= 0}
+                onClick={handlePreviousPage}
+                className="group flex min-h-[152px] w-full flex-col items-center justify-center gap-2 rounded-3xl border border-slate-200 bg-white px-3 py-5 text-lg font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-[#0071e3]/40 hover:text-[#0071e3] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                <span aria-hidden="true" className="text-5xl font-light leading-none text-[#0071e3] transition group-hover:scale-110">↑</span>
+                <span>上一页</span>
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={handleNextPage}
+                className="group flex min-h-[152px] w-full flex-col items-center justify-center gap-2 rounded-3xl border border-[#0071e3]/25 bg-[#0071e3] px-3 py-5 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:bg-[#0878e8] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+              >
+                <span aria-hidden="true" className="text-5xl font-light leading-none transition group-hover:scale-110">↓</span>
+                <span>下一页</span>
+              </button>
+            </nav>
           ) : null}
         </div>
       </main>

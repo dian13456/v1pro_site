@@ -233,10 +233,11 @@ html[data-theme] .resource-library-shell::before {
   }
 }
 
-/* Keep the desktop reading density from becoming too loose on wide screens. */
+/* Keep desktop cards readable while auto-fit adds as many columns as the
+   available screen width can hold. */
 @media (min-width: 1280px) {
   .resource-card-grid {
-    --resource-card-min-width: 260px;
+    --resource-card-min-width: 240px;
   }
 }
 
