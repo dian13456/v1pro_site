@@ -19,6 +19,11 @@ type ResourceRecord = Partial<ResourceItem> & {
 };
 
 const COS_MANIFEST_URL = import.meta.env.VITE_COS_RESOURCE_MANIFEST_URL || "";
+// Public browsing must remain responsive even when the signed API edge is
+// unreachable.  A catalog response is display-only; after this short bound
+// the caller can use the sanitized COS/bundled fallback instead of showing a
+// full-page loader for the generic API timeout.
+const PUBLIC_CATALOG_API_TIMEOUT_MS = 8_000;
 let resourceCatalogPromise: Promise<ResourceItem[]> | null = null;
 
 interface ResourcePagePayload {
@@ -158,6 +163,83 @@ function parseResourcePayload(payload: unknown): ResourceItem[] {
     .filter((item): item is ResourceItem => item !== null);
 }
 
+/**
+ * The catalog is public and the page must remain browsable when the API is
+ * temporarily unavailable (for example while a CDN/API deployment is being
+ * switched).  The checked-in catalog is an emergency display-only fallback;
+ * remove the private uploader identifier before it can reach a browser.
+ */
+function parseBundledPublicCatalog(): ResourceItem[] {
+  if (!Array.isArray(bundledResources)) return [];
+  const publicRecords = bundledResources.map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const copy = { ...(item as Record<string, unknown>) };
+    delete copy.uploaderSerial;
+    delete copy._uploaderSerial;
+    return copy;
+  });
+  return parseResourcePayload(publicRecords);
+}
+
+let bundledPublicCatalog: ResourceItem[] | null = null;
+
+function getBundledPublicCatalog(): ResourceItem[] {
+  if (!bundledPublicCatalog) {
+    bundledPublicCatalog = sortByUpdatedAtDesc(parseBundledPublicCatalog());
+  }
+  return bundledPublicCatalog;
+}
+
+function fallbackPageFromCatalog(items: ResourceItem[], query: ResourcePageQuery): ResourcePageResult {
+  const keyword = query.keyword?.trim().toLowerCase() || "";
+  const requestedMaterialTypes = (query.materialType || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const filtered = items.filter((item) => {
+    if (query.category && query.category !== "all" && item.category !== query.category) return false;
+    if (requestedMaterialTypes.length > 0 && !requestedMaterialTypes.includes(item.materialType)) return false;
+    if (query.columnTag && query.columnTag !== "all" && item.columnTag !== query.columnTag) return false;
+    if (!keyword) return true;
+    return [item.title, item.description, item.author || ""].some((value) =>
+      value.toLowerCase().includes(keyword),
+    );
+  });
+  const sorted = [...filtered].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt).getTime();
+    const rightTime = new Date(right.updatedAt).getTime();
+    if (query.sort === "earliest") return leftTime - rightTime;
+    return rightTime - leftTime;
+  });
+  const page = Math.max(1, Math.floor(query.page || 1));
+  const pageSize = Math.max(1, Math.min(100, Math.floor(query.pageSize || 16)));
+  const total = sorted.length;
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const start = Math.min((page - 1) * pageSize, total);
+  const pageItems = sorted.slice(start, start + pageSize);
+  return {
+    items: pageItems,
+    page,
+    pageSize,
+    total,
+    totalPages,
+    hasMore: start + pageItems.length < total,
+  };
+}
+
+async function fetchPublicFallbackPage(
+  query: ResourcePageQuery,
+  signal?: AbortSignal,
+): Promise<ResourcePageResult> {
+  try {
+    const manifest = await fetchFromCosManifest(signal);
+    if (manifest.length > 0) return fallbackPageFromCatalog(manifest, query);
+  } catch {
+    // Use the bundled display-only catalog below when the manifest is down.
+  }
+  return fallbackPageFromCatalog(getBundledPublicCatalog(), query);
+}
+
 export function parseResourceList(payload: unknown): ResourceItem[] {
   return parseResourcePayload(payload);
 }
@@ -178,11 +260,31 @@ export async function fetchResourcePage(
   if (query.materialType?.trim()) params.set("materialType", query.materialType.trim());
   if (query.columnTag?.trim()) params.set("columnTag", query.columnTag.trim());
 
-  const payload = await apiFetch<ResourcePagePayload>(
-    `/api/resources/page?${params.toString()}`,
-    { signal },
-  );
-  if (payload.success === false) throw new Error("素材目录分页加载失败");
+  let payload: ResourcePagePayload;
+  try {
+    payload = await apiFetch<ResourcePagePayload>(
+      `/api/resources/page?${params.toString()}`,
+      // The public catalog endpoint emits ETags and may answer a browser
+      // revalidation with 304 (which has no JSON body).  This request is the
+      // source of truth for the visible page, so bypass the browser's
+      // conditional cache and always receive a JSON payload.
+      { signal, cache: "no-store" },
+      { timeoutMs: PUBLIC_CATALOG_API_TIMEOUT_MS },
+    );
+  } catch (error) {
+    // A public page should not become an empty white grid just because the
+    // API signature, origin, or edge is briefly unavailable.  Keep aborts
+    // cancellable, but serve a sanitized local/manifest page for visitors.
+    if (signal?.aborted) throw error;
+    const fallback = await fetchPublicFallbackPage(query, signal);
+    if (fallback.items.length > 0) return fallback;
+    throw error;
+  }
+  if (payload.success === false || !Array.isArray(payload.items)) {
+    const fallback = await fetchPublicFallbackPage(query, signal);
+    if (fallback.items.length > 0) return fallback;
+    throw new Error("素材目录分页加载失败");
+  }
   const items = parseResourcePayload(payload.items);
   const total = Math.max(0, Number(payload.total) || 0);
   const normalizedPageSize = Math.max(1, Number(payload.pageSize) || pageSize);
@@ -196,10 +298,24 @@ export async function fetchResourcePage(
   };
 }
 
-async function fetchFromCosManifest(): Promise<ResourceItem[]> {
+async function fetchFromCosManifest(signal?: AbortSignal): Promise<ResourceItem[]> {
   if (!COS_MANIFEST_URL) return [];
 
-  const response = await fetch(COS_MANIFEST_URL, { cache: "no-store" });
+  // A stale or blocked manifest must never hold the public home page in its
+  // loading state. Keep this fallback bounded so the bundled display-only
+  // catalog can take over quickly on networks that cannot reach COS.
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = window.setTimeout(() => controller.abort(), 5000);
+  let response: Response;
+  try {
+    response = await fetch(COS_MANIFEST_URL, { cache: "no-store", signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
   if (!response.ok) {
     throw new Error(`COS manifest 拉取失败（HTTP ${response.status}）`);
   }
@@ -208,7 +324,11 @@ async function fetchFromCosManifest(): Promise<ResourceItem[]> {
 }
 
 async function fetchFromRuntimeApi(): Promise<ResourceItem[]> {
-  const payload = (await apiFetch<unknown>("/api/resources")) as unknown;
+  // See fetchResourcePage above: avoid an empty 304 response being treated as
+  // a failed catalog load when an unauthenticated visitor refreshes the page.
+  const payload = (await apiFetch<unknown>("/api/resources", { cache: "no-store" }, {
+    timeoutMs: PUBLIC_CATALOG_API_TIMEOUT_MS,
+  })) as unknown;
   return parseResourcePayload(payload);
 }
 
@@ -231,10 +351,10 @@ async function loadResources(): Promise<ResourceItem[]> {
     // 无本地打包 fallback，避免 COS 直链进入 JS 产物。
   }
 
-  if (import.meta.env.DEV) {
-    return sortByUpdatedAtDesc(parseResourcePayload(bundledResources));
-  }
-  return [];
+  // The bundled records are sanitized above and only used as a last-resort
+  // public display catalog.  Keeping this fallback in production means an
+  // API/CORS/signature outage cannot hide every public cover at once.
+  return getBundledPublicCatalog();
 }
 
 export function fetchResources(): Promise<ResourceItem[]> {

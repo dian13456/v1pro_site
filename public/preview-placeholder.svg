@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="title desc">
+  <title id="title">预览暂时不可用</title>
+  <desc id="desc">素材预览暂时不可用</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#64748b"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" rx="28" fill="url(#bg)"/>
+  <g transform="translate(280 120)">
+    <rect width="240" height="190" rx="24" fill="url(#frame)" opacity=".92"/>
+    <rect x="24" y="24" width="192" height="142" rx="12" fill="#f8fafc" opacity=".92"/>
+    <path d="m48 138 45-48 32 30 27-27 52 45H48Z" fill="#94a3b8"/>
+    <circle cx="161" cy="66" r="16" fill="#fbbf24"/>
+    <path d="M77 38h86" stroke="#cbd5e1" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <text x="400" y="380" text-anchor="middle" fill="#475569" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="28" font-weight="600">预览暂时不可用</text>
+</svg>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ResourceItem } from "../types/resource";
+import { hasValidLocalAuth } from "../services/authService";
 import { createImageUrl } from "../services/imageService";
+import { publicMaterialCoverUrl } from "../services/materialCdnService";
 import { probeResourceMedia } from "../services/resourceMediaProbe";
 import { fetchMessages, MAX_MESSAGE_LENGTH, postMessage } from "../services/messageBoardService";
 import type { BoardMessage } from "../types/messageBoard";
@@ -73,6 +75,11 @@ export function ResourceDetailModal({
   const [rotationDeg, setRotationDeg] = useState<ResourceWebUsbTransferOptions["rotationDeg"]>(() => resource.transferDefaults?.rotationDeg ?? 0);
   const [colorProfile, setColorProfile] = useState<ResourceWebUsbTransferOptions["colorProfile"]>(() => resource.transferDefaults?.colorProfile ?? "normal");
   const [previewUrl, setPreviewUrl] = useState("");
+  // A public visitor receives a CDN JPEG cover for animated media.  Keep the
+  // rendering mode separate from `resource.materialType`: a JPEG must use an
+  // <img>, otherwise a <video> element reports a decode error and the dialog
+  // appears blank even though the cover request succeeded.
+  const [previewIsStaticImage, setPreviewIsStaticImage] = useState(false);
   const [metrics, setMetrics] = useState<ResourceMediaMetrics>(() => resourceMetricsFromCatalog(resource));
   const [probing, setProbing] = useState(false);
   const [comments, setComments] = useState<BoardMessage[]>([]);
@@ -112,6 +119,24 @@ export function ResourceDetailModal({
     let active = true;
     setMetrics(resourceMetricsFromCatalog(resource));
     setPreviewUrl("");
+    setPreviewIsStaticImage(false);
+
+    // The resource library is intentionally public.  A visitor without a
+    // verified device can render the CDN cover, but must not call the signed
+    // media/download endpoint (that endpoint correctly requires a device
+    // token and may return 401).  Using the cover here also prevents a GIF or
+    // video metadata probe from downloading the private original just to open
+    // the detail dialog.
+    if (!hasValidLocalAuth()) {
+      const publicCoverUrl = publicMaterialCoverUrl(resource);
+      setPreviewUrl(publicCoverUrl);
+      setPreviewIsStaticImage(Boolean(publicCoverUrl));
+      setProbing(false);
+      return () => {
+        active = false;
+      };
+    }
+
     setProbing(true);
     const task = isAnimated
       ? probeResourceMedia(resource)
@@ -123,12 +148,19 @@ export function ResourceDetailModal({
       .then((result) => {
         if (!active) return;
         setPreviewUrl(result.url || "");
+        setPreviewIsStaticImage(false);
         setMetrics((current) => mergeResourceMetrics(resource, { ...current, ...result.metrics }));
       })
       .catch(() => {
         if (!active) return;
         void createImageUrl(resource.id, resource.image || resource.download)
-          .then((result) => active && setPreviewUrl(result.url || ""))
+          .then((result) => {
+            if (!active) return;
+            setPreviewUrl(result.url || "");
+            // The image endpoint is the final fallback for a video preview;
+            // it returns a still cover rather than a playable video stream.
+            setPreviewIsStaticImage(resource.materialType === "video");
+          })
           .catch(() => undefined);
       })
       .finally(() => active && setProbing(false));
@@ -200,7 +232,7 @@ export function ResourceDetailModal({
       <div className="resource-detail-surface grid max-h-[92vh] w-full max-w-[1080px] overflow-auto rounded-[28px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.25)] md:grid-cols-[minmax(300px,1.08fr)_minmax(340px,.92fr)]">
         <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden bg-gradient-to-br from-sky-100 via-slate-100 to-indigo-100 p-5 md:min-h-[520px]">
           {previewUrl ? (
-            resource.materialType === "video" ? (
+            resource.materialType === "video" && !previewIsStaticImage ? (
               <video src={previewUrl} autoPlay loop muted playsInline controls className="max-h-[470px] w-full rounded-[18px] object-contain shadow-[0_18px_50px_rgba(15,23,42,.14)]" />
             ) : (
               <img src={previewUrl} alt={resource.title} className="max-h-[470px] w-full rounded-[18px] object-contain shadow-[0_18px_50px_rgba(15,23,42,.14)]" />

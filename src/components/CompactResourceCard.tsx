@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { useCreatorAvatar } from "../hooks/useCreatorAvatar";
@@ -84,16 +83,11 @@ export function CompactResourceCard({
       resource.image || resource.download,
       publicMaterialCoverUrl(resource),
     );
-  const [previewLoaded, setPreviewLoaded] = useState(false);
   const metrics = resourceMetricsFromCatalog(resource);
   const capacity = smallestCompatibleCapacity(resource, metrics, 25);
   const displayCapacity = resource.materialType === "image" ? null : capacity;
   const duration = formatMediaDuration(metrics.durationSec);
   const creatorAvatarUrl = useCreatorAvatar(resource.author);
-
-  useEffect(() => {
-    setPreviewLoaded(false);
-  }, [previewUrl]);
 
   return (
     <article
@@ -122,17 +116,15 @@ export function CompactResourceCard({
           <img
             src={previewUrl}
             alt={resource.title}
-            className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${previewLoaded ? "opacity-100" : "opacity-0"}`}
+            // Do not hide a public cover while waiting for `load`.  Slow
+            // mobile/CDN responses previously left every card transparent;
+            // the gradient placeholder remains visible underneath until the
+            // image is painted, and onError still activates the retry path.
+            className="absolute inset-0 h-full w-full object-cover opacity-100 transition duration-500 group-hover:scale-[1.03]"
             loading="lazy"
             decoding="async"
-            onLoad={() => {
-              setPreviewLoaded(true);
-              handlePreviewLoad();
-            }}
-            onError={() => {
-              setPreviewLoaded(false);
-              handlePreviewError();
-            }}
+            onLoad={handlePreviewLoad}
+            onError={handlePreviewError}
           />
         ) : null}
         {previewFailed ? (
