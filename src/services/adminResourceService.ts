@@ -125,6 +125,12 @@ export async function adminFetchUploaderSummary(
   }>(`/api/admin/resources/${encodeURIComponent(String(id))}/uploader`, {
     method: "GET",
     headers: { "X-Review-Admin-Token": token },
+  }, {
+    // Admin actions must not wait behind the material preview queue. The
+    // summary is also backed by the full catalog, so give it a little more
+    // headroom on a busy server.
+    priority: true,
+    timeoutMs: 30_000,
   });
   return parseUploaderSummary(payload, id);
 }
@@ -157,6 +163,13 @@ export async function adminPurgeAndBanUploader(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ confirm: true }),
+  }, {
+    // Purging an uploader may remove hundreds of COS objects and clean up
+    // several persisted interaction stores. Keep this request out of the
+    // normal eight-request preview queue and align the client timeout with
+    // the backend's five-minute HTTP write timeout.
+    priority: true,
+    timeoutMs: 240_000,
   });
   if (payload.success !== true) {
     throw new Error(payload.message || "删除上传人素材并禁用上传失败");

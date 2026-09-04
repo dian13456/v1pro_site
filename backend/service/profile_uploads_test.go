@@ -239,6 +239,68 @@ func TestDeleteOwnPublishedUploadKeepsCatalogWhenCOSDeleteFails(t *testing.T) {
 	}
 }
 
+func TestPurgeUploaderPublishedUploadsRemovesOnlyTargetUploader(t *testing.T) {
+	dir := t.TempDir()
+	resourcesPath := filepath.Join(dir, "resources.json")
+	resourceMapPath := filepath.Join(dir, "resource_map.json")
+	imageMapPath := filepath.Join(dir, "image_map.json")
+	resources := []map[string]any{
+		{"id": 1001, "title": "mine 1", "image": "img-1.jpg", "download": "img-1.jpg", "materialType": "image", "uploaderSerial": "SN1"},
+		{"id": 1002, "title": "other", "image": "img-2.jpg", "download": "img-2.jpg", "materialType": "image", "uploaderSerial": "SN2"},
+		{"id": 1003, "title": "mine 2", "image": "img-3.jpg", "download": "img-3.jpg", "materialType": "image", "uploaderSerial": "SN1"},
+	}
+	raw, err := json.Marshal(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourcesPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resourceMapPath, []byte(`{"1001":"img-1.jpg","1002":"img-2.jpg","1003":"img-3.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imageMapPath, []byte(`{"1001":"img-1.jpg","1002":"img-2.jpg","1003":"img-3.jpg"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deleter := &testObjectDeleter{}
+	result, err := PurgeUploaderPublishedUploads(context.Background(), PurgeUploaderPublishedUploadsInput{
+		Serial:          "sn1",
+		ResourcesPath:   resourcesPath,
+		ResourceMapPath: resourceMapPath,
+		ImageMapPath:    imageMapPath,
+		Signers:         UploadDeleteSigners{Image: deleter},
+		MaxConcurrency:  1,
+	})
+	if err != nil {
+		t.Fatalf("purge failed: %v", err)
+	}
+	if len(result.DeletedResourceIDs) != 2 || result.DeletedResourceIDs[0] != 1001 || result.DeletedResourceIDs[1] != 1003 {
+		t.Fatalf("unexpected deleted ids: %#v", result.DeletedResourceIDs)
+	}
+	if len(deleter.keys) != 2 || deleter.keys[0] != "img-1.jpg" || deleter.keys[1] != "img-3.jpg" {
+		t.Fatalf("unexpected deleted keys: %#v", deleter.keys)
+	}
+	remaining, err := loadResourceCatalogFile(resourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || stringifyCatalogID(remaining[0]["id"]) != "1002" {
+		t.Fatalf("unexpected remaining catalog: %#v", remaining)
+	}
+	resourceMap, err := loadStringMapFile(resourceMapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageMap, err := loadStringMapFile(imageMapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resourceMap) != 1 || resourceMap["1002"] != "img-2.jpg" || len(imageMap) != 1 || imageMap["1002"] != "img-2.jpg" {
+		t.Fatalf("unexpected maps after purge: %#v %#v", resourceMap, imageMap)
+	}
+}
+
 func TestDeleteOwnReviewUploadKeepsRecordWhenCOSDeleteFails(t *testing.T) {
 	store := ImageReviewStore{Items: []PendingImageReview{{
 		ID: "r1", Serial: "SN1", Action: ReviewActionShareUser,

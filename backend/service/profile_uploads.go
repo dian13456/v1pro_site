@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -318,6 +319,26 @@ type DeleteOwnPublishedUploadInput struct {
 	AllowAnyOwner   bool
 }
 
+// PurgeUploaderPublishedUploadsInput describes the administrator bulk-delete
+// operation. Unlike DeleteOwnPublishedUpload, this operation loads the
+// catalog/maps once and deletes COS objects with a bounded worker pool. The
+// old per-resource loop re-read and rewrote the same JSON files for every
+// resource, making large uploader cleanups take long enough to hit the
+// browser's request timeout.
+type PurgeUploaderPublishedUploadsInput struct {
+	Serial          string
+	ResourcesPath   string
+	ResourceMapPath string
+	ImageMapPath    string
+	Signers         UploadDeleteSigners
+	MaxConcurrency  int
+}
+
+type PurgeUploaderPublishedUploadsResult struct {
+	DeletedResourceIDs []int64
+	Warnings           []string
+}
+
 func findCatalogEntryByID(resources []map[string]any, resourceID int64) (map[string]any, int, bool) {
 	idText := strconv.FormatInt(resourceID, 10)
 	for idx, item := range resources {
@@ -489,6 +510,150 @@ func DeleteOwnPublishedUpload(ctx context.Context, input DeleteOwnPublishedUploa
 		return fmt.Errorf("保存封面映射失败")
 	}
 	return nil
+}
+
+// PurgeUploaderPublishedUploads removes all published resources owned by an
+// uploader. It intentionally keeps the catalog/map mutation serialized under
+// aiImageShareMu while allowing independent COS DELETE requests to run in a
+// small bounded pool. A failed object deletion keeps that resource in the
+// catalog so a later purge can retry it.
+func PurgeUploaderPublishedUploads(
+	ctx context.Context,
+	input PurgeUploaderPublishedUploadsInput,
+) (PurgeUploaderPublishedUploadsResult, error) {
+	serial := normalizeUploaderSerial(input.Serial)
+	if serial == "" {
+		return PurgeUploaderPublishedUploadsResult{}, fmt.Errorf("设备 SN 无效")
+	}
+
+	aiImageShareMu.Lock()
+	defer aiImageShareMu.Unlock()
+
+	resources, err := loadResourceCatalogFile(input.ResourcesPath)
+	if err != nil {
+		return PurgeUploaderPublishedUploadsResult{}, fmt.Errorf("读取素材清单失败")
+	}
+	resourceMap, err := loadStringMapFile(input.ResourceMapPath)
+	if err != nil {
+		return PurgeUploaderPublishedUploadsResult{}, fmt.Errorf("读取素材映射失败")
+	}
+	imageMap, err := loadStringMapFile(input.ImageMapPath)
+	if err != nil {
+		return PurgeUploaderPublishedUploadsResult{}, fmt.Errorf("读取封面映射失败")
+	}
+
+	type candidate struct {
+		id    int64
+		entry map[string]any
+	}
+	candidates := make([]candidate, 0)
+	seenIDs := make(map[int64]struct{})
+	warnings := make([]string, 0)
+	for _, entry := range resources {
+		if !catalogEntryOwnedBySerial(entry, serial) {
+			continue
+		}
+		idText := stringifyCatalogID(entry["id"])
+		id, parseErr := strconv.ParseInt(idText, 10, 64)
+		if parseErr != nil || id <= 0 {
+			warnings = append(warnings, "发现无效素材编号，已跳过一条记录")
+			continue
+		}
+		if _, duplicate := seenIDs[id]; duplicate {
+			continue
+		}
+		seenIDs[id] = struct{}{}
+		candidates = append(candidates, candidate{id: id, entry: entry})
+	}
+	if len(candidates) == 0 {
+		return PurgeUploaderPublishedUploadsResult{Warnings: warnings}, nil
+	}
+
+	concurrency := input.MaxConcurrency
+	if concurrency <= 0 {
+		concurrency = 8
+	}
+	if concurrency > 16 {
+		concurrency = 16
+	}
+	if concurrency > len(candidates) {
+		concurrency = len(candidates)
+	}
+
+	tasks := make(chan candidate, len(candidates))
+	for _, item := range candidates {
+		tasks <- item
+	}
+	close(tasks)
+	type deleteResult struct {
+		id  int64
+		err error
+	}
+	results := make(chan deleteResult, len(candidates))
+	var workers sync.WaitGroup
+	workers.Add(concurrency)
+	for worker := 0; worker < concurrency; worker++ {
+		go func() {
+			defer workers.Done()
+			for item := range tasks {
+				if err := ctx.Err(); err != nil {
+					results <- deleteResult{id: item.id, err: err}
+					continue
+				}
+				idKey := strconv.FormatInt(item.id, 10)
+				deleteErr := deletePublishedCatalogObjects(ctx, item.entry, resourceMap, imageMap, idKey, input.Signers)
+				results <- deleteResult{id: item.id, err: deleteErr}
+			}
+		}()
+	}
+	workers.Wait()
+	close(results)
+
+	deletedSet := make(map[int64]struct{}, len(candidates))
+	for result := range results {
+		if result.err != nil {
+			warnings = append(warnings, fmt.Sprintf("素材 %d 删除失败: %v", result.id, result.err))
+			continue
+		}
+		deletedSet[result.id] = struct{}{}
+	}
+	if len(deletedSet) == 0 {
+		return PurgeUploaderPublishedUploadsResult{Warnings: warnings}, nil
+	}
+
+	filteredResources := make([]map[string]any, 0, len(resources)-len(deletedSet))
+	for _, entry := range resources {
+		id, parseErr := strconv.ParseInt(stringifyCatalogID(entry["id"]), 10, 64)
+		if parseErr == nil {
+			if _, deleted := deletedSet[id]; deleted {
+				continue
+			}
+		}
+		filteredResources = append(filteredResources, entry)
+	}
+	for id := range deletedSet {
+		idKey := strconv.FormatInt(id, 10)
+		delete(resourceMap, idKey)
+		delete(imageMap, idKey)
+	}
+
+	deletedIDs := make([]int64, 0, len(deletedSet))
+	for _, item := range candidates {
+		if _, deleted := deletedSet[item.id]; deleted {
+			deletedIDs = append(deletedIDs, item.id)
+		}
+	}
+	result := PurgeUploaderPublishedUploadsResult{DeletedResourceIDs: deletedIDs, Warnings: warnings}
+	if err := saveResourceCatalogFile(input.ResourcesPath, filteredResources); err != nil {
+		return result, fmt.Errorf("保存素材清单失败: %w", err)
+	}
+	if err := saveStringMapFile(input.ResourceMapPath, resourceMap); err != nil {
+		return result, fmt.Errorf("保存素材映射失败: %w", err)
+	}
+	if err := saveStringMapFile(input.ImageMapPath, imageMap); err != nil {
+		return result, fmt.Errorf("保存封面映射失败: %w", err)
+	}
+	return result, nil
 }
 
 func reviewVideoObjectKey(item PendingImageReview) string {

@@ -2433,43 +2433,25 @@ func main() {
 
 		warnings := make([]string, 0)
 		deletedResourceIDs := make([]int64, 0, summary.PublishedResourceCount)
-		// Reload after taking the write lock. This avoids deleting a stale
-		// snapshot when a previous attempt already removed some resources.
-		items, loadErr := loadResourceCatalog(resourcesPath)
-		if loadErr != nil {
-			warnings = append(warnings, "素材目录读取失败，已保留封禁状态")
-		} else {
-			resourceIDs := make([]int64, 0, summary.PublishedResourceCount)
-			for _, entry := range items {
-				if catalogEntryUploaderSerial(entry) != summary.UploaderSerial {
-					continue
-				}
-				// CatalogResourceIDString uses the numeric-aware conversion
-				// (including json.Number/float64), avoiding scientific notation
-				// surprises from fmt.Sprint on large JSON numbers.
-				idText := service.CatalogResourceIDString(entry["id"])
-				id, idErr := strconv.ParseInt(idText, 10, 64)
-				if idErr != nil || id <= 0 {
-					warnings = append(warnings, "发现无效素材编号，已跳过一条记录")
-					continue
-				}
-				resourceIDs = append(resourceIDs, id)
-			}
-			for _, id := range resourceIDs {
-				if err := service.DeleteOwnPublishedUpload(c.Request.Context(), service.DeleteOwnPublishedUploadInput{
-					ResourceID:      id,
-					ResourcesPath:   resourcesPath,
-					ResourceMapPath: resourceMapPath,
-					ImageMapPath:    imageMapPath,
-					Signers:         deleteSigners,
-					AllowAnyOwner:   true,
-				}); err != nil {
-					warnings = append(warnings, fmt.Sprintf("素材 %d 删除失败: %v", id, err))
-					continue
-				}
-				deletedResourceIDs = append(deletedResourceIDs, id)
-				warnings = append(warnings, cleanupDeletedResource(strconv.FormatInt(id, 10))...)
-			}
+		// Reload after taking the write lock. The service loads the catalog and
+		// maps once, deletes COS objects with bounded concurrency, then persists
+		// the filtered data once. This avoids the old per-resource read/write
+		// loop, which could take several minutes for a prolific uploader.
+		purgeResult, purgeErr := service.PurgeUploaderPublishedUploads(c.Request.Context(), service.PurgeUploaderPublishedUploadsInput{
+			Serial:          summary.UploaderSerial,
+			ResourcesPath:   resourcesPath,
+			ResourceMapPath: resourceMapPath,
+			ImageMapPath:    imageMapPath,
+			Signers:         deleteSigners,
+			MaxConcurrency:  8,
+		})
+		deletedResourceIDs = append(deletedResourceIDs, purgeResult.DeletedResourceIDs...)
+		warnings = append(warnings, purgeResult.Warnings...)
+		if purgeErr != nil {
+			warnings = append(warnings, purgeErr.Error())
+		}
+		for _, id := range purgeResult.DeletedResourceIDs {
+			warnings = append(warnings, cleanupDeletedResource(strconv.FormatInt(id, 10))...)
 		}
 
 		deletedSessionCount := 0

@@ -1141,9 +1141,13 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       if (!confirmedAgain) return;
 
       const result = await adminPurgeAndBanUploader(adminToken, resource.id);
+      // Older backends may omit the id list after a successful single-item
+      // purge. Only use that compatibility fallback when the server confirms
+      // that no uploader materials remain; otherwise keep failed items in the
+      // current view so an operator can retry them safely.
       const deletedIds = result.deletedResourceIds.length > 0
         ? result.deletedResourceIds
-        : [resource.id];
+        : result.remainingResourceCount === 0 ? [resource.id] : [];
       const deletedIdSet = new Set(deletedIds);
       deletedIds.forEach((resourceId) => removeResource(resourceId));
       setRecommendationResources((current) => current.filter((item) => !deletedIdSet.has(item.id)));
