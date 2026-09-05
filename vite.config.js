@@ -3,6 +3,28 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 const PROJECT_ROOT = fileURLToPath(new URL(".", import.meta.url));
+const DEFAULT_PRODUCTION_API_BASE = "https://api.jadot.cn:8443";
+
+function isLoopbackApiBase(value) {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function resolveApiBase(env, isProd) {
+  const configured = (env.VITE_API_BASE || "").trim();
+  if (!isProd) return configured;
+
+  const productionOverride = (env.VITE_PRODUCTION_API_BASE || "").trim();
+  const candidate = productionOverride || configured;
+  return !candidate || isLoopbackApiBase(candidate)
+    ? DEFAULT_PRODUCTION_API_BASE
+    : candidate;
+}
 
 function injectProductionSecurity(apiBase) {
   return {
@@ -58,13 +80,20 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, PROJECT_ROOT, "");
   const apiDevUrl = env.VITE_DEV_API_URL || env.VITE_GIN_API_URL || "http://127.0.0.1:18080";
   const isProd = mode === "production";
+  const apiBase = resolveApiBase(env, isProd);
 
   return {
     root: PROJECT_ROOT,
     plugins: [
       react(),
-      injectProductionSecurity(env.VITE_API_BASE || ""),
+      injectProductionSecurity(apiBase),
     ],
+    // Vite normally injects VITE_API_BASE directly from .env.local. Override
+    // that replacement so a local development URL can never leak into a
+    // production artifact.
+    define: {
+      "import.meta.env.VITE_API_BASE": JSON.stringify(apiBase),
+    },
     base: env.VITE_BASE_PATH || "/",
     resolve: {
       preserveSymlinks: true,
@@ -79,7 +108,10 @@ export default defineConfig(({ mode }) => {
       reportCompressedSize: true,
       rollupOptions: {
         output: {
-          manualChunks: undefined,
+          manualChunks: {
+            react: ["react", "react-dom", "react-router-dom"],
+            ffmpeg: ["@ffmpeg/ffmpeg"],
+          },
         },
       },
     },
@@ -88,6 +120,14 @@ export default defineConfig(({ mode }) => {
       legalComments: "none",
     },
     server: {
+      // Browser smoke tests and local tooling may create Chrome profiles under
+      // the repository (tmp-*).  Those profiles contain locked SQLite/Cookie
+      // files on Windows; watching them can crash Vite with EBUSY before the
+      // page is served.  Keep temporary diagnostics out of the watcher while
+      // still reloading normal source/config changes.
+      watch: {
+        ignored: ["**/tmp-*", "**/outputs/**"],
+      },
       proxy: {
         "/api": {
           target: apiDevUrl,

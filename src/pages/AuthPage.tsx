@@ -9,6 +9,7 @@ import { useThemeMode } from "../hooks/useThemeMode";
 import {
   DEVICE_MISMATCH_MESSAGE,
   hasGrantedAuthorizedDevice,
+  listGrantedAuthorizedDevices,
   requestUsbAndAuthorize,
   tryAuthorizeGrantedDevice,
 } from "../services/authService";
@@ -50,6 +51,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [autoConnecting, setAutoConnecting] = useState(false);
   const [canSilentConnect, setCanSilentConnect] = useState(false);
+  const [authorizedCount, setAuthorizedCount] = useState(0);
   const [error, setError] = useState("");
   const [showUsbPickerGuide, setShowUsbPickerGuide] = useState(false);
   const navigate = useNavigate();
@@ -114,6 +116,21 @@ export default function AuthPage() {
     }
     setShowUsbPickerGuide(true);
   };
+
+  const refreshAuthorizedDevices = async () => {
+    try {
+      const devices = await listGrantedAuthorizedDevices();
+      setAuthorizedCount(devices.length);
+      setCanSilentConnect(devices.length > 0);
+    } catch {
+      setAuthorizedCount(0);
+      setCanSilentConnect(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshAuthorizedDevices();
+  }, []);
 
   useEffect(() => {
     // Device selection is always user initiated; never connect on page load.
@@ -189,14 +206,14 @@ export default function AuthPage() {
           <p className="site-accent-text text-xs uppercase tracking-[0.24em]">USB Authentication</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-50">请连接设备</h1>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-            请使用 Edge 或 Chrome。系统会自动识别佳点授权设备；已授权过的设备无需手动选择，插入即可进入。
+            请使用 Edge 或 Chrome。首次使用请选择设备并连接；已授权设备可快速连接，多台设备时请明确选择目标设备。
           </p>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             新设备首次进入网站并完成连接后，系统会自动关闭设备的“上电打开网站”，以后插入不会重复弹出。
           </p>
 
           <SiteButton type="button" className="mt-8 w-full" disabled={busy} onClick={handleConnectClick}>
-            {autoConnecting ? "正在自动连接设备…" : loading ? "连接中..." : "同意条款并连接"}
+            {loading ? "连接中..." : authorizedCount > 0 ? `选择并连接设备（已授权 ${authorizedCount} 台）` : "选择设备并连接"}
           </SiteButton>
 
           {!busy ? (
@@ -209,9 +226,13 @@ export default function AuthPage() {
             </button>
           ) : null}
 
-          {!canSilentConnect && !autoConnecting ? (
+          {canSilentConnect && !autoConnecting ? (
+            <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-300">
+              已发现 {authorizedCount} 台已授权设备，点击上方按钮后选择要使用的设备。
+            </p>
+          ) : !autoConnecting ? (
             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              首次使用需在浏览器弹窗中确认一次授权，之后将自动连接，无需再手动选择。
+              首次使用需在浏览器弹窗中确认授权；之后可从已授权设备中快速选择。
             </p>
           ) : null}
 

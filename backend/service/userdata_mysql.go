@@ -25,8 +25,8 @@ func openMySQLStore(dsn string) (*mysqlStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(dbPoolSize("MYSQL_MAX_OPEN_CONNS", 20))
+	db.SetMaxIdleConns(dbPoolSize("MYSQL_MAX_IDLE_CONNS", 5))
 	db.SetConnMaxLifetime(30 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

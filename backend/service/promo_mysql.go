@@ -23,8 +23,8 @@ func openPromoMySQLStore(dsn string) (*promoMySQLStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(dbPoolSize("MYSQL_MAX_OPEN_CONNS", 10))
+	db.SetMaxIdleConns(dbPoolSize("MYSQL_MAX_IDLE_CONNS", 5))
 	db.SetConnMaxLifetime(30 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()

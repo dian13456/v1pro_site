@@ -169,6 +169,13 @@ export async function hasGrantedAuthorizedDevice(): Promise<boolean> {
   return grantedDevices.some((device) => isAllowedUsbDevice(device.vendorId, device.productId));
 }
 
+/** Return already-authorized V1PRO devices without opening or claiming them. */
+export async function listGrantedAuthorizedDevices(): Promise<USBDevice[]> {
+  if (!("usb" in navigator)) return [];
+  const devices = await navigator.usb.getDevices();
+  return devices.filter((device) => isAllowedUsbDevice(device.vendorId, device.productId));
+}
+
 async function requestFilteredUsbDevice(): Promise<USBDevice> {
   if (window.top !== window.self) {
     throw new Error("当前页面运行在 iframe 中，WebUSB 需要顶层页面打开");

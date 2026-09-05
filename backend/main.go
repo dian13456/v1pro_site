@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -562,9 +560,7 @@ func ensureReviewAdmin(c *gin.Context, reviewAdminToken string) bool {
 		return false
 	}
 	token := strings.TrimSpace(c.GetHeader("X-Review-Admin-Token"))
-	expectedHash := sha256.Sum256([]byte(reviewAdminToken))
-	actualHash := sha256.Sum256([]byte(token))
-	if token == "" || subtle.ConstantTimeCompare(actualHash[:], expectedHash[:]) != 1 {
+	if token == "" || !validateAdminSession(token, reviewAdminToken, time.Now().UTC()) {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "复核管理员 token 无效"})
 		return false
 	}
