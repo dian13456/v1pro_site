@@ -504,30 +504,41 @@ export class V1ProWebTransfer {
         `预擦除范围无效（${totalBytes}/${maxPayloadBytes} 字节）。`,
       );
     }
-    // Sized ERASE is optional for the legacy/raw path.  Some older devices
-    // advertise GFM2 but do not implement the OK_ERASE acknowledgement; they
-    // queue the erase and accept START normally.  Waiting for that optional
-    // reply blocks the whole transfer until the retry timeout.  Only the
-    // newer persistent-compression firmware needs the acknowledged pre-erase
-    // path.
-    const waitForAck = this.deviceCapacity?.persistentCompression === true;
+    // START already performs the complete erase on the legacy/raw protocol.
+    // Do not send an optional sized ERASE to old GFM1/GFM2 devices: some of
+    // them accept the command but keep the USB ring busy while erasing, which
+    // can leave the following FW/START packets queued indefinitely.  The
+    // acknowledged pre-erase path is reserved for persistent-compression
+    // firmware, where it is part of the newer transfer flow.
+    const supportsPreparedErase = this.deviceCapacity?.persistentCompression === true;
     this.busy = true;
     const state = {
       requestedBytes,
       transferStarted: false,
       promise: Promise.resolve({ requestedBytes, confirmedBytes: 0 }),
     };
-    state.promise = beginGfm1PayloadStream(this.device, requestedBytes, {
-      maxPayloadBytes,
-      waitForAck,
-    }).then((confirmedBytes) => ({
-      requestedBytes,
-      confirmedBytes: Number.isFinite(confirmedBytes) ? Number(confirmedBytes) : requestedBytes,
-    })).catch((error) => ({
-      requestedBytes,
-      confirmedBytes: 0,
-      error,
-    }));
+    if (supportsPreparedErase) {
+      state.promise = beginGfm1PayloadStream(this.device, requestedBytes, {
+        maxPayloadBytes,
+        waitForAck: true,
+      }).then((confirmedBytes) => ({
+        requestedBytes,
+        confirmedBytes: Number.isFinite(confirmedBytes) ? Number(confirmedBytes) : requestedBytes,
+      })).catch((error) => ({
+        requestedBytes,
+        confirmedBytes: 0,
+        error,
+      }));
+    } else {
+      // Keep the prepared-transfer contract for callers that overlap encode
+      // and transfer, but let START be the first flash command.
+      state.skipped = true;
+      state.promise = Promise.resolve({
+        requestedBytes,
+        confirmedBytes: requestedBytes,
+        skipped: true,
+      });
+    }
     this.preparedTransferBytes = requestedBytes;
     this.preparedTransfer = state;
     return state.promise;
@@ -683,7 +694,7 @@ export class V1ProWebTransfer {
           });
         }
         const preerase = await preparedTransfer.promise;
-        if (!preerase.error && preerase.confirmedBytes < plan.totalBytes) {
+        if (!preerase.error && !preerase.skipped && preerase.confirmedBytes < plan.totalBytes) {
           try {
             // Firmware treats a larger repeated ERASE value as the new total
             // boundary and only erases the missing tail. START remains the
@@ -706,8 +717,8 @@ export class V1ProWebTransfer {
         plan.payloadChunks(),
         {
           maxPayloadBytes,
-          /* Prepared mode performs only sized erase. Send START immediately
-           * before the already encoded payload so firmware RX cannot time out. */
+          /* Send START immediately before the already encoded payload. Legacy
+           * firmware performs its own erase after START. */
           startAlreadySent: false,
           prefetchBeforeStart: PREFETCH_CHUNKS_BEFORE_START,
           verificationTimeoutMs: plan.storageFormat === "GFM3" ? 60000 : 0,

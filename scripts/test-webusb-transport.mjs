@@ -430,12 +430,10 @@ const topupResult = await topupClient.transferFile(new Blob([oneFrameGfm1]), {
 });
 const topupErases = sizedEraseWrites(topupDevice);
 assert.equal(topupResult.bytes, oneFrameGfm1.length);
-assert.equal(topupErases.length, 2, "an undersized estimate must issue one tail top-up ERASE");
-assert.equal(sizedEraseValue(topupErases[0]), 4096);
 assert.equal(
-  sizedEraseValue(topupErases[1]),
-  oneFrameGfm1.length,
-  "tail top-up must carry the final total length, not the byte difference",
+  topupErases.length,
+  0,
+  "legacy/raw devices must let START perform the erase without sized ERASE",
 );
 
 const reuseDevice = createMockDevice("00002200");
@@ -449,8 +447,8 @@ await reuseClient.transferFile(new Blob([oneFrameGfm1]), {
 });
 assert.equal(
   sizedEraseWrites(reuseDevice).length,
-  1,
-  "a confirmed estimate covering the final blob must be reused",
+  0,
+  "legacy/raw devices must not queue a sized ERASE before START",
 );
 
 const gfm2LegacyDevice = createMockDevice("00002200");
@@ -469,6 +467,11 @@ assert.equal(
   gfm2LegacyResult.bytes,
   oneFrameGfm1.length,
   "GFM2-only legacy devices must not block on an optional ERASE ACK",
+);
+assert.equal(
+  sizedEraseWrites(gfm2LegacyDevice).length,
+  0,
+  "GFM2-only legacy devices must send START without a sized ERASE",
 );
 
 let failedEraseAttempts = 0;

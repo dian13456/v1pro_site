@@ -40,6 +40,11 @@ def content_type(path: Path) -> str:
 def cache_control(key: str) -> str:
     if key == "index.html" or key.endswith(".html") or key in {"CNAME", "version.json"}:
         return NO_CACHE
+    # WebUSB modules are served from a stable /webusb/ path and their internal
+    # imports use a fixed query version. Keep them revalidating so a protocol
+    # fix for legacy firmware is not hidden behind the CDN's 24-hour cache.
+    if key.startswith("webusb/"):
+        return NO_CACHE
     if key.startswith("assets/") or key.startswith("ffmpeg/"):
         return IMMUTABLE_CACHE
     return SHORT_CACHE
