@@ -373,6 +373,17 @@ assert.ok(legacyStart, "V0.0.34 must remain on raw START");
 assert.equal(legacyStats.compressed, false);
 assert.equal(legacyStats.streamBytes, reference.length + 8);
 
+const legacyLargeDevice = createMockDevice("00002200");
+const legacyLargePayload = Uint8Array.from({ length: 9000 }, (_, index) => index & 0xff);
+async function* oneLargeChunk() {
+  yield legacyLargePayload;
+}
+await sendGfm1PayloadStream(legacyLargeDevice, legacyLargePayload.length, oneLargeChunk());
+assert.ok(
+  Math.max(...legacyLargeDevice.writes.filter((write) => write.length > 8).map((write) => write.length)) <= 4096,
+  "legacy raw writes must use the small endpoint-safe chunk size",
+);
+
 const { V1ProWebTransfer } = await import("../public/webusb/v1pro-web-transfer.js");
 const { buildGfm1Blob } = await import("../public/webusb/v1pro-gfm1.js");
 const preeraseEstimator = new V1ProWebTransfer();

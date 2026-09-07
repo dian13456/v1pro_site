@@ -17,6 +17,11 @@ export const EP_IN = 1;
  * endpoint packets; batching avoids thousands of browser/JS round trips.
  */
 export const USB_CHUNK = 64 * 1024;
+/** Old V0.0.34-era receivers can NAK while programming Flash. Keep their
+ * individual WebUSB submissions at the same 4 KiB size used by the GUI
+ * sender so the device's small endpoint ring can reopen between writes. */
+export const LEGACY_USB_CHUNK = 4 * 1024;
+export const LEGACY_USB_PACE_MS = 2;
 
 export const USBDL_MAGIC0 = 0xa5;
 export const USBDL_MAGIC1 = 0x5a;

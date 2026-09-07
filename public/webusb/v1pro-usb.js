@@ -7,6 +7,8 @@ import {
   EP_OUT,
   FRAME_PIXEL_BYTES,
   IO_TIMEOUT_MS,
+  LEGACY_USB_CHUNK,
+  LEGACY_USB_PACE_MS,
   PING_TIMEOUT_MS,
   USB_CHUNK,
   USBDL_CMD_ERASE,
@@ -453,9 +455,12 @@ export async function bulkOut(device, data, opts = {}) {
   const { outEndpoint } = getSession(device);
   const timeoutMs = opts.timeoutMs ?? BULK_OUT_TIMEOUT_MS;
   const retries = opts.retries ?? TRANSFER_OUT_RETRIES;
-  for (let i = 0; i < data.length; i += USB_CHUNK) {
-    const slice = data.subarray(i, Math.min(i + USB_CHUNK, data.length));
+  const chunkSize = Math.max(64, Math.trunc(opts.chunkSize ?? USB_CHUNK));
+  const paceMs = Math.max(0, Math.trunc(opts.paceMs ?? 0));
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const slice = data.subarray(i, Math.min(i + chunkSize, data.length));
     await transferOutWithRetry(device, outEndpoint, slice, timeoutMs, retries);
+    if (paceMs && i + slice.length < data.length) await sleep(paceMs);
   }
 }
 
@@ -1523,6 +1528,15 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
   if (!startAlreadySent) {
     await drainInQuick(device);
   }
+  // A V0.0.34-era receiver has a small USB endpoint ring and can hold a
+  // 64 KiB WebUSB submission while it programs Flash. Match the desktop
+  // sender's 4 KiB writes whenever compression is unavailable or the FW
+  // capability probe was unsupported, while retaining large writes for the
+  // newer compressed transport.
+  const legacyCompat = opts.legacyCompat ?? (firmwareInfo?.supportsCompressedTransport !== true);
+  const outputOptions = legacyCompat
+    ? { chunkSize: LEGACY_USB_CHUNK, paceMs: LEGACY_USB_PACE_MS }
+    : {};
   const compressed = prepared?.compressed === true;
   const preamble = compressed
     ? buildCompressedStartPreamble(prepared.wireBytes, totalBytes)
@@ -1551,7 +1565,7 @@ export async function sendGfm1PayloadStream(device, totalBytes, payloadChunks, o
 
   const writeChunk = async (chunk) => {
     if (!(chunk instanceof Uint8Array) || chunk.length === 0) return;
-    await bulkOut(device, chunk);
+    await bulkOut(device, chunk, outputOptions);
     sent += chunk.length;
     await drainTracker.maybeDrain(device, chunk.length);
     if (onProgress) onProgress(Math.min(sent, streamLen), streamLen, transport);
