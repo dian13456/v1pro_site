@@ -1,4 +1,4 @@
-﻿/** V1PRO WebUSB shared constants (align with usb_send_gif.py / USB protocol). */
+/** V1PRO WebUSB shared constants (align with usb_send_gif.py / USB protocol). */
 
 export const V1PRO_USB_FILTERS = [
   { vendorId: 0x0483, productId: 0x66aa },
@@ -91,7 +91,7 @@ export const DEFAULT_MAX_VIDEO_SEC = 10;
 export const DEFAULT_VIDEO_FPS = 10;
 
 /** WebUSB 直传测试页 / SDK 版本（用于确认是否加载到最新静态资源）。 */
-export const WEBUSB_TRANSFER_VERSION = "1.2.36";
+export const WEBUSB_TRANSFER_VERSION = "1.2.37";
 
 /** GFM1 payload chunks to encode before sending START (keeps USB stream alive during video seek). */
 export const PREFETCH_CHUNKS_BEFORE_START = 6;

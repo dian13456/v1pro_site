@@ -39,12 +39,12 @@ import {
   USBDL_URL_SUB_WRITE,
   USB_HID_URL_MAX_LEN,
   V1PRO_USB_FILTERS,
-} from "./v1pro-constants.js?v=1.2.36";
+} from "./v1pro-constants.js?v=1.2.37";
 import {
   prepareTransportPayload,
   TRANSPORT_BLOCK_SIZE,
   TRANSPORT_VERSION,
-} from "./v1pro-transport-codec.js?v=1.2.36";
+} from "./v1pro-transport-codec.js?v=1.2.37";
 
 /** 大文件写出参数：定义在 usb 层，避免 constants.js 旧缓存导致模块加载失败。 */
 const BULK_OUT_TIMEOUT_MS = 60000;

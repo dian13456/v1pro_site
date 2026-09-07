@@ -12,12 +12,12 @@ import {
   PREFETCH_CHUNKS_BEFORE_START,
   SPECTRUM_BANDS,
   WEBUSB_TRANSFER_VERSION,
-} from "./v1pro-constants.js?v=1.2.36";
+} from "./v1pro-constants.js?v=1.2.37";
 import {
   planGfm1Encode,
   predictVideoTransferFromUrl,
-} from "./v1pro-gfm1.js?v=1.2.36";
-import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.36";
+} from "./v1pro-gfm1.js?v=1.2.37";
+import { optimizePrebuiltGfm1 } from "./v1pro-gfm-compression.js?v=1.2.37";
 import {
   beginGfm1PayloadStream,
   closeDevice,
@@ -39,7 +39,7 @@ import {
   sendLiveRgb565,
   exitLiveMode,
   V1ProUsbError,
-} from "./v1pro-usb.js?v=1.2.36";
+} from "./v1pro-usb.js?v=1.2.37";
 
 export { V1ProUsbError, listAuthorizedDevices, queryDeviceCapacity, WEBUSB_TRANSFER_VERSION };
 
@@ -53,7 +53,7 @@ async function optimizePrebuiltGfm1InWorker(sourceBytes, options) {
   let worker;
   try {
     worker = new Worker(
-      new URL("./v1pro-gfm-compression-worker.js?v=1.2.36", import.meta.url),
+      new URL("./v1pro-gfm-compression-worker.js?v=1.2.37", import.meta.url),
       { type: "module", name: "v1pro-gfm-compression" },
     );
   } catch {
