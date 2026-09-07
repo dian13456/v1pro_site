@@ -24,6 +24,7 @@ const {
   parseJedecReply,
   parseFirmwareInfoReply,
   parseSizedEraseReply,
+  queryFirmwareInfo,
   sendGfm1PayloadStream,
 } = await import("../public/webusb/v1pro-usb.js");
 
@@ -197,6 +198,14 @@ assert.equal(
 );
 assert.equal(parseFirmwareInfoReply("PONG"), null);
 
+const unsupportedFirmwareDevice = createMockDevice(null, (write, enqueueReply) => {
+  if (write.length === 4 && write[2] === 0x0c && write[3] === 0x01) {
+    enqueueReply("FW,1,err,unsupported");
+  }
+});
+const unsupportedFirmwareInfo = await queryFirmwareInfo(unsupportedFirmwareDevice);
+assert.equal(unsupportedFirmwareInfo, null, "unsupported FW INFO must fall back immediately");
+
 assert.equal(parseSizedEraseReply("OK_ERASE,6604942", 1), 6604942);
 assert.equal(parseSizedEraseReply("ok_erase", 6604942), 6604942);
 assert.equal(parseSizedEraseReply("BUSY", 6604942), null);
@@ -228,6 +237,7 @@ function createMockDevice(versionHex, onWrite = null) {
       const copy = new Uint8Array(data);
       writes.push(copy);
       if (
+        versionHex &&
         copy.length === 4 &&
         copy[0] === 0xa5 &&
         copy[1] === 0x5a &&
@@ -441,6 +451,24 @@ assert.equal(
   sizedEraseWrites(reuseDevice).length,
   1,
   "a confirmed estimate covering the final blob must be reused",
+);
+
+const gfm2LegacyDevice = createMockDevice("00002200");
+const gfm2LegacyClient = makeTransferClient(gfm2LegacyDevice, {
+  gfm2: true,
+  persistentCompression: false,
+});
+void gfm2LegacyClient.beginPreparedTransfer(oneFrameGfm1.length);
+const gfm2LegacyResult = await gfm2LegacyClient.transferFile(new Blob([oneFrameGfm1]), {
+  fileName: "gfm2-legacy.gfm1",
+  mediaType: "image",
+  prebuiltGfm1: { frameCount: 1 },
+  pingFirst: false,
+});
+assert.equal(
+  gfm2LegacyResult.bytes,
+  oneFrameGfm1.length,
+  "GFM2-only legacy devices must not block on an optional ERASE ACK",
 );
 
 let failedEraseAttempts = 0;

@@ -987,7 +987,7 @@ export async function closeDevice(device) {
  *   gfm3: boolean,
  *   persistentCompression: boolean,
  *   liveLz4: boolean,
- *   hardwareVariant: "V1P"|"V2"|"UNKNOWN",
+ *   hardwareVariant: "V1"|"V1P"|"V2"|"UNKNOWN",
  *   materialMaxFps: number,
  *   maxPayloadBytes: number,
  *   maxFrames: number,
@@ -1024,7 +1024,7 @@ export function parseJedecReply(text) {
   let hardwareVariant;
   if (hardwareTokens.length) {
     hardwareVariant = new Set(hardwareTokens).size === 1 ? hardwareTokens[0] : "UNKNOWN";
-    if (hardwareVariant !== "V1P" && hardwareVariant !== "V2") hardwareVariant = "UNKNOWN";
+    if (!["V1", "V1P", "V2"].includes(hardwareVariant)) hardwareVariant = "UNKNOWN";
   } else if (lcdW === 320 && lcdH === 170) {
     hardwareVariant = "V1P";
   } else if (lcdW === 320 && lcdH === 240) {
@@ -1032,7 +1032,7 @@ export function parseJedecReply(text) {
   } else {
     hardwareVariant = "UNKNOWN";
   }
-  const expectedGeometry = hardwareVariant === "V1P"
+  const expectedGeometry = (hardwareVariant === "V1P" || hardwareVariant === "V1")
     ? [320, 170]
     : hardwareVariant === "V2"
       ? [320, 240]
@@ -1041,12 +1041,15 @@ export function parseJedecReply(text) {
     hardwareVariant = "UNKNOWN";
   }
   const persistentCompression = gfm2 && gfm3;
-  const materialMaxFps = hardwareVariant === "UNKNOWN" ? 30 : 45;
+  const materialMaxFps = hardwareVariant === "V1" ? 15 : hardwareVariant === "UNKNOWN" ? 30 : 45;
 
-  const totalBytes = Number.isFinite(totalMb) && totalMb > 0 ? Math.floor(totalMb * 1024 * 1024) : 0;
+  const byteTokens = Object.fromEntries(capabilities.filter(t=>t.includes("=")).map(t=>t.split("=")));
+  const isV1 = hardwareVariant === "V1";
+  if(isV1 && (model!==4 || ![262144,524288].includes(Number(byteTokens.B)) || !Number.isInteger(Number(byteTokens.U)) || Number(byteTokens.U)<=0 || Number(byteTokens.U)>Number(byteTokens.B)-131072-4096)) return null;
+  const totalBytes = isV1 ? Number(byteTokens.B) : Number.isFinite(totalMb) && totalMb > 0 ? Math.floor(totalMb * 1024 * 1024) : 0;
   const maxPayloadBytes = Math.min(
     ANIM_FLASH_MAX_BYTES,
-    totalBytes > 0 ? Math.max(0, totalBytes - 0x1000) : ANIM_FLASH_MAX_BYTES,
+    isV1 ? Number(byteTokens.U) : totalBytes > 0 ? Math.max(0, totalBytes - 0x1000) : ANIM_FLASH_MAX_BYTES,
   );
   const framesByBytes = Math.max(
     1,
@@ -1058,8 +1061,8 @@ export function parseJedecReply(text) {
   return {
     jedecHex,
     model: Number.isFinite(model) ? model : 0,
-    totalMb: Number.isFinite(totalMb) ? totalMb : 0,
-    usableMb: Number.isFinite(usableMb) ? usableMb : 0,
+    totalMb: totalBytes/1048576,
+    usableMb: isV1 ? maxPayloadBytes/1048576 : Number.isFinite(usableMb) ? usableMb : 0,
     productFrames,
     lcdW,
     lcdH,
@@ -1102,13 +1105,14 @@ export function parseFirmwareInfoReply(text) {
     patch,
     mode,
     supportsCompressedTransport:
-      mode === "app" && packed >= MIN_COMPRESSED_TRANSPORT_VERSION_WORD,
+      mode === "app" && !parts.some(t=>["H=3","HW=V1","HW=V1X0"].includes(t.toUpperCase())) && packed >= MIN_COMPRESSED_TRANSPORT_VERSION_WORD,
   };
 }
 
 /**
  * Best-effort APP version query. It is read-only and safe on old firmware;
- * unsupported devices simply time out and remain on the legacy raw protocol.
+ * explicit unsupported replies fall back to the legacy raw protocol without
+ * waiting for the full probe timeout.
  */
 export async function queryFirmwareInfo(device) {
   const session = getSession(device);
@@ -1131,7 +1135,7 @@ export async function queryFirmwareInfo(device) {
     );
     const reply = await readTextReply(
       device,
-      ["FW,1,info,"],
+      ["FW,1,info,", "FW,1,err,"],
       FIRMWARE_INFO_TIMEOUT_MS,
     );
     session.firmwareInfo = parseFirmwareInfoReply(reply);
@@ -1408,6 +1412,10 @@ export function isResetStreamReply(reply) {
  * @param {number} timeoutMs
  */
 async function resetTransferStream(device, timeoutMs) {
+  if(device.productId===0x66AB) {
+    try {await device.controlTransferOut({requestType:"vendor",recipient:"device",request:0x5B,value:0xA65A,index:0});await new Promise(resolve=>setTimeout(resolve,30));}
+    catch { /* Old V1 firmware keeps its existing bulk reset behavior. */ }
+  }
   const reset = Uint8Array.of(USBDL_MAGIC0, USBDL_MAGIC1, USBDL_CMD_RESET_STREAM, 0xa6);
   await bulkOut(device, reset);
   const reply = await readTextReply(

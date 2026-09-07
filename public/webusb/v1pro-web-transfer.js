@@ -504,8 +504,13 @@ export class V1ProWebTransfer {
         `预擦除范围无效（${totalBytes}/${maxPayloadBytes} 字节）。`,
       );
     }
-    const waitForAck = this.deviceCapacity?.gfm2 === true
-      || this.deviceCapacity?.persistentCompression === true;
+    // Sized ERASE is optional for the legacy/raw path.  Some older devices
+    // advertise GFM2 but do not implement the OK_ERASE acknowledgement; they
+    // queue the erase and accept START normally.  Waiting for that optional
+    // reply blocks the whole transfer until the retry timeout.  Only the
+    // newer persistent-compression firmware needs the acknowledged pre-erase
+    // path.
+    const waitForAck = this.deviceCapacity?.persistentCompression === true;
     this.busy = true;
     const state = {
       requestedBytes,
@@ -685,7 +690,7 @@ export class V1ProWebTransfer {
             // final safety net if this optional top-up fails.
             await beginGfm1PayloadStream(this.device, plan.totalBytes, {
               maxPayloadBytes,
-              waitForAck: capacity?.gfm2 === true || capacity?.persistentCompression === true,
+              waitForAck: capacity?.persistentCompression === true,
             });
           } catch (error) {
             console.warn("[V1PRO] pre-erase top-up failed; START will complete erase", error);
