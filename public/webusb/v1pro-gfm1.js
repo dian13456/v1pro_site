@@ -295,7 +295,7 @@ function normalizeDelayMs(value) {
 function isVideoBlob(type, name) {
   const lowerType = (type || "").toLowerCase();
   if (lowerType.startsWith("video/")) return true;
-  return /\.(mp4|webm|mov|m4v)$/i.test(name || "");
+  return /\.(mp4|webm|mov|m4v|mkv|avi|ts|flv|m2ts)$/i.test(name || "");
 }
 
 function indexOfBytes(haystack, needle) {

@@ -141,21 +141,93 @@ export function planBrowserFfmpegVideo(
   };
 }
 
-export async function probeBrowserVideoDuration(blob: Blob): Promise<number> {
+async function probeVideoDurationWithFfmpeg(
+  blob: Blob,
+  fileName = "",
+  onStatus?: (message: string) => void,
+): Promise<number> {
+  if (blob.size <= 0) throw new Error("视频文件为空");
+  if (blob.size > MAX_BROWSER_DIRECT_TRANSFER_VIDEO_BYTES) {
+    throw new Error("网页 FFmpeg 转换暂支持 50MB 以内的视频");
+  }
+  const extension = inputExtension(fileName, blob.type || "");
+  const inputDir = "/v1pro-duration-input";
+  const inputName = `source.${extension}`;
+  const inputPath = `${inputDir}/${inputName}`;
+  const probePath = "/v1pro-duration.json";
+  onStatus?.("正在启动 FFmpeg 读取视频信息…");
+  const lease = await acquireBrowserFfmpeg(onStatus);
+  const ffmpeg = lease.ffmpeg;
+  try {
+    await ffmpeg.createDir(inputDir);
+    await ffmpeg.mount(
+      FFFSType.WORKERFS,
+      { blobs: [{ name: inputName, data: blob }] },
+      inputDir,
+    );
+    const exitCode = await ffmpeg.ffprobe([
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "format=duration:stream=duration",
+      "-of",
+      "json",
+      inputPath,
+      "-o",
+      probePath,
+    ]);
+    if (exitCode !== 0) throw new Error("FFprobe 读取视频时长失败");
+    const output = await ffmpeg.readFile(probePath, "utf8");
+    const text = typeof output === "string" ? output : new TextDecoder().decode(output);
+    const parsed = JSON.parse(text) as {
+      format?: { duration?: string | number };
+      streams?: Array<{ duration?: string | number }>;
+    };
+    const candidates = [parsed.format?.duration, ...(parsed.streams || []).map((stream) => stream.duration)];
+    const duration = candidates
+      .map((value) => finiteSeconds(value == null ? undefined : value))
+      .find((value): value is number => value != null && value > 0);
+    if (!duration) throw new Error("视频时长无效");
+    return duration;
+  } finally {
+    try { await ffmpeg.deleteFile(probePath); } catch { /* probe may not exist */ }
+    try { await ffmpeg.unmount(inputDir); } catch { /* mount may not exist */ }
+    try { await ffmpeg.deleteDir(inputDir); } catch { /* directory may not exist */ }
+    lease.release();
+  }
+}
+
+export async function probeBrowserVideoDuration(
+  blob: Blob,
+  fileName = "",
+  onStatus?: (message: string) => void,
+): Promise<number> {
   const url = URL.createObjectURL(blob);
   const video = document.createElement("video");
   video.muted = true;
   video.preload = "metadata";
   try {
-    const duration = await new Promise<number>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve(video.duration);
-      video.onerror = () => reject(new Error("无法读取视频信息，请使用 H.264 8-bit MP4"));
-      video.src = url;
-    });
-    if (!Number.isFinite(duration) || duration <= 0) {
-      throw new Error("视频时长无效");
+    try {
+      const duration = await new Promise<number>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve(video.duration);
+        video.onerror = () => reject(new Error("浏览器无法读取视频元数据"));
+        video.src = url;
+      });
+      if (!Number.isFinite(duration) || duration <= 0) {
+        throw new Error("视频时长无效");
+      }
+      return duration;
+    } catch {
+      // Some Chromium builds reject HEVC, AV1, 10-bit H.264, or unusual MP4
+      // containers even though the bundled FFmpeg decoder can read them.
+      try {
+        return await probeVideoDurationWithFfmpeg(blob, fileName, onStatus);
+      } catch {
+        throw new Error("无法读取视频信息，请使用 H.264 8-bit MP4");
+      }
     }
-    return duration;
   } finally {
     video.removeAttribute("src");
     video.load();
@@ -164,7 +236,7 @@ export async function probeBrowserVideoDuration(blob: Blob): Promise<number> {
 }
 
 function inputExtension(fileName: string, mimeType: string, fallback = "mp4"): string {
-  const match = fileName.trim().toLowerCase().match(/\.(mp4|webm|mov|m4v|png|jpe?g|webp|gif)$/);
+  const match = fileName.trim().toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ts|flv|m2ts|png|jpe?g|webp|gif)$/);
   if (match) return match[1];
   if (mimeType.includes("gif")) return "gif";
   if (mimeType.includes("png")) return "png";

@@ -100,7 +100,7 @@ function rasterMediaType(file: File): "image" | "gif" | null {
 }
 
 function isVideoFile(file: File): boolean {
-  return file.type.toLowerCase().startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(file.name);
+  return file.type.toLowerCase().startsWith("video/") || /\.(mp4|webm|mov|m4v|mkv|avi|ts|flv|m2ts)$/i.test(file.name);
 }
 
 async function resolveMaterialRotation(
@@ -887,7 +887,7 @@ export default function WebUsbTransferTestPage() {
           };
         } else if (selectedVideo) {
           setStatusText("正在读取视频信息…");
-          const duration = await probeBrowserVideoDuration(file);
+          const duration = await probeBrowserVideoDuration(file, file.name, setStatusText);
           const beginnerAuto = materialFpsSelection === COMPATIBLE_VIDEO_FPS;
           const persistentCompression = capacity.persistentCompression === true;
           const candidateFps = beginnerAuto && persistentCompression

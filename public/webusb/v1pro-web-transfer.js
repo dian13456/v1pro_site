@@ -579,7 +579,7 @@ export class V1ProWebTransfer {
     const isVideo =
       opts.mediaType === "video" ||
       lowerType.startsWith("video/") ||
-      /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
+      /\.(mp4|webm|mov|m4v|mkv|avi|ts|flv|m2ts)$/i.test(lowerName);
     if (preparedTransfer) preparedTransfer.transferStarted = true;
     this.busy = true;
     let probeNote;
