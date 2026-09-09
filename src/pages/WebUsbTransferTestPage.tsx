@@ -20,6 +20,7 @@ import {
   probeBrowserVideoDuration,
 } from "../services/browserFfmpegVideoService";
 import { getCustomDisplayName } from "../services/welcomeService";
+import { getCachedUsbSerial } from "../services/authService";
 import { markBootWebsiteEntryHandled } from "../services/bootWebsiteService";
 import {
   prepareLocalAlbumGfm1,
@@ -57,7 +58,7 @@ const DEFAULT_PANEL_WIDTH = 320;
 const DEFAULT_PANEL_HEIGHT = 170;
 
 function deviceKey(device: USBDevice): string {
-  return `${device.vendorId}:${device.productId}:${device.serialNumber || "no-sn"}`;
+  return `${device.vendorId}:${device.productId}:${getCachedUsbSerial(device) || "no-sn"}`;
 }
 
 function displayUsbProductName(productName?: string | null): string {
@@ -67,7 +68,7 @@ function displayUsbProductName(productName?: string | null): string {
 
 function usbDeviceLabel(device: USBDevice): string {
   const namedDevice = device as USBDevice & { productName?: string };
-  const sn = device.serialNumber?.trim() || "";
+  const sn = getCachedUsbSerial(device);
   const nickname = getCustomDisplayName(sn);
   return `${nickname || displayUsbProductName(namedDevice.productName)} · SN ${sn || "无序列号"}`;
 }

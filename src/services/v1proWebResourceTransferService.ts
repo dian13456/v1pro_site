@@ -191,13 +191,19 @@ async function resolveAuthenticatedV1ProDevice(): Promise<USBDevice> {
   }
 
   const devices = await listAuthorizedV1ProDevices();
-  const matched = devices.find((device) =>
+  const matchedDevices = devices.filter((device) =>
     matchesAuthenticatedUsbDevice(device, authenticatedSerial),
   );
-  if (!matched) {
+  if (matchedDevices.length === 1) {
+    return matchedDevices[0];
+  }
+  if (matchedDevices.length > 1) {
+    throw new Error("检测到多台设备但浏览器未返回 SN，请暂时只连接目标 V1PRO 后重试");
+  }
+  if (!matchedDevices.length) {
     throw new Error(`未找到当前认证的 V1PRO（SN ${authenticatedSerial}），请重新认证该设备`);
   }
-  return matched;
+  throw new Error("未找到当前认证的 V1PRO，请重新认证该设备");
 }
 
 function formatUsbError(err: unknown): string {
