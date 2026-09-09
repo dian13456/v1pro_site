@@ -45,4 +45,6 @@ export interface AuthState {
   productId: number;
   verifiedAt: number;
   displayName?: string;
+  /** Positively identified USB hardware for this authenticated serial. */
+  hardwareVariant?: "V1";
 }

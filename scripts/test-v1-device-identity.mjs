@@ -71,11 +71,17 @@ const mobileEdgeDevice = {
   async open() { this.opened = true; },
   async close() { this.opened = false; },
   async selectConfiguration() { this.configuration = { interfaces: [] }; },
-  async controlTransferIn() { return { status: "ok", data: new DataView(descriptorBytes.buffer) }; },
+  async controlTransferIn(setup, length) {
+    assert.deepEqual(setup, { requestType: "standard", recipient: "device", request: 6, value: 0x0303, index: 0x0409 });
+    assert.equal(length, 255);
+    return { status: "ok", data: new DataView(descriptorBytes.buffer) };
+  },
 };
 await api.authorizeUsbDevice(mobileEdgeDevice);
 assert.equal(api.getAuthState().serial, descriptorSerial);
-assert.equal(api.matchesAuthenticatedUsbDevice({ ...mobileEdgeDevice }, descriptorSerial), true);
+assert.equal(api.matchesAuthenticatedUsbDevice(mobileEdgeDevice, descriptorSerial), true);
+assert.equal(api.matchesAuthenticatedUsbDevice({ ...mobileEdgeDevice }, descriptorSerial), false,
+  "An unverified USBDevice with the same VID/PID cannot inherit another device's SN");
 assert.equal(mobileEdgeDevice.opened, true, "explicit authorization keeps its handle for the caller");
 await mobileEdgeDevice.close();
 
@@ -92,7 +98,7 @@ assert.equal(api.getAuthState().hardwareVariant, "V1", "Existing logins can gain
 assert.equal(changes, 3);
 api.rememberAuthenticatedUsbHardware(mobileEdgeDevice);
 assert.equal(changes, 3, "Unchanged identity must not trigger a refresh loop");
-api.rememberAuthenticatedUsbHardware({ ...mobileEdgeDevice, productName: "佳点V1PRO" });
+api.rememberAuthenticatedUsbHardware({ ...mobileEdgeDevice, serialNumber: descriptorSerial, productName: "佳点V1PRO" });
 assert.equal(api.getAuthState().hardwareVariant, undefined, "Conflicting descriptor clears cached identity");
 
 await api.authorizeUsbDevice(v1);
@@ -102,4 +108,26 @@ const beforeLogout = changes;
 api.clearAuthState();
 assert.equal(api.getAuthState(), null);
 assert.equal(changes, beforeLogout + 1, "Logout notifies mounted material pages");
-console.log("V1 descriptor identification, authenticated serial binding, old-login migration, device switching and logout passed.");
+
+const reenumerated = { ...mobileEdgeDevice, opened: false };
+assert.equal(await api.resolveAuthenticatedUsbDevice([reenumerated], descriptorSerial), reenumerated);
+assert.equal(reenumerated.opened, false, "Descriptor-only lookup releases the handle it opened");
+assert.equal(api.getCachedUsbSerial(reenumerated), descriptorSerial);
+const wrongSn = { ...mobileEdgeDevice, serialNumber: "OTHER-DEVICE" };
+assert.equal(await api.resolveAuthenticatedUsbDevice([wrongSn], descriptorSerial), null,
+  "A sole device with a different SN must not be selected");
+const missingSnOtherDevice = { ...mobileEdgeDevice, opened: false };
+assert.equal(await api.resolveAuthenticatedUsbDevice([missingSnOtherDevice], "OTHER-DEVICE"), null);
+assert.equal(missingSnOtherDevice.opened, false);
+const ownedHandle = { ...mobileEdgeDevice, opened: true };
+assert.equal(await api.resolveAuthenticatedUsbDevice([ownedHandle], descriptorSerial), ownedHandle);
+assert.equal(ownedHandle.opened, true, "Do not close a handle that another caller already owns");
+const malformed = { ...mobileEdgeDevice, opened: false,
+  async controlTransferIn() { return { status: "ok", data: new DataView(Uint8Array.of(50, 3, 65, 0).buffer) }; },
+};
+await assert.rejects(api.resolveAuthenticatedUsbDevice([malformed], descriptorSerial));
+assert.equal(malformed.opened, false, "Malformed descriptor failure releases USB");
+assert.equal(api.getCachedUsbSerial(malformed), "");
+await assert.rejects(api.resolveAuthenticatedUsbDevice(
+  [{ ...mobileEdgeDevice }, { ...mobileEdgeDevice }], descriptorSerial), /多台设备/);
+console.log("USB identity regression passed: descriptor fallback, per-device binding, re-enumeration, mismatched SN, multiple devices and handle cleanup.");

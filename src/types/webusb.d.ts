@@ -2,6 +2,10 @@ interface USBDevice {
   opened: boolean;
   vendorId: number;
   productId: number;
+  productName?: string;
+  deviceVersionMajor?: number;
+  deviceVersionMinor?: number;
+  deviceVersionSubminor?: number;
   serialNumber?: string;
   open(): Promise<void>;
   close(): Promise<void>;

@@ -11,7 +11,7 @@ import { withApiSignature } from "./apiSign";
 import {
   getAuthState,
   hasValidLocalAuth,
-  matchesAuthenticatedUsbDevice,
+  resolveAuthenticatedUsbDevice,
 } from "./authService";
 import { API_BASE, formatClientError } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
@@ -191,19 +191,11 @@ async function resolveAuthenticatedV1ProDevice(): Promise<USBDevice> {
   }
 
   const devices = await listAuthorizedV1ProDevices();
-  const matchedDevices = devices.filter((device) =>
-    matchesAuthenticatedUsbDevice(device, authenticatedSerial),
-  );
-  if (matchedDevices.length === 1) {
-    return matchedDevices[0];
-  }
-  if (matchedDevices.length > 1) {
-    throw new Error("检测到多台设备但浏览器未返回 SN，请暂时只连接目标 V1PRO 后重试");
-  }
-  if (!matchedDevices.length) {
+  const matched = await resolveAuthenticatedUsbDevice(devices, authenticatedSerial);
+  if (!matched) {
     throw new Error(`未找到当前认证的 V1PRO（SN ${authenticatedSerial}），请重新认证该设备`);
   }
-  throw new Error("未找到当前认证的 V1PRO，请重新认证该设备");
+  return matched;
 }
 
 function formatUsbError(err: unknown): string {

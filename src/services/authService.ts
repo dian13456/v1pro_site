@@ -12,7 +12,7 @@ import {
 export const AUTH_STORAGE_KEY = "jiadian_hub_auth";
 export const AUTH_CHANGED_EVENT = "jiadian-auth-changed";
 const BRAVE_STABLE_SERIAL_KEY_PREFIX = "jiadian_hub_brave_stable_usb_serial";
-const USB_SERIAL_CACHE_KEY_PREFIX = "jiadian_hub_usb_serial";
+const usbSerialCache = new WeakMap<object, string>();
 export const DEVICE_MISMATCH_MESSAGE = "设备不匹配，请购买正规产品";
 const USB_OPEN_TIMEOUT_MS = 8000;
 const USB_DESCRIPTOR_TIMEOUT_MS = 2500;
@@ -54,32 +54,14 @@ function braveStableSerialKey(vendorId: number, productId: number): string {
   return `${BRAVE_STABLE_SERIAL_KEY_PREFIX}_${vendorId.toString(16)}_${productId.toString(16)}`;
 }
 
-function usbSerialCacheKey(vendorId: number, productId: number): string {
-  return `${USB_SERIAL_CACHE_KEY_PREFIX}_${vendorId.toString(16)}_${productId.toString(16)}`;
+/** Bind descriptor evidence to this USBDevice, never to a shared VID/PID. */
+export function getCachedUsbSerial(device: { serialNumber?: string }): string {
+  return device.serialNumber?.trim() || usbSerialCache.get(device) || "";
 }
 
-function cachedUsbSerial(vendorId: number, productId: number): string {
-  try {
-    return localStorage.getItem(usbSerialCacheKey(vendorId, productId))?.trim() || "";
-  } catch {
-    return "";
-  }
-}
-
-/** Resolve a browser-provided SN, falling back to a descriptor SN verified
- * during an earlier authentication on this browser/device pair. */
-export function getCachedUsbSerial(device: Pick<USBDevice, "vendorId" | "productId" | "serialNumber">): string {
-  return device.serialNumber?.trim() || cachedUsbSerial(device.vendorId, device.productId);
-}
-
-function rememberUsbSerial(device: Pick<USBDevice, "vendorId" | "productId">, serial: string): void {
+function rememberUsbSerial(device: USBDevice, serial: string): void {
   const normalized = serial.trim();
-  if (!normalized) return;
-  try {
-    localStorage.setItem(usbSerialCacheKey(device.vendorId, device.productId), normalized);
-  } catch {
-    // USB authentication remains valid when storage is unavailable.
-  }
+  if (normalized) usbSerialCache.set(device, normalized);
 }
 
 async function isBraveBrowser(): Promise<boolean> {
@@ -120,10 +102,7 @@ export function matchesAuthenticatedUsbDevice(device: USBDevice, authenticatedSe
   if (!expected || !isAllowedUsbDevice(device.vendorId, device.productId)) return false;
   const reportedSerial = device.serialNumber?.trim() || "";
   if (reportedSerial === expected) return true;
-  // Some Android Chromium builds expose an authorized USBDevice but leave the
-  // descriptor-backed serialNumber property empty.  The cache is populated
-  // only after the same device has returned a verified descriptor SN.
-  if (!reportedSerial && cachedUsbSerial(device.vendorId, device.productId) === expected) return true;
+  if (!reportedSerial && usbSerialCache.get(device) === expected) return true;
   return localStorage.getItem(braveStableSerialKey(device.vendorId, device.productId))?.trim() === expected;
 }
 
@@ -166,10 +145,11 @@ async function ensureDeviceSerial(device: USBDevice): Promise<string> {
     if (result.status !== "ok" || !result.data || result.data.byteLength < 2) return "";
     const bytes = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
     if (bytes[1] !== 0x03) return "";
-    const length = Math.min(bytes[0] || bytes.length, bytes.length) & 0xfe;
+    const length = bytes[0];
+    if (length < 4 || length > bytes.length || length % 2 !== 0) return "";
     let serial = "";
     for (let index = 2; index < length; index += 2) {
-      serial += String.fromCharCode(bytes[index] || 0);
+      serial += String.fromCharCode(bytes[index] | (bytes[index + 1] << 8));
     }
     return serial.replace(/\0/g, "").trim();
   };
@@ -207,6 +187,33 @@ async function ensureDeviceSerial(device: USBDevice): Promise<string> {
   throw new Error(DEVICE_MISMATCH_MESSAGE);
 }
 
+/** Re-read a missing SN after reload/re-enumeration before choosing a target. */
+export async function resolveAuthenticatedUsbDevice(
+  devices: USBDevice[],
+  authenticatedSerial: string,
+): Promise<USBDevice | null> {
+  const expected = authenticatedSerial.trim();
+  if (!expected) return null;
+  const allowed = devices.filter((device) => isAllowedUsbDevice(device.vendorId, device.productId));
+  const matches = allowed.filter((device) => matchesAuthenticatedUsbDevice(device, expected));
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1 || (allowed.length > 1 && allowed.some((device) => !getCachedUsbSerial(device)))) {
+    throw new Error("检测到多台设备但浏览器未返回 SN，请只连接目标 V1PRO 后重新认证");
+  }
+  if (allowed.length !== 1 || getCachedUsbSerial(allowed[0])) return null;
+  const device = allowed[0];
+  const wasOpened = device.opened;
+  try {
+    const serial = await ensureDeviceSerial(device);
+    rememberUsbSerial(device, serial);
+    return serial === expected ? device : null;
+  } finally {
+    if (!wasOpened && device.opened) {
+      try { await device.close(); } catch { /* device may have disconnected */ }
+    }
+  }
+}
+
 async function findBestGrantedUsbDevice(): Promise<USBDevice | null> {
   const grantedDevices = await navigator.usb.getDevices();
   const matched = grantedDevices.filter((device) =>
@@ -221,19 +228,8 @@ async function findBestGrantedUsbDevice(): Promise<USBDevice | null> {
 
   const preferredSerial = getAuthState()?.serial?.trim();
   if (preferredSerial) {
-    for (const device of matched) {
-      try {
-        if (matchesAuthenticatedUsbDevice(device, preferredSerial)) {
-          return device;
-        }
-        const serial = device.serialNumber?.trim() || (await ensureDeviceSerial(device));
-        if (serial.trim() === preferredSerial) {
-          return device;
-        }
-      } catch {
-        continue;
-      }
-    }
+    const preferred = matched.filter((device) => matchesAuthenticatedUsbDevice(device, preferredSerial));
+    if (preferred.length === 1) return preferred[0];
   }
 
   // Never silently choose the first device when several authorized devices
@@ -373,7 +369,6 @@ export async function authorizeUsbDevice(device: USBDevice): Promise<AuthState> 
   const { vid, pid } = formatUsbDeviceId(vendorId, productId);
   const previous = getAuthState();
   const serialNumber = await resolveStableDeviceSerial(device, reportedSerial, previous);
-  rememberUsbSerial(device, serialNumber);
   const preservedDisplayName =
     previous?.serial === serialNumber
       ? previous.displayName?.trim() ||
@@ -410,6 +405,7 @@ export async function authorizeUsbDevice(device: USBDevice): Promise<AuthState> 
     ...(preservedDisplayName ? { displayName: preservedDisplayName.slice(0, 20) } : {}),
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
+  rememberUsbSerial(device, serialNumber);
   window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
   return state;
 }
@@ -425,6 +421,7 @@ export async function tryAuthorizeGrantedDevice(): Promise<AuthState | null> {
     return null;
   }
 
+  const wasOpened = device.opened;
   try {
     return await authorizeUsbDevice(device);
   } catch {
@@ -432,7 +429,7 @@ export async function tryAuthorizeGrantedDevice(): Promise<AuthState | null> {
   } finally {
     // A granted-device lookup is a metadata check.  Do not retain the handle
     // opened solely to read a missing serial descriptor on mobile Edge.
-    if (device.opened) {
+    if (!wasOpened && device.opened) {
       try { await device.close(); } catch { /* device may have disconnected */ }
     }
   }

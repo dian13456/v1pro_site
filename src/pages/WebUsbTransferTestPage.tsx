@@ -76,8 +76,9 @@ function usbDeviceLabel(device: USBDevice): string {
 function deviceLabel(client: V1ProWebTransferClient | null): string {
   const device = client?.device;
   if (!device) return "";
-  const sn = device.serialNumber?.trim() || "无序列号";
-  const nickname = getCustomDisplayName(device.serialNumber?.trim() || "");
+  const serial = getCachedUsbSerial(device);
+  const sn = serial || "无序列号";
+  const nickname = getCustomDisplayName(serial);
   return `${nickname || displayUsbProductName(device.productName)} · SN ${sn}`;
 }
 
