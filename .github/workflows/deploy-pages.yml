@@ -36,6 +36,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test localization
+        run: npm run test:i18n
+
       - name: Lint
         run: npm run lint
 

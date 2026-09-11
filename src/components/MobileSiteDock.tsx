@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { Link, useLocation } from "react-router-dom";
 
 const MOBILE_NAV_ITEMS = [
@@ -9,10 +10,11 @@ const MOBILE_NAV_ITEMS = [
 ];
 
 export function MobileSiteDock() {
+  const { t } = useI18n();
   const location = useLocation();
 
   return (
-    <nav className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-[95] grid h-[62px] grid-cols-5 rounded-[22px] border border-white/60 bg-white/86 p-1.5 shadow-[0_18px_55px_rgba(15,23,42,.2)] backdrop-blur-2xl md:hidden dark:border-white/10 dark:bg-slate-900/88" aria-label="手机快捷导航">
+    <nav className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-[95] grid h-[62px] grid-cols-5 rounded-[22px] border border-white/60 bg-white/86 p-1.5 shadow-[0_18px_55px_rgba(15,23,42,.2)] backdrop-blur-2xl md:hidden dark:border-white/10 dark:bg-slate-900/88" aria-label={t("手机快捷导航")}>
       {MOBILE_NAV_ITEMS.map((item) => {
         const active = location.pathname === item.to;
         return (
@@ -26,7 +28,7 @@ export function MobileSiteDock() {
             }`}
           >
             <span className="mb-0.5 text-[17px] leading-none" aria-hidden="true">{item.icon}</span>
-            <span className="truncate">{item.label}</span>
+            <span className="truncate">{t(item.label)}</span>
           </Link>
         );
       })}

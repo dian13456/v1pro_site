@@ -1,3 +1,4 @@
+import { useI18n, translate as t } from "../i18n";
 import { CATEGORY_OPTIONS } from "../data/categories";
 import type { ResourceCategory } from "../types/resource";
 
@@ -7,6 +8,7 @@ interface CategoryTabsProps {
 }
 
 export function CategoryTabs({ value, onChange }: CategoryTabsProps) {
+  useI18n();
   return (
     <div className="flex flex-wrap gap-2">
       {CATEGORY_OPTIONS.map((item) => {
@@ -22,7 +24,7 @@ export function CategoryTabs({ value, onChange }: CategoryTabsProps) {
                 : "border border-white/25 bg-white/50 text-slate-700 backdrop-blur dark:border-white/15 dark:bg-slate-900/45 dark:text-slate-200"
             }`}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         );
       })}

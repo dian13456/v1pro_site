@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatDate } from "../i18n";
 import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
@@ -14,7 +15,6 @@ import { createImageUrl } from "../services/imageService";
 import {
   deleteMyUpload,
   fetchMyUploads,
-  formatUploadTimestamp,
   materialTypeLabel,
   renameMyUpload,
   uploadStatusLabel,
@@ -31,6 +31,7 @@ function UploadPreview({
 }: {
   item: UploadListItem;
 }) {
+  useI18n();
   const [previewUrl, setPreviewUrl] = useState("");
   const materialType = item.kind === "published" ? item.resource.materialType : item.review.materialType;
   const previewFitClass = materialType === "video" || materialType === "image" ? "object-cover" : "object-contain";
@@ -66,7 +67,7 @@ function UploadPreview({
       {previewUrl ? (
         <img src={previewUrl} alt="" className={`h-full w-full ${previewFitClass}`} loading="lazy" />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">暂无预览</div>
+        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">{t("暂无预览")}</div>
       )}
     </DevicePreviewFrame>
   );
@@ -85,6 +86,7 @@ function UploadCard({
   onRename: (item: UploadListItem, title: string) => void;
   onDelete: (item: UploadListItem) => void;
 }) {
+  useI18n();
   const title = item.kind === "published" ? item.resource.title : item.review.title;
   const description =
     item.kind === "published" ? item.resource.description : item.review.description || "";
@@ -104,12 +106,12 @@ function UploadCard({
         : "border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200";
 
   const statusText =
-    status === "published" ? "已发布" : uploadStatusLabel(status);
+    status === "published" ? t("已发布") : uploadStatusLabel(status);
 
   const deleteLabel =
     item.kind === "published"
-      ? `确定从素材库删除「${title}」？删除后他人将无法再访问。`
-      : `确定删除上传记录「${title}」？`;
+      ? t("确定从素材库删除「{v0}」？删除后他人将无法再访问。", undefined, {v0: title})
+      : t("确定删除上传记录「{v0}」？", undefined, {v0: title});
 
   return (
     <SiteCard className="overflow-hidden p-0">
@@ -120,17 +122,17 @@ function UploadCard({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="line-clamp-2 text-sm font-medium text-slate-900 dark:text-slate-100">{title}</h3>
           <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusClass}`}>
-            {statusText}
+            {t(statusText)}
           </span>
         </div>
         {description ? (
           <p className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{description}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-          <span>{materialTypeLabel(materialType)}</span>
-          <span>{formatUploadTimestamp(timestamp)}</span>
+          <span>{t(materialTypeLabel(materialType))}</span>
+          <span>{formatDate(timestamp)}</span>
           {item.kind === "review" && item.review.reviewNote ? (
-            <span className="text-rose-600 dark:text-rose-300">原因：{item.review.reviewNote}</span>
+            <span className="text-rose-600 dark:text-rose-300">{t("原因：")}{item.review.reviewNote}</span>
           ) : null}
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">
@@ -139,12 +141,12 @@ function UploadCard({
             variant="secondary"
             disabled={deleting || saving}
             onClick={() => {
-              const nextTitle = window.prompt("请输入新的素材标题（最多 80 个字符）", title);
+              const nextTitle = window.prompt(t("请输入新的素材标题（最多 80 个字符）"), title);
               if (nextTitle === null || nextTitle.trim() === title.trim()) return;
               onRename(item, nextTitle);
             }}
           >
-            {saving ? "保存中…" : "修改标题"}
+            {saving ? t("保存中…") : t("修改标题")}
           </SiteButton>
           <SiteButton
             type="button"
@@ -156,7 +158,7 @@ function UploadCard({
               onDelete(item);
             }}
           >
-            {deleting ? "删除中…" : "删除素材"}
+            {deleting ? t("删除中…") : t("删除素材")}
           </SiteButton>
         </div>
       </div>
@@ -165,6 +167,7 @@ function UploadCard({
 }
 
 export function MyUploadsPanel() {
+  useI18n();
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
@@ -182,7 +185,7 @@ export function MyUploadsPanel() {
         setReviews(state.reviews);
       })
       .catch((err: unknown) => {
-        setErrorMessage((err as Error)?.message || "加载上传记录失败");
+        setErrorMessage((err as Error)?.message || t("加载上传记录失败"));
       })
       .finally(() => {
         setLoading(false);
@@ -225,13 +228,13 @@ export function MyUploadsPanel() {
       await loadUploads();
       if (!result.cleanupComplete) {
         const details = result.cleanupWarnings.join("、");
-        setErrorMessage(details ? `素材已删除，但${details}` : "素材已删除，部分关联数据清理失败");
+        setErrorMessage(details ? t("素材已删除，但{v0}", undefined, {v0: details}) : t("素材已删除，部分关联数据清理失败"));
       } else {
         setNoticeMessage(result.message);
         window.setTimeout(() => setNoticeMessage(""), 3000);
       }
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "删除失败");
+      setErrorMessage((err as Error)?.message || t("删除失败"));
     } finally {
       setDeletingKey("");
     }
@@ -249,11 +252,11 @@ export function MyUploadsPanel() {
         resourceId: item.kind === "published" ? item.resource.id : undefined,
         reviewId: item.kind === "review" ? item.review.reviewId : undefined,
       });
-      setNoticeMessage("标题已修改");
+      setNoticeMessage(t("标题已修改"));
       window.setTimeout(() => setNoticeMessage(""), 3000);
       await loadUploads();
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "修改标题失败");
+      setErrorMessage((err as Error)?.message || t("修改标题失败"));
     } finally {
       setSavingKey("");
     }
@@ -262,24 +265,20 @@ export function MyUploadsPanel() {
   return (
     <SitePanel className="mt-0 space-y-4 !rounded-[18px] !border-[#e6e9f2] !bg-white !p-6 !shadow-[0_10px_30px_rgba(43,50,69,.06)]">
       <div className="space-y-1">
-        <SiteLabel>本设备上传的素材</SiteLabel>
+        <SiteLabel>{t("本设备上传的素材")}</SiteLabel>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          展示当前 SN 码分享至素材库的内容，含已发布与审核中的记录；可自行修改标题或删除素材。
-        </p>
+          {" "}{t("展示当前 SN 码分享至素材库的内容，含已发布与审核中的记录；可自行修改标题或删除素材。")}{" "}</p>
       </div>
 
-      {loading ? <SiteLoadingBlock>正在加载上传记录...</SiteLoadingBlock> : null}
-      {noticeMessage ? <SiteAlert variant="success">{noticeMessage}</SiteAlert> : null}
-      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+      {loading ? <SiteLoadingBlock>{t("正在加载上传记录...")}</SiteLoadingBlock> : null}
+      {noticeMessage ? <SiteAlert variant="success">{t(noticeMessage)}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
       {!loading && items.length === 0 ? (
         <SiteEmptyBlock>
-          还没有上传记录。前往
-          <Link to="/share" className="mx-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
-            分享素材
-          </Link>
-          上传图片、GIF 或视频。
-        </SiteEmptyBlock>
+          {" "}{t("还没有上传记录。前往")}{" "}<Link to="/share" className="mx-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
+            {" "}{t("分享素材")}{" "}</Link>
+          {" "}{t("上传图片、GIF 或视频。")}{" "}</SiteEmptyBlock>
       ) : null}
 
       {!loading && items.length > 0 ? (

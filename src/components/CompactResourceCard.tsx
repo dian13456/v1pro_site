@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatNumber } from "../i18n";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
 import { useCreatorAvatar } from "../hooks/useCreatorAvatar";
@@ -19,9 +20,9 @@ const PREVIEW_BACKGROUNDS = [
 ];
 
 function materialLabel(resource: ResourceItem): string {
-  if (resource.materialType === "video") return "视频";
+  if (resource.materialType === "video") return t("视频");
   if (resource.materialType === "gif") return "GIF";
-  return "图片";
+  return t("图片");
 }
 
 export function CompactResourceCard({
@@ -77,6 +78,7 @@ export function CompactResourceCard({
   selected?: boolean;
   onToggleSelection?: (resource: ResourceItem) => void;
 }) {
+  useI18n();
   const { previewUrl, previewFailed, handlePreviewLoad, handlePreviewError } =
     useResourcePreviewImage(
       resource.id,
@@ -129,8 +131,7 @@ export function CompactResourceCard({
         ) : null}
         {previewFailed ? (
           <span className="absolute bottom-3 left-3 rounded-full bg-slate-900/55 px-2 py-1 text-[10px] text-white backdrop-blur">
-            预览暂时不可用
-          </span>
+            {" "}{t("预览暂时不可用")}{" "}</span>
         ) : null}
         <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${resource.materialType === "image" ? "bg-violet-500" : resource.materialType === "gif" ? "bg-orange-400" : "bg-emerald-500"}`}>
           {materialLabel(resource)}
@@ -146,7 +147,7 @@ export function CompactResourceCard({
         ) : null}
         {duration || displayCapacity ? (
           <span className="absolute bottom-3 right-3 rounded-full bg-slate-900/55 px-2.5 py-1 text-[11px] text-white backdrop-blur">
-            {duration ? `◷ ${duration}` : ""}{duration && displayCapacity ? " · " : ""}{displayCapacity ? `${displayCapacity}帧` : ""}
+            {duration ? `◷ ${duration}` : ""}{duration && displayCapacity ? " · " : ""}{displayCapacity ? t("{v0}帧", undefined, {v0: displayCapacity}) : ""}
           </span>
         ) : null}
       </div>
@@ -154,7 +155,7 @@ export function CompactResourceCard({
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.015em] text-slate-950 dark:text-white">{resource.title || resource.description}</h3>
           <span className="max-w-[34%] shrink-0 truncate rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-300">
-            {resource.columnTag || "其他"}
+            {t(resource.columnTag || "其他")}
           </span>
         </div>
         <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[10.5px] text-slate-400">
@@ -163,11 +164,11 @@ export function CompactResourceCard({
               to={`/creator/${encodeURIComponent(resource.author)}`}
               onClick={(event) => event.stopPropagation()}
               className="flex min-w-0 flex-1 items-center gap-1.5 text-slate-500 transition hover:text-[#0071e3] dark:text-slate-400 dark:hover:text-sky-300"
-              title={`查看 ${resource.author} 的全部素材`}
+              title={t("查看 {v0} 的全部素材", undefined, {v0: resource.author})}
             >
               <span className="grid h-5 w-5 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#2997ff] to-[#0071e3] text-[9px] font-semibold text-white shadow-sm">
                 {creatorAvatarUrl ? (
-                  <img src={creatorAvatarUrl} alt={`${resource.author}的头像`} className="h-full w-full object-cover" loading="lazy" />
+                  <img src={creatorAvatarUrl} alt={t("{v0}的头像", undefined, {v0: resource.author})} className="h-full w-full object-cover" loading="lazy" />
                 ) : (
                   resource.author.trim().slice(0, 1).toUpperCase() || "👤"
                 )}
@@ -178,7 +179,7 @@ export function CompactResourceCard({
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <button
               type="button"
-              aria-label={favorited ? "取消收藏" : "收藏"}
+              aria-label={favorited ? t("取消收藏") : t("收藏")}
               aria-pressed={favorited}
               disabled={favoriting}
               onClick={(event) => {
@@ -191,7 +192,7 @@ export function CompactResourceCard({
             </button>
             <button
               type="button"
-              aria-label={liked ? "已点赞" : "点赞"}
+              aria-label={liked ? t("已点赞") : t("点赞")}
               aria-pressed={liked}
               disabled={liked || liking}
               onClick={(event) => {
@@ -203,10 +204,10 @@ export function CompactResourceCard({
               <ThemeIcon name="like" size={14} filled={liked} />
               <span>{liking ? "…" : likeCount}</span>
             </button>
-            <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {downloadCount}</span>
+            <span className="inline-flex items-center gap-0.5 px-0.5"><ThemeIcon name="download" size={13} /> {formatNumber(downloadCount)}</span>
             {onFollow || onHiddenChange || onAdminQuotaReset || onAdminDelete || onAdminPurgeUploader ? (
               <details className="group/card-menu relative" onClick={(event) => event.stopPropagation()}>
-                <summary className="grid h-5 w-5 cursor-pointer list-none place-items-center rounded-full text-[11px] font-bold tracking-[-1px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white [&::-webkit-details-marker]:hidden" aria-label="更多素材操作">
+                <summary className="grid h-5 w-5 cursor-pointer list-none place-items-center rounded-full text-[11px] font-bold tracking-[-1px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white [&::-webkit-details-marker]:hidden" aria-label={t("更多素材操作")}>
                   •••
                 </summary>
                 <div className="absolute bottom-[calc(100%+7px)] right-0 z-30 grid w-56 gap-1 rounded-xl border border-black/[.07] bg-white/95 p-1.5 text-[11px] shadow-[0_14px_38px_rgba(15,23,42,.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
@@ -218,7 +219,7 @@ export function CompactResourceCard({
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-slate-600 transition hover:bg-sky-50 hover:text-[#0071e3] disabled:opacity-60 dark:text-slate-200 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
                     >
                       <span className="w-4 text-center" aria-hidden="true">{followed ? "✓" : "+"}</span>
-                      {following ? "处理中…" : followed ? "取消关注" : "关注上传者"}
+                      {following ? t("处理中…") : followed ? t("取消关注") : t("关注上传者")}
                     </button>
                   ) : null}
                   {onHiddenChange ? (
@@ -229,7 +230,7 @@ export function CompactResourceCard({
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60 dark:text-slate-200 dark:hover:bg-white/[.07] dark:hover:text-white"
                     >
                       <ThemeIcon name={hidden ? "restore" : "block"} size={14} />
-                      {hiding ? "处理中…" : hidden ? "恢复该用户" : "屏蔽该用户"}
+                      {hiding ? t("处理中…") : hidden ? t("恢复该用户") : t("屏蔽该用户")}
                     </button>
                   ) : null}
                   {onAdminQuotaReset ? (
@@ -240,7 +241,7 @@ export function CompactResourceCard({
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sky-700 transition hover:bg-sky-50 disabled:opacity-60 dark:text-sky-300 dark:hover:bg-sky-500/10"
                     >
                       <span className="w-4 text-center" aria-hidden="true">↻</span>
-                      {adminQuotaResetting ? "重置中…" : "重置上传额度（50）"}
+                      {adminQuotaResetting ? t("重置中…") : t("重置上传额度（50）")}
                     </button>
                   ) : null}
                   {onAdminDelete ? (
@@ -251,7 +252,7 @@ export function CompactResourceCard({
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
                     >
                       <span className="w-4 text-center" aria-hidden="true">⌫</span>
-                      {adminDeleting ? "删除中…" : "永久删除素材"}
+                      {adminDeleting ? t("删除中…") : t("永久删除素材")}
                     </button>
                   ) : null}
                   {onAdminPurgeUploader ? (
@@ -262,7 +263,7 @@ export function CompactResourceCard({
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-700 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
                     >
                       <span className="w-4 text-center" aria-hidden="true">⊘</span>
-                      {adminUploaderPurging ? "清理并禁用中…" : "删除该上传人全部素材并禁用上传"}
+                      {adminUploaderPurging ? t("清理并禁用中…") : t("删除该上传人全部素材并禁用上传")}
                     </button>
                   ) : null}
                 </div>
@@ -276,6 +277,7 @@ export function CompactResourceCard({
 }
 
 export function CompactResourceCardSkeleton() {
+  useI18n();
   return (
     <div className="resource-card-apple flex aspect-[1.618] animate-pulse flex-col overflow-hidden rounded-[22px] border border-black/[.055] bg-white shadow-sm dark:border-white/10 dark:bg-slate-900" aria-hidden="true">
       <div className="resource-skeleton-shimmer min-h-0 flex-1 bg-slate-200/80 dark:bg-slate-800" />

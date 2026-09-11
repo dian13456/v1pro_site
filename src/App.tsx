@@ -15,7 +15,7 @@ const MallPage = lazyWithRetry(() => import("./pages/MallPage"));
 const MallAdminPage = lazyWithRetry(() => import("./pages/MallAdminPage"));
 const FavoritesPage = lazyWithRetry(() => import("./pages/FavoritesPage"));
 const MessageBoardPage = lazyWithRetry(() => import("./pages/MessageBoardPage"));
-const NotFoundPage = lazyWithRetry(() => import("./pages/NotFoundPage"));
+const NotFoundPage = lazyWithRetry(() => import("./pages/NotFoundPage.tsx"));
 const ResourcesPage = lazyWithRetry(() => import("./pages/ResourcesPage"));
 const ActivityCenterPage = lazyWithRetry(() => import("./pages/ActivityCenterPage"));
 const ActivityLotteryPage = lazyWithRetry(() => import("./pages/ActivityLotteryPage"));

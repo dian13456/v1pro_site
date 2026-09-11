@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatDate } from "../i18n";
 import type { CreditLedgerEntry } from "../types/credits";
 import { formatCreditDelta } from "../utils/formatCredits";
 
@@ -6,7 +7,7 @@ function formatLedgerTime(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleString("zh-CN", {
+  return formatDate(date, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -17,17 +18,18 @@ function formatLedgerTime(value: string): string {
 export function CreditLedgerPanel({
   entries,
   loading = false,
-  emptyText = "暂无积分明细，新的积分变动会显示在这里。",
+  emptyText = t("暂无积分明细，新的积分变动会显示在这里。"),
 }: {
   entries: CreditLedgerEntry[];
   loading?: boolean;
   emptyText?: string;
 }) {
+  useI18n();
   return (
     <div className="mt-4 border-t border-violet-200/60 pt-4 dark:border-violet-500/20">
-      <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">积分明细</div>
+      <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">{t("积分明细")}</div>
       {loading ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400">加载中…</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{t("加载中…")}</p>
       ) : entries.length === 0 ? (
         <p className="text-xs text-slate-500 dark:text-slate-400">{emptyText}</p>
       ) : (
@@ -38,7 +40,7 @@ export function CreditLedgerPanel({
               className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 dark:bg-slate-900/40"
             >
               <div className="min-w-0">
-                <div className="font-medium text-slate-700 dark:text-slate-200">{entry.label}</div>
+                <div className="font-medium text-slate-700 dark:text-slate-200">{t(entry.label)}</div>
                 <div className="mt-0.5 text-slate-500 dark:text-slate-400">{formatLedgerTime(entry.createdAt)}</div>
               </div>
               <span

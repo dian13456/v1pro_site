@@ -1,3 +1,4 @@
+import { translate, useI18n } from "../i18n";
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   canvasToRgb565,
@@ -43,6 +44,7 @@ export function WebLyricsModePanel({
   panelWidth,
   panelHeight,
 }: WebLyricsModePanelProps) {
+  const { t, locale } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef("");
@@ -90,8 +92,9 @@ export function WebLyricsModePanel({
       document,
       audio?.currentTime || 0,
       audio?.duration && Number.isFinite(audio.duration) ? audio.duration : 0,
+      translate("等待音乐开始"),
     );
-    if (state.index !== lastLineIndexRef.current) {
+    if (state.index !== lastLineIndexRef.current || state.index < 0) {
       lastLineIndexRef.current = state.index;
       if (mountedRef.current) setCurrentLyric(state.current);
     }
@@ -137,6 +140,11 @@ export function WebLyricsModePanel({
     configureLyricsPanelGeometry(panelWidth, panelHeight);
     drawCurrentFrame();
   }, [drawCurrentFrame, panelHeight, panelWidth]);
+
+  // Redraw the waiting label without replacing the running animation loop or USB task.
+  useEffect(() => {
+    drawCurrentFrame();
+  }, [drawCurrentFrame, locale]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -317,8 +325,8 @@ export function WebLyricsModePanel({
       <div className="flex items-start gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eeeaff] text-sm font-extrabold text-[#746cf2]">4</span>
         <div>
-          <h2 className="text-[17px] font-extrabold">网页歌词模式</h2>
-          <p className="mt-1 text-xs text-[#8a93a8]">网页播放本地歌曲，Canvas 渲染 {panelWidth}×{panelHeight} 苹果风格歌词并实时发送到设备</p>
+          <h2 className="text-[17px] font-extrabold">{t("网页歌词模式", "Web lyrics mode")}</h2>
+          <p className="mt-1 text-xs text-[#8a93a8]">{t("网页播放本地歌曲，渲染 {width}×{height} 苹果风格歌词并实时发送到设备", "Play local music in the browser and send {width}×{height} Apple-style lyrics to your device in real time", { width: panelWidth, height: panelHeight })}</p>
         </div>
       </div>
 
@@ -326,13 +334,13 @@ export function WebLyricsModePanel({
         <div className="rounded-[16px] border border-[#e2defe] bg-gradient-to-b from-[#fbfaff] to-[#f6f8ff] p-4">
           <div className="grid grid-cols-2 gap-2">
             <label className="cursor-pointer rounded-[11px] border border-dashed border-[#b9afea] bg-white px-3 py-3 text-center transition hover:border-[#746cf2]">
-              <span className="block text-[11.5px] font-extrabold text-[#6357c8]">{audioFile ? "更换本地音乐" : "选择本地音乐"}</span>
+              <span className="block text-[11.5px] font-extrabold text-[#6357c8]">{t(audioFile ? "更换本地音乐" : "选择本地音乐")}</span>
               <span className="mt-1 block truncate text-[9.5px] text-[#9299aa]">{audioFile?.name || "MP3 / FLAC / WAV"}</span>
               <input type="file" accept="audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg" disabled={controlsDisabled} className="sr-only" onChange={(event) => handleAudioFile(event.target.files?.[0] ?? null)} />
             </label>
             <label className="cursor-pointer rounded-[11px] border border-dashed border-[#b9afea] bg-white px-3 py-3 text-center transition hover:border-[#746cf2]">
-              <span className="block text-[11.5px] font-extrabold text-[#6357c8]">{lrcFile ? "更换 LRC" : "选择本地 LRC"}</span>
-              <span className="mt-1 block truncate text-[9.5px] text-[#9299aa]">{lrcFile?.name || "可选，也可在线查词"}</span>
+              <span className="block text-[11.5px] font-extrabold text-[#6357c8]">{t(lrcFile ? "更换 LRC" : "选择本地 LRC")}</span>
+              <span className="mt-1 block truncate text-[9.5px] text-[#9299aa]">{t(lrcFile?.name || "可选，也可在线查词")}</span>
               <input type="file" accept=".lrc,text/plain" disabled={controlsDisabled} className="sr-only" onChange={(event) => void handleLrcFile(event.target.files?.[0] ?? null)} />
             </label>
           </div>
@@ -352,19 +360,18 @@ export function WebLyricsModePanel({
           ) : null}
 
           <div className="mt-4 rounded-[12px] border border-[#e3e6ef] bg-white p-3">
-            <p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#9299aa]">在线查词</p>
+            <p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#9299aa]">{t("在线查词", "Find lyrics online")}</p>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <input value={songName} disabled={controlsDisabled || searching} onChange={(event) => setSongName(event.target.value)} placeholder="歌曲名称" className="h-9 min-w-0 rounded-[9px] border border-[#dfe3ed] px-3 text-[11.5px] outline-none focus:border-[#746cf2]" />
-              <input value={artist} disabled={controlsDisabled || searching} onChange={(event) => setArtist(event.target.value)} placeholder="歌手（可选）" className="h-9 min-w-0 rounded-[9px] border border-[#dfe3ed] px-3 text-[11.5px] outline-none focus:border-[#746cf2]" />
+              <input value={songName} disabled={controlsDisabled || searching} onChange={(event) => setSongName(event.target.value)} placeholder={t("歌曲名称", "Song title")} className="h-9 min-w-0 rounded-[9px] border border-[#dfe3ed] px-3 text-[11.5px] outline-none focus:border-[#746cf2]" />
+              <input value={artist} disabled={controlsDisabled || searching} onChange={(event) => setArtist(event.target.value)} placeholder={t("歌手（可选）", "Artist (optional)")} className="h-9 min-w-0 rounded-[9px] border border-[#dfe3ed] px-3 text-[11.5px] outline-none focus:border-[#746cf2]" />
             </div>
             <button type="button" disabled={controlsDisabled || searching || !songName.trim()} onClick={() => void handleSearch()} className="mt-2 h-9 w-full rounded-[9px] bg-[#746cf2] text-[11.5px] font-bold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40">
-              {searching ? "正在查词…" : "按歌名在线查词"}
+              {t(searching ? "正在查词…" : "按歌名在线查词")}
             </button>
           </div>
 
           <div className="mt-3 rounded-[11px] border border-[#ffe0aa] bg-[#fff9ec] px-3 py-2.5 text-[10.5px] leading-5 text-[#9a6a17]">
-            如果需要本地音乐歌词，请打开本地软件；本页适合手动选择歌曲和 LRC 后播放。
-          </div>
+            {t("如果需要本地音乐歌词，请打开本地软件；本页适合手动选择歌曲和 LRC 后播放。", "For automatic lyrics from desktop music apps, use the desktop software. Here, choose a song and an LRC file manually to play them together.")}</div>
         </div>
 
         <div className="overflow-hidden rounded-[18px] border border-[#d9dcef] bg-[#111521] p-3 shadow-[0_12px_30px_rgba(29,31,58,.16)] sm:p-4">
@@ -372,10 +379,10 @@ export function WebLyricsModePanel({
             <div className="flex items-center justify-between gap-3 px-1 pb-3 text-white">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#8fdbff]">V1PRO Lyrics Live</p>
-                <p className="mt-1 max-w-[430px] truncate text-[12px] font-bold text-white/90">{currentLyric}</p>
+                <p className="mt-1 max-w-[430px] truncate text-[12px] font-bold text-white/90">{document ? currentLyric : t(currentLyric)}</p>
               </div>
               <span className={`rounded-full border px-3 py-1 text-[10.5px] font-bold ${active ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-200" : "border-white/15 bg-white/[.05] text-white/60"}`}>
-                {starting ? "启动中" : active ? "运行中" : "待机"}
+                {t(starting ? "启动中" : active ? "运行中" : "待机")}
               </span>
             </div>
             <canvas
@@ -386,14 +393,13 @@ export function WebLyricsModePanel({
               style={{ aspectRatio: `${panelWidth} / ${panelHeight}` }}
             />
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className={`min-h-[1.25rem] text-[10.5px] leading-5 ${/失败|错误|不可用|超时|没有查到/.test(message) ? "text-rose-300" : "text-white/65"}`}>{message}</p>
-              <div className="flex shrink-0 gap-2">
+              <p className={`min-h-[1.25rem] text-[10.5px] leading-5 ${/失败|错误|不可用|超时|没有查到/.test(message) ? "text-rose-300" : "text-white/65"}`}>{t(message)}</p>
+              <div className="flex flex-wrap gap-2 sm:shrink-0">
                 <button type="button" disabled={disabled || !hasSelectedDevice || active || starting || searching} onClick={() => void handleStart()} className="rounded-full bg-gradient-to-r from-[#8b72ff] to-[#40c9f2] px-5 py-2.5 text-[12px] font-bold text-white shadow-[0_5px_18px_rgba(91,132,255,.28)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35">
-                  {starting ? "正在启动…" : "播放到设备"}
+                  {t(starting ? "正在启动…" : "播放到设备")}
                 </button>
                 <button type="button" disabled={!active && !starting} onClick={() => void stopLyricsMode()} className="rounded-full border border-white/20 bg-white/[.07] px-5 py-2.5 text-[12px] font-bold text-white transition hover:bg-white/[.13] disabled:cursor-not-allowed disabled:opacity-30">
-                  停止并释放
-                </button>
+                  {t("停止并释放", "Stop and release USB")}</button>
               </div>
             </div>
           </div>

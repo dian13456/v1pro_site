@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useRef, useState, type DragEvent } from "react";
 
 const FILE_ACCEPT =
@@ -51,6 +52,7 @@ export function WebUsbDropZone({
   onFile,
   onInvalidFile,
 }: WebUsbDropZoneProps) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -132,15 +134,14 @@ export function WebUsbDropZone({
         ↓
       </div>
       <p className="mt-4 text-[14px] font-extrabold text-[#2b3245]">
-        {dragActive ? "松开即可上传" : "拖拽图片 / GIF / 视频到此处"}
+        {t(dragActive ? "松开即可上传" : "拖拽图片 / GIF / 视频到此处")}
       </p>
-      <p className="mt-1 text-xs text-[#6f7890]">{hint}</p>
+      <p className="mt-1 text-xs text-[#6f7890]">{t(hint)}</p>
       <p className="mt-2 max-w-md text-[11px] leading-5 text-[#8a93a8]">
-        支持 PNG、JPG、WebP、GIF、MP4（H.264）；高级设置可调帧率、旋转、缩放、铺满、色彩与倍速
-      </p>
+        {t("支持 PNG、JPG、WebP、GIF、MP4（H.264）；高级设置可调帧率、旋转、缩放、铺满、色彩与倍速", "Supports PNG, JPG, WebP, GIF, and MP4 (H.264). Advanced settings include frame rate, rotation, scale, screen fit, colors, and playback speed")}</p>
       {selectedFileName ? (
         <p className="mt-3 max-w-full truncate rounded-full bg-[#f0edff] px-3 py-1 text-xs font-semibold text-[#7c6cf0]">
-          当前：{selectedFileName}
+          {t("当前：", "Current:")} {selectedFileName}
         </p>
       ) : null}
       <input

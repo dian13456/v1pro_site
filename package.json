@@ -9,7 +9,8 @@
     "build": "vite build --configLoader native",
     "preview": "vite preview --configLoader native",
     "lint": "eslint src vite.config.js \"public/webusb/v1pro-*.js\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:i18n": "node scripts/i18n.test.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "0.12.10",

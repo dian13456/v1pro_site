@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { createPortal } from "react-dom";
 
 interface V1ProTransferNoticeProps {
@@ -7,6 +8,7 @@ interface V1ProTransferNoticeProps {
 }
 
 export function V1ProTransferNotice({ message, onDismiss, progress = null }: V1ProTransferNoticeProps) {
+  const { t } = useI18n();
   if (!message) {
     return null;
   }
@@ -14,10 +16,10 @@ export function V1ProTransferNotice({ message, onDismiss, progress = null }: V1P
   return createPortal(
     <div className="fixed bottom-6 left-1/2 z-[90] w-[min(92vw,28rem)] -translate-x-1/2 rounded-2xl border border-cyan-200/70 bg-white/95 px-4 py-3 shadow-xl backdrop-blur dark:border-cyan-500/30 dark:bg-slate-900/95">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">{message}</p>
+        <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">{t(message)}</p>
         <button
           type="button"
-          aria-label="关闭提示"
+          aria-label={t("关闭提示", "Dismiss notification")}
           onClick={onDismiss}
           className="shrink-0 text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
         >
@@ -27,7 +29,7 @@ export function V1ProTransferNotice({ message, onDismiss, progress = null }: V1P
       {progress != null ? (
         <div className="mt-3">
           <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-            <span>{progress >= 100 ? "传输完成" : "网页直传进度"}</span>
+            <span>{t(progress >= 100 ? "传输完成" : "网页直传进度")}</span>
             <span>{Math.round(progress)}%</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">

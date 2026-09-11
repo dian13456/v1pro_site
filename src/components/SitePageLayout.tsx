@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import type { ReactNode } from "react";
 import { SiteFooter } from "./SiteFooter";
 import { SiteHeader } from "./SiteHeader";
@@ -28,11 +29,12 @@ export function SitePageLayout({
   showFooter = true,
   toolbarMode = "app",
 }: SitePageLayoutProps) {
+  const { t } = useI18n();
   return (
     <SitePageShell beforeContent={beforeContent}>
       {toolbarMode === "app" ? <MobileSiteDock /> : null}
       <SiteHeader
-        title="佳点电子资源中心"
+        title={t("佳点电子资源中心")}
         subtitle={subtitle}
         rightSlot={
           <SitePageToolbar theme={theme} onSetTheme={onSetTheme} mode={toolbarMode} />

@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { WebUsbDropZone } from "../components/WebUsbDropZone";
@@ -138,6 +139,7 @@ async function resolveMaterialRotation(
 }
 
 export default function WebUsbTransferTestPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const clientRef = useRef<V1ProWebTransferClient | null>(null);
   const transferLockRef = useRef(false);
@@ -1142,18 +1144,18 @@ export default function WebUsbTransferTestPage() {
             <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">⚙</div>
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">WebUSB Device Control</p>
-              <h1 className="mt-1 text-2xl font-extrabold">设备控制</h1>
+              <h1 className="mt-1 text-2xl font-extrabold">{t("设备控制", "Device control")}</h1>
             </div>
             <div className="col-start-3 row-start-1 rounded-[16px] bg-[#f0edff] px-4 py-3 text-center sm:row-span-2 sm:px-6">
-              <p className="text-[11px] font-semibold text-[#8a93a8]">控制组件</p>
+              <p className="text-[11px] font-semibold text-[#8a93a8]">{t("控制组件", "Controls")}</p>
               <p className="mt-0.5 text-sm font-extrabold text-[#7c6cf0]">v{sdkVersion}</p>
             </div>
-            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">选择指定 SN 的 V1PRO，调节屏幕亮度、方向、跟随熄屏和上电打开网页，也可将图片、GIF 或短视频直接传输到设备。</p>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">{t("选择指定 SN 的 V1PRO，调节屏幕亮度、方向、跟随熄屏和上电打开网页，也可将图片、GIF 或短视频直接传输到设备。", "Select your V1PRO by serial number to set brightness, orientation, sleep behavior, and the power-on website, or transfer images, GIFs, and short videos directly.")}</p>
           </div>
         </section>
 
         {!webUsbSupported ? (
-          <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。</div>
+          <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">{t("当前浏览器不支持 WebUSB，请使用 Chrome 或 Edge 桌面版。", "This browser does not support WebUSB. Use Chrome or Edge on a desktop computer.")}</div>
         ) : null}
 
         <div className="grid items-stretch gap-[14px] lg:grid-cols-2">
@@ -1161,38 +1163,37 @@ export default function WebUsbTransferTestPage() {
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#fff4e8] text-sm font-extrabold text-[#ff8a5c]">1</span>
               <div>
-                <h2 className="text-[17px] font-extrabold">选择并连接设备</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">从浏览器已授权设备中选择对应 SN</p>
+                <h2 className="text-[17px] font-extrabold">{t("选择并连接设备", "Choose and connect a device")}</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">{t("从浏览器已授权设备中选择对应 SN", "Select an authorized device by serial number")}</p>
               </div>
             </div>
 
             <label className="mt-5 block text-[12px] font-semibold text-[#4a5270]">
-              V1PRO 设备（按 SN）
-              <select
+              {t("V1PRO 设备（按 SN）", "V1PRO device (serial number)")}<select
                 className="mt-2 w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-2.5 text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-60"
                 value={selectedDeviceKey}
                 disabled={busy || connected || spectrumStarting || lyricsStarting}
                 onChange={(event) => setSelectedDeviceKey(event.target.value)}
               >
-                {authorizedDevices.length === 0 ? <option value="">尚无已授权设备，请点击连接设备授权</option> : null}
+                {authorizedDevices.length === 0 ? <option value="">{t("尚无已授权设备，请点击连接设备授权", "No authorized devices. Select Connect device to grant access")}</option> : null}
                 {authorizedDevices.map((device) => (
-                  <option key={deviceKey(device)} value={deviceKey(device)}>{usbDeviceLabel(device)}</option>
+                  <option key={deviceKey(device)} value={deviceKey(device)}>{t(usbDeviceLabel(device))}</option>
                 ))}
               </select>
             </label>
 
-            <div className={`mt-4 rounded-[12px] border px-4 py-3 text-[13px] font-semibold ${statusClass}`}>{statusText}</div>
+            <div className={`mt-4 rounded-[12px] border px-4 py-3 text-[13px] font-semibold ${statusClass}`}>{t(statusText)}</div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef0f6]">
               <div className="h-full rounded-full bg-gradient-to-r from-[#ff8a5c] via-[#ff6f9c] to-[#7c6cf0] transition-[width] duration-150" style={{ width: `${progress}%` }} aria-hidden="true" />
             </div>
-            <p className="mt-3 min-h-[3rem] text-[12px] leading-6 text-[#8a93a8]">{metaText}</p>
-            {lastResult?.note ? <p className="mt-2 text-xs text-amber-600">提示：{lastResult.note}</p> : null}
+            <p className="mt-3 min-h-[3rem] text-[12px] leading-6 text-[#8a93a8]">{t(metaText)}</p>
+            {lastResult?.note ? <p className="mt-2 text-xs text-amber-600">{t("提示：", "Tip:")} {t(lastResult.note)}</p> : null}
 
             <div className="mt-5 flex flex-wrap gap-2.5">
-              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">连接设备</button>
-              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">读取容量</button>
-              <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">断开</button>
-              {selectedFile && connected && !busy && !displayControlBusy && !spectrumActive && !spectrumStarting && !lyricsActive && !lyricsStarting ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">重新传输当前文件</button> : null}
+              <button type="button" onClick={() => void handleConnect()} disabled={!webUsbSupported || !sdkReady || connected || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:cursor-not-allowed disabled:opacity-50">{t("连接设备", "Connect device")}</button>
+              <button type="button" onClick={() => void handleReadCapacity()} disabled={!webUsbSupported || !sdkReady || busy || displayControlBusy || spectrumActive || spectrumStarting || lyricsActive || lyricsStarting} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:cursor-not-allowed disabled:opacity-50">{t("读取容量", "Read capacity")}</button>
+              <button type="button" onClick={() => void handleDisconnect()} disabled={!connected || busy || displayControlBusy} className="rounded-full border border-[#e6e9f2] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] transition hover:border-[#ef6b62] hover:text-[#ef6b62] disabled:cursor-not-allowed disabled:opacity-50">{t("断开", "Disconnect")}</button>
+              {selectedFile && connected && !busy && !displayControlBusy && !spectrumActive && !spectrumStarting && !lyricsActive && !lyricsStarting ? <button type="button" onClick={() => void runTransfer(selectedFile)} className="rounded-full bg-[#32b879] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(50,184,121,.24)] transition hover:bg-[#299f69]">{t("重新传输当前文件", "Transfer current file again")}</button> : null}
             </div>
           </section>
 
@@ -1200,19 +1201,19 @@ export default function WebUsbTransferTestPage() {
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#f0edff] text-sm font-extrabold text-[#7c6cf0]">2</span>
               <div>
-                <h2 className="text-[17px] font-extrabold">设备功能控制</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">显示与开机网址设置会写入当前设备并保存</p>
+                <h2 className="text-[17px] font-extrabold">{t("设备功能控制", "Device settings")}</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">{t("显示与开机网址设置会写入当前设备并保存", "Display and power-on website settings are saved to the current device")}</p>
               </div>
             </div>
 
             <div className="mt-5 rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[12.5px] font-bold text-[#4a5270]">屏幕亮度</p>
-                  <p className="mt-1 text-[11px] text-[#8a93a8]">0% 为关闭屏幕，拖动停止后写入</p>
+                  <p className="text-[12.5px] font-bold text-[#4a5270]">{t("屏幕亮度", "Screen brightness")}</p>
+                  <p className="mt-1 text-[11px] text-[#8a93a8]">{t("0% 为关闭屏幕，拖动停止后写入", "0% turns the screen off. Saved when you release the slider")}</p>
                 </div>
                 <span className={`rounded-full px-3 py-1 text-sm font-extrabold ${screenOff ? "bg-slate-200 text-slate-600" : "bg-amber-100 text-amber-700"}`}>
-                  {screenOff ? "已熄屏" : `${brightnessPercent}%`}
+                  {t(screenOff ? "已熄屏" : `${brightnessPercent}%`)}
                 </span>
               </div>
               <input
@@ -1224,15 +1225,15 @@ export default function WebUsbTransferTestPage() {
                 disabled={displayControlsDisabled}
                 onChange={(event) => handleBrightnessChange(Number(event.target.value))}
                 className="mt-4 h-2 w-full cursor-pointer accent-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="屏幕亮度"
+                aria-label={t("屏幕亮度", "Screen brightness")}
               />
-              <div className="mt-1 flex justify-between text-[10px] text-[#9aa2b7]"><span>熄屏</span><span>100%</span></div>
+              <div className="mt-1 flex justify-between text-[10px] text-[#9aa2b7]"><span>{t("熄屏", "Off")}</span><span>100%</span></div>
             </div>
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
-                <p className="text-[12.5px] font-bold text-[#4a5270]">屏幕旋转</p>
-                <p className="mt-1 text-[11px] text-[#8a93a8]">切换设备横屏朝向</p>
+                <p className="text-[12.5px] font-bold text-[#4a5270]">{t("屏幕旋转", "Screen rotation")}</p>
+                <p className="mt-1 text-[11px] text-[#8a93a8]">{t("切换设备横屏朝向", "Change the device landscape orientation")}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {([0, 2] as const).map((rotation) => {
                     const active = screenRotation === rotation;
@@ -1245,7 +1246,7 @@ export default function WebUsbTransferTestPage() {
                         onClick={() => handleRotationChange(rotation)}
                         className={`rounded-[10px] border px-3 py-2 text-[12px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${active ? "border-[#7c6cf0] bg-[#f0edff] text-[#7c6cf0]" : "border-[#e1e5ef] bg-white text-[#69728a] hover:border-[#7c6cf0]"}`}
                       >
-                        ↻ {label}
+                        ↻ {t(label)}
                       </button>
                     );
                   })}
@@ -1255,14 +1256,14 @@ export default function WebUsbTransferTestPage() {
               <div className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[12.5px] font-bold text-[#4a5270]">跟随熄屏</p>
-                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">电脑 USB 挂起时熄屏，恢复后自动点亮</p>
+                    <p className="text-[12.5px] font-bold text-[#4a5270]">{t("跟随熄屏", "Sleep with computer")}</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">{t("电脑 USB 挂起时熄屏，恢复后自动点亮", "Screen turns off during USB suspend and turns back on when USB resumes")}</p>
                   </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={followScreenOff}
-                    aria-label="跟随熄屏"
+                    aria-label={t("跟随熄屏", "Sleep with computer")}
                     disabled={displayControlsDisabled}
                     onClick={handleFollowScreenOffChange}
                     className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${followScreenOff ? "bg-[#32b879]" : "bg-[#cfd5e2]"}`}
@@ -1271,7 +1272,7 @@ export default function WebUsbTransferTestPage() {
                   </button>
                 </div>
                 <p className={`mt-3 text-[11px] font-semibold ${followScreenOff ? "text-[#29966b]" : "text-[#8a93a8]"}`}>
-                  当前：{followScreenOff ? "已开启" : "已关闭"}
+                  {t("当前：", "Current:")} {t(followScreenOff ? "已开启" : "已关闭")}
                 </p>
               </div>
             </div>
@@ -1279,14 +1280,14 @@ export default function WebUsbTransferTestPage() {
             <div className="mt-3 rounded-[14px] border border-[#e2defe] bg-gradient-to-br from-[#faf9ff] to-[#f5f8ff] p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[12.5px] font-bold text-[#4a5270]">上电自动打开网页</p>
-                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">设备上电后模拟键盘打开网址，适合自动进入佳点素材主页</p>
+                  <p className="text-[12.5px] font-bold text-[#4a5270]">{t("上电自动打开网页", "Open website on power-on")}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">{t("设备上电后模拟键盘打开网址，适合自动进入佳点素材主页", "The device emulates a keyboard to open a website when it powers on")}</p>
                 </div>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={bootWebsiteEnabled}
-                  aria-label="上电自动打开网页"
+                  aria-label={t("上电自动打开网页", "Open website on power-on")}
                   disabled={bootWebsiteControlsDisabled}
                   onClick={() => void handleBootWebsiteChange()}
                   className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${bootWebsiteEnabled ? "bg-[#7c6cf0]" : "bg-[#cfd5e2]"}`}
@@ -1302,7 +1303,7 @@ export default function WebUsbTransferTestPage() {
                   disabled={!connected || busy || displayControlBusy || bootWebsiteEnabled || bootWebsiteSupported === false}
                   onChange={(event) => setBootWebsiteUrl(event.target.value)}
                   placeholder="https://www.jadot.cn/"
-                  aria-label="上电自动打开的网址"
+                  aria-label={t("上电自动打开的网址", "Website to open on power-on")}
                   className="h-10 min-w-0 flex-1 rounded-[10px] border border-[#dfe3ed] bg-white px-3 text-[12px] font-semibold text-[#4a5270] outline-none transition focus:border-[#7c6cf0] focus:ring-2 focus:ring-[#7c6cf0]/10 disabled:cursor-not-allowed disabled:bg-[#f1f3f8] disabled:opacity-70"
                 />
                 <button
@@ -1311,16 +1312,15 @@ export default function WebUsbTransferTestPage() {
                   onClick={() => setBootWebsiteUrl(DEFAULT_BOOT_WEBSITE_URL)}
                   className="h-10 shrink-0 rounded-[10px] border border-[#ded9ff] bg-white px-4 text-[11.5px] font-bold text-[#7c6cf0] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  使用佳点官网
-                </button>
+                  {t("使用佳点官网", "Use JiaDian website")}</button>
               </div>
               <p className={`mt-3 text-[11px] leading-5 ${bootWebsiteSupported === false ? "text-[#dc5d55]" : bootWebsiteEnabled ? "font-semibold text-[#6b5dde]" : "text-[#8a93a8]"}`}>
-                {bootWebsiteMessage}
+                {t(bootWebsiteMessage)}
               </p>
             </div>
 
             <div className={`mt-3 rounded-[12px] border px-4 py-3 text-[12px] leading-5 ${displayControlSupported === false ? "border-[#ffd8d5] bg-[#fff4f3] text-[#dc5d55]" : "border-[#dce6fb] bg-[#f5f8ff] text-[#66708d]"}`}>
-              {displayControlMessage}
+              {t(displayControlMessage)}
             </div>
             <button
               type="button"
@@ -1328,7 +1328,7 @@ export default function WebUsbTransferTestPage() {
               onClick={() => void handleRefreshDeviceStatus()}
               className="mt-3 text-[11.5px] font-semibold text-[#7c6cf0] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {displayControlBusy ? "正在同步…" : "重新读取设备设置"}
+              {t(displayControlBusy ? "正在同步…" : "重新读取设备设置")}
             </button>
           </section>
 
@@ -1336,14 +1336,14 @@ export default function WebUsbTransferTestPage() {
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e7f8ff] text-sm font-extrabold text-[#129bc4]">3</span>
               <div>
-                <h2 className="text-[17px] font-extrabold">实时音乐频谱</h2>
-                <p className="mt-1 text-xs text-[#8a93a8]">32 段频率分析，设备端实时绘制；停止后自动释放 USB</p>
+                <h2 className="text-[17px] font-extrabold">{t("实时音乐频谱", "Live music spectrum")}</h2>
+                <p className="mt-1 text-xs text-[#8a93a8]">{t("32 段频率分析，设备端实时绘制；停止后自动释放 USB", "32 frequency bands drawn live on the device. USB is released when stopped")}</p>
               </div>
             </div>
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
               <div className="rounded-[16px] border border-[#dce9f4] bg-gradient-to-b from-[#f8fcff] to-[#f6f8ff] p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[#7f8ba3]">音频来源</p>
+                <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[#7f8ba3]">{t("音频来源", "Audio source")}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   {([
                     ["system", "系统声音", "推荐"],
@@ -1368,8 +1368,8 @@ export default function WebUsbTransferTestPage() {
                         }}
                         className={`rounded-[11px] border px-2 py-2.5 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${active ? "border-[#25a9d6] bg-white text-[#168fb7] shadow-[0_4px_12px_rgba(18,155,196,.12)]" : "border-[#e1e7f0] bg-white/60 text-[#69728a] hover:border-[#85cde4]"}`}
                       >
-                        <span className="block text-[11.5px] font-extrabold">{label}</span>
-                        <span className="mt-0.5 block text-[9.5px] opacity-70">{tip}</span>
+                        <span className="block text-[11.5px] font-extrabold">{t(label)}</span>
+                        <span className="mt-0.5 block text-[9.5px] opacity-70">{t(tip)}</span>
                       </button>
                     );
                   })}
@@ -1378,7 +1378,7 @@ export default function WebUsbTransferTestPage() {
                 {spectrumSource === "local" ? (
                   <div className="mt-3 rounded-[12px] border border-[#dfe7f2] bg-white p-3">
                     <label className="block cursor-pointer rounded-[9px] border border-dashed border-[#9acfe0] bg-[#f5fcff] px-3 py-2.5 text-center text-[11.5px] font-bold text-[#168fb7] transition hover:bg-[#edfaff]">
-                      {spectrumLocalFile ? "更换本地音乐" : "选择本地音乐"}
+                      {t(spectrumLocalFile ? "更换本地音乐" : "选择本地音乐")}
                       <input
                         type="file"
                         accept="audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg"
@@ -1387,7 +1387,7 @@ export default function WebUsbTransferTestPage() {
                         onChange={(event) => handleSpectrumLocalFile(event.target.files?.[0] ?? null)}
                       />
                     </label>
-                    <p className="mt-2 truncate text-[10.5px] text-[#7f8ba3]">{spectrumLocalFile?.name ?? "尚未选择音乐"}</p>
+                    <p className="mt-2 truncate text-[10.5px] text-[#7f8ba3]">{t(spectrumLocalFile?.name ?? "尚未选择音乐")}</p>
                     {spectrumAudioUrl ? (
                       <audio
                         ref={spectrumAudioRef}
@@ -1400,15 +1400,15 @@ export default function WebUsbTransferTestPage() {
                   </div>
                 ) : (
                   <p className="mt-3 rounded-[10px] bg-white/75 px-3 py-2 text-[10.5px] leading-5 text-[#7f8ba3]">
-                    {spectrumSource === "system"
+                    {t(spectrumSource === "system"
                       ? "可跟随网易云、汽水音乐、QQ 音乐等软件。浏览器弹窗中必须勾选共享音频。"
-                      : "使用电脑麦克风采集环境声音，建议关闭降噪并让音乐靠近麦克风。"}
+                      : "使用电脑麦克风采集环境声音，建议关闭降噪并让音乐靠近麦克风。")}
                   </p>
                 )}
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <label className="text-[10.5px] font-bold text-[#69728a]">
-                    灵敏度 · {spectrumSensitivity}%
+                    {t("灵敏度 ·", "Sensitivity ·")} {spectrumSensitivity}%
                     <input
                       type="range"
                       min={50}
@@ -1424,7 +1424,7 @@ export default function WebUsbTransferTestPage() {
                     />
                   </label>
                   <label className="text-[10.5px] font-bold text-[#69728a]">
-                    平滑度 · {spectrumSmoothing}%
+                    {t("平滑度 ·", "Smoothing ·")} {spectrumSmoothing}%
                     <input
                       type="range"
                       min={0}
@@ -1446,10 +1446,10 @@ export default function WebUsbTransferTestPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[.2em] text-cyan-300">V1PRO Spectrum</p>
-                    <p className="mt-1 text-sm font-extrabold">实时频谱预览</p>
+                    <p className="mt-1 text-sm font-extrabold">{t("实时频谱预览", "Live spectrum preview")}</p>
                   </div>
                   <span className={`rounded-full border px-3 py-1 text-[10.5px] font-bold ${spectrumActive ? "border-emerald-300/50 bg-emerald-400/15 text-emerald-200" : "border-white/15 bg-white/[.06] text-slate-300"}`}>
-                    {spectrumStarting ? "启动中" : spectrumActive ? "运行中" : "待机"}
+                    {t(spectrumStarting ? "启动中" : spectrumActive ? "运行中" : "待机")}
                   </span>
                 </div>
                 <div className="mt-5 flex min-h-[142px] flex-1 items-end gap-[3px] rounded-[12px] border border-white/[.08] bg-black/20 px-3 pb-3 pt-5 sm:gap-1">
@@ -1462,7 +1462,7 @@ export default function WebUsbTransferTestPage() {
                   ))}
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className={`min-h-[1.25rem] text-[11px] leading-5 ${/失败|不支持|没有获取/.test(spectrumMessage) ? "text-rose-300" : "text-slate-300"}`}>{spectrumMessage}</p>
+                  <p className={`min-h-[1.25rem] text-[11px] leading-5 ${/失败|不支持|没有获取/.test(spectrumMessage) ? "text-rose-300" : "text-slate-300"}`}>{t(spectrumMessage)}</p>
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
@@ -1470,7 +1470,7 @@ export default function WebUsbTransferTestPage() {
                       onClick={() => void handleStartMusicSpectrum()}
                       className="rounded-full bg-gradient-to-r from-[#18bada] to-[#746cf2] px-5 py-2.5 text-[12px] font-bold text-white shadow-[0_5px_16px_rgba(24,186,218,.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {spectrumStarting ? "正在启动…" : "开启频谱"}
+                      {t(spectrumStarting ? "正在启动…" : "开启频谱")}
                     </button>
                     <button
                       type="button"
@@ -1478,8 +1478,7 @@ export default function WebUsbTransferTestPage() {
                       onClick={() => void stopMusicSpectrum()}
                       className="rounded-full border border-white/20 bg-white/[.08] px-5 py-2.5 text-[12px] font-bold text-white transition hover:bg-white/[.14] disabled:cursor-not-allowed disabled:opacity-30"
                     >
-                      停止并释放
-                    </button>
+                      {t("停止并释放", "Stop and release USB")}</button>
                   </div>
                 </div>
               </div>
@@ -1502,11 +1501,11 @@ export default function WebUsbTransferTestPage() {
               <div className="flex items-start gap-3">
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f8f0] text-sm font-extrabold text-[#32b879]">5</span>
                 <div>
-                  <h2 className="text-[17px] font-extrabold">选择传输素材</h2>
+                  <h2 className="text-[17px] font-extrabold">{t("选择传输素材", "Choose media to transfer")}</h2>
                   <p className="mt-1 text-xs text-[#8a93a8]">
-                    {materialWorkspaceMode === "single"
+                    {t(materialWorkspaceMode === "single"
                       ? "拖入文件或点击区域选择本地素材，完成后自动释放 USB"
-                      : "一次拖入多个素材，调整顺序后同步为循环播放相册"}
+                      : "一次拖入多个素材，调整顺序后同步为循环播放相册")}
                   </p>
                 </div>
               </div>
@@ -1526,7 +1525,7 @@ export default function WebUsbTransferTestPage() {
                         : "hover:text-[#7060ee]"
                     }`}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
@@ -1537,8 +1536,8 @@ export default function WebUsbTransferTestPage() {
               <aside className="rounded-[16px] border border-[#e2defe] bg-gradient-to-b from-[#faf9ff] to-[#f6f8ff] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-[14px] font-extrabold text-[#3f4660]">高级设置</h3>
-                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">参数会参与本地转换，与 GUI 高级模式一致</p>
+                    <h3 className="text-[14px] font-extrabold text-[#3f4660]">{t("高级设置", "Advanced settings")}</h3>
+                    <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">{t("参数会参与本地转换，与 GUI 高级模式一致", "These settings apply to local conversion, matching the desktop app advanced mode")}</p>
                   </div>
                   <button
                     type="button"
@@ -1554,42 +1553,38 @@ export default function WebUsbTransferTestPage() {
                     }}
                     className="shrink-0 rounded-full border border-[#ded9ff] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#7c6cf0] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    恢复默认
-                  </button>
+                    {t("恢复默认", "Reset defaults")}</button>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3">
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    下传模式
-                    <select
+                    {t("下传模式", "Transfer mode")}<select
                       value={materialTransferMode}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialTransferMode(event.target.value as MaterialTransferMode)}
                       className={selectClassName}
-                      aria-label="下传模式"
+                      aria-label={t("下传模式", "Transfer mode")}
                     >
-                      <option value="auto">自动识别</option>
-                      <option value="image">图片</option>
+                      <option value="auto">{t("自动识别", "Auto detect")}</option>
+                      <option value="image">{t("图片", "Image")}</option>
                       <option value="gif">GIF</option>
-                      <option value="video">视频</option>
+                      <option value="video">{t("视频", "Video")}</option>
                     </select>
                   </label>
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    视频帧率
-                    <select
+                    {t("视频帧率", "Video frame rate")}<select
                       value={materialFpsSelection}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialFpsSelection(parseVideoFpsSelection(event.target.value))}
                       className={selectClassName}
-                      aria-label="视频帧率"
+                      aria-label={t("视频帧率", "Video frame rate")}
                     >
-                      <option value={COMPATIBLE_VIDEO_FPS}>兼容 / GUI 新手自动</option>
+                      <option value={COMPATIBLE_VIDEO_FPS}>{t("兼容 / GUI 新手自动", "Compatible / Auto")}</option>
                       {[20, 25, 30].map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}
                     </select>
                   </label>
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    素材旋转
-                    <select
+                    {t("素材旋转", "Media rotation")}<select
                       value={materialRotation}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => {
@@ -1597,59 +1592,55 @@ export default function WebUsbTransferTestPage() {
                         setMaterialRotation(value === "auto" ? "auto" : Number(value) as 0 | 90 | 180 | 270);
                       }}
                       className={selectClassName}
-                      aria-label="素材旋转"
+                      aria-label={t("素材旋转", "Media rotation")}
                     >
-                      <option value="auto">自动</option>
+                      <option value="auto">{t("自动", "Auto")}</option>
                       {[0, 90, 180, 270].map((rotation) => <option key={rotation} value={rotation}>{rotation}°</option>)}
                     </select>
                   </label>
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    画面缩放
-                    <select
+                    {t("画面缩放", "Image scale")}<select
                       value={materialScale}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialScale(Number(event.target.value) as 50 | 75 | 100 | 125 | 150)}
                       className={selectClassName}
-                      aria-label="画面缩放"
+                      aria-label={t("画面缩放", "Image scale")}
                     >
                       {[50, 75, 100, 125, 150].map((scale) => <option key={scale} value={scale}>{scale}%</option>)}
                     </select>
                   </label>
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    铺满方式
-                    <select
+                    {t("铺满方式", "Screen fit")}<select
                       value={materialFitMode}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialFitMode(event.target.value as MaterialFitMode)}
                       className={selectClassName}
-                      aria-label="铺满方式"
+                      aria-label={t("铺满方式", "Screen fit")}
                     >
-                      <option value="contain">留黑边</option>
-                      <option value="fill">铺满全屏</option>
+                      <option value="contain">{t("留黑边", "Letterbox")}</option>
+                      <option value="fill">{t("铺满全屏", "Fill screen")}</option>
                     </select>
                   </label>
                   <label className="min-w-0 text-[11px] font-bold text-[#69728a]">
-                    素材色彩
-                    <select
+                    {t("素材色彩", "Media colors")}<select
                       value={materialColor}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialColor(event.target.value as MaterialColorProfile)}
                       className={selectClassName}
-                      aria-label="素材色彩"
+                      aria-label={t("素材色彩", "Media colors")}
                     >
-                      <option value="normal">普通</option>
-                      <option value="vivid">鲜艳</option>
-                      <option value="professional">专业</option>
+                      <option value="normal">{t("普通", "Normal")}</option>
+                      <option value="vivid">{t("鲜艳", "Vivid")}</option>
+                      <option value="professional">{t("专业", "Professional")}</option>
                     </select>
                   </label>
                   <label className="col-span-2 min-w-0 text-[11px] font-bold text-[#69728a]">
-                    播放倍速
-                    <select
+                    {t("播放倍速", "Playback speed")}<select
                       value={materialPlaybackSpeed}
                       disabled={advancedSettingsDisabled}
                       onChange={(event) => setMaterialPlaybackSpeed(Number(event.target.value))}
                       className={selectClassName}
-                      aria-label="播放倍速"
+                      aria-label={t("播放倍速", "Playback speed")}
                     >
                       {[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5, 6, 8, 10].map((speed) => (
                         <option key={speed} value={speed}>{speed.toFixed(speed % 1 === 0 ? 1 : 2)}×</option>
@@ -1658,8 +1649,7 @@ export default function WebUsbTransferTestPage() {
                   </label>
                 </div>
                 <p className="mt-3 rounded-[10px] bg-white/80 px-3 py-2 text-[10.5px] leading-5 text-[#8a93a8]">
-                  自动旋转会将竖屏素材转为横屏；倍速用于 GIF 和视频，空间不足时仍会自动提高倍速以适配设备容量。
-                </p>
+                  {t("自动旋转会将竖屏素材转为横屏；倍速用于 GIF 和视频，空间不足时仍会自动提高倍速以适配设备容量。", "Auto rotation turns portrait media to landscape. Playback speed applies to GIFs and videos and may increase automatically to fit device capacity.")}</p>
               </aside>
 
               <div className="flex min-w-0 flex-col justify-center lg:-mt-5">
@@ -1677,9 +1667,9 @@ export default function WebUsbTransferTestPage() {
               </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[#8a93a8]">
-                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">多设备 SN 选择</span>
-                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{materialFpsSelection === COMPATIBLE_VIDEO_FPS ? "GUI 新手自动 · 压缩字节适配" : `${materialFps} fps`} · {materialPlaybackSpeed}×</span>
-                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">完成自动释放</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{t("多设备 SN 选择", "Select devices by serial number")}</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{t(materialFpsSelection === COMPATIBLE_VIDEO_FPS ? "GUI 新手自动 · 压缩字节适配" : `${materialFps} fps`)} · {materialPlaybackSpeed}×</span>
+                  <span className="rounded-[10px] bg-[#fafbfe] px-2 py-2">{t("完成自动释放", "USB released on completion")}</span>
                 </div>
               </>
             ) : (

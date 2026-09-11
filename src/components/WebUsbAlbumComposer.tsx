@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { LocalAlbumTransferItem } from "../services/localAlbumGfm1Service";
 
@@ -51,6 +52,7 @@ export function WebUsbAlbumComposer({
   onTransfer: (items: LocalAlbumTransferItem[]) => Promise<void> | void;
   onNotice?: (message: string, error?: boolean) => void;
 }) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const objectUrlsRef = useRef(new Set<string>());
   const [items, setItems] = useState<AlbumItem[]>([]);
@@ -156,13 +158,13 @@ export function WebUsbAlbumComposer({
       <div className="min-w-0 rounded-[16px] border border-[#e2defe] bg-gradient-to-b from-[#fbfaff] to-[#f7f9ff] p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-[14px] font-extrabold text-[#3f4660]">播放顺序</h3>
-            <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">拖动素材排序，设备将按照清单循环播放。</p>
+            <h3 className="text-[14px] font-extrabold text-[#3f4660]">{t("播放顺序", "Playback order")}</h3>
+            <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">{t("拖动素材排序，设备将按照清单循环播放。", "Drag items to reorder them. Your device will loop this list.")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-[#f0edff] px-3 py-1.5 text-[11px] font-bold text-[#7c6cf0]">{items.length} 个素材</span>
+            <span className="rounded-full bg-[#f0edff] px-3 py-1.5 text-[11px] font-bold text-[#7c6cf0]">{items.length} {t("个素材", "items")}</span>
             {items.length ? (
-              <button type="button" disabled={busy} onClick={clearItems} className="rounded-full px-3 py-1.5 text-[11px] font-bold text-rose-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40">清空</button>
+              <button type="button" disabled={busy} onClick={clearItems} className="rounded-full px-3 py-1.5 text-[11px] font-bold text-rose-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40">{t("清空", "Clear")}</button>
             ) : null}
           </div>
         </div>
@@ -194,7 +196,7 @@ export function WebUsbAlbumComposer({
           }`}
         >
           <div>
-            <p className="text-[13px] font-extrabold text-[#4a5270]">{dragActive ? "松开即可加入相册" : "拖入图片、GIF 或视频，可一次选择多个"}</p>
+            <p className="text-[13px] font-extrabold text-[#4a5270]">{t(dragActive ? "松开即可加入相册" : "拖入图片、GIF 或视频，可一次选择多个")}</p>
             <p className="mt-1.5 text-[10.5px] leading-5 text-[#8a93a8]">PNG、JPG、WebP、GIF、MP4、WebM、MOV、M4V</p>
           </div>
           <input
@@ -233,8 +235,8 @@ export function WebUsbAlbumComposer({
                 selectedItem?.id === item.id ? "border-[#b8aff5] shadow-sm" : "border-[#e8e9f1]"
               } ${draggedId === item.id ? "opacity-45" : ""}`}
             >
-              <span className="cursor-grab select-none text-center text-base text-slate-300" title="拖动排序">⠿</span>
-              <button type="button" onClick={() => setSelectedId(item.id)} className="overflow-hidden rounded-[8px] bg-black" aria-label={`预览 ${item.file.name}`}>
+              <span className="cursor-grab select-none text-center text-base text-slate-300" title={t("拖动排序", "Drag to reorder")}>⠿</span>
+              <button type="button" onClick={() => setSelectedId(item.id)} className="overflow-hidden rounded-[8px] bg-black" aria-label={t(`预览 ${item.file.name}`)}>
                 {isVideo(item.file) ? (
                   <video src={item.previewUrl} muted playsInline preload="metadata" className="aspect-[16/9] w-full object-contain" />
                 ) : (
@@ -243,7 +245,7 @@ export function WebUsbAlbumComposer({
               </button>
               <div className="min-w-0">
                 <p className="truncate text-[11.5px] font-bold text-[#3f4660]">{index + 1}. {item.file.name}</p>
-                <p className="mt-1 text-[10px] text-[#9aa2b5]">{materialLabel(item.file)} · {isVideo(item.file) || isGif(item.file) ? "结束后停留" : "显示"}</p>
+                <p className="mt-1 text-[10px] text-[#9aa2b5]">{t(materialLabel(item.file))} · {t(isVideo(item.file) || isGif(item.file) ? "结束后停留" : "显示")}</p>
                 <label className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-[#69728a]">
                   <input
                     type="number"
@@ -257,19 +259,18 @@ export function WebUsbAlbumComposer({
                       setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, holdMs } : entry));
                     }}
                     className="h-7 w-16 rounded-lg border border-[#dfe3ed] bg-[#fafbfe] px-2 outline-none focus:border-[#7c6cf0]"
-                    aria-label={`${item.file.name} 停留秒数`}
-                  /> 秒
-                </label>
+                    aria-label={t(`${item.file.name} 停留秒数`)}
+                  /> {t("秒", "s")}</label>
               </div>
               <div className="col-start-2 col-end-4 flex justify-end gap-1 sm:col-auto">
-                <button type="button" disabled={busy || index === 0} onClick={() => moveItem(item.id, -1)} className="grid h-7 w-7 place-items-center rounded-full border border-slate-200 text-xs text-slate-500 hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:opacity-30" aria-label="上移">↑</button>
-                <button type="button" disabled={busy || index === items.length - 1} onClick={() => moveItem(item.id, 1)} className="grid h-7 w-7 place-items-center rounded-full border border-slate-200 text-xs text-slate-500 hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:opacity-30" aria-label="下移">↓</button>
-                <button type="button" disabled={busy} onClick={() => removeItem(item.id)} className="grid h-7 w-7 place-items-center rounded-full border border-rose-100 text-xs text-rose-400 hover:bg-rose-50 disabled:opacity-30" aria-label="移除">×</button>
+                <button type="button" disabled={busy || index === 0} onClick={() => moveItem(item.id, -1)} className="grid h-7 w-7 place-items-center rounded-full border border-slate-200 text-xs text-slate-500 hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:opacity-30" aria-label={t("上移", "Move up")}>↑</button>
+                <button type="button" disabled={busy || index === items.length - 1} onClick={() => moveItem(item.id, 1)} className="grid h-7 w-7 place-items-center rounded-full border border-slate-200 text-xs text-slate-500 hover:border-[#7c6cf0] hover:text-[#7c6cf0] disabled:opacity-30" aria-label={t("下移", "Move down")}>↓</button>
+                <button type="button" disabled={busy} onClick={() => removeItem(item.id)} className="grid h-7 w-7 place-items-center rounded-full border border-rose-100 text-xs text-rose-400 hover:bg-rose-50 disabled:opacity-30" aria-label={t("移除", "Remove")}>×</button>
               </div>
             </article>
           ))}
           {!items.length ? (
-            <div className="rounded-[12px] border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-center text-[11px] text-slate-400">相册还是空的</div>
+            <div className="rounded-[12px] border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-center text-[11px] text-slate-400">{t("相册还是空的", "Your album is empty")}</div>
           ) : null}
         </div>
       </div>
@@ -277,11 +278,11 @@ export function WebUsbAlbumComposer({
       <aside className="min-w-0 rounded-[16px] border border-[#dfe7f2] bg-[#f8fbff] p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[14px] font-extrabold text-[#3f4660]">屏幕预览</h3>
-            <p className="mt-1 text-[10.5px] text-[#8a93a8]">{panelWidth} × {panelHeight} · 循环播放</p>
+            <h3 className="text-[14px] font-extrabold text-[#3f4660]">{t("屏幕预览", "Screen preview")}</h3>
+            <p className="mt-1 text-[10.5px] text-[#8a93a8]">{panelWidth} × {panelHeight} {t("· 循环播放", "· Loop playback")}</p>
           </div>
           <span className="rounded-full bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3974c8] shadow-sm">
-            {capacityFrames ? `约 ${capacityFrames} 张画面` : "容量待读取"}
+            {t(capacityFrames ? `约 ${capacityFrames} 张画面` : "容量待读取")}
           </span>
         </div>
         <div
@@ -292,27 +293,26 @@ export function WebUsbAlbumComposer({
             isVideo(selectedItem.file) ? (
               <video key={selectedItem.id} src={selectedItem.previewUrl} controls muted playsInline preload="metadata" className="h-full w-full object-contain" />
             ) : (
-              <img src={selectedItem.previewUrl} alt={`预览 ${selectedItem.file.name}`} className="h-full w-full object-contain" />
+              <img src={selectedItem.previewUrl} alt={t(`预览 ${selectedItem.file.name}`)} className="h-full w-full object-contain" />
             )
           ) : (
-            <span className="text-[11px] text-slate-500">添加素材后预览</span>
+            <span className="text-[11px] text-slate-500">{t("添加素材后预览", "Add media to preview")}</span>
           )}
         </div>
         <p className="mt-3 truncate text-center text-[11px] font-semibold text-[#69728a]">
           {selectedItem ? `${items.indexOf(selectedItem) + 1} / ${items.length} · ${selectedItem.file.name}` : "0 / 0"}
         </p>
         <div className="mt-4 rounded-[12px] bg-white p-3 text-[10.5px] leading-5 text-[#7a849a] shadow-sm">
-          视频采用兼容模式：{panelWidth}×{panelHeight}、20 FPS、仅取前 15 秒；空间不足时自动提高倍速。容量只按画面张数显示。
-        </div>
+          {t("视频采用兼容模式：{width}×{height}、20 FPS、仅取前 15 秒；空间不足时自动提高倍速。容量只按画面张数显示。", "Videos use compatible mode: {width}×{height}, 20 FPS, first 15 seconds only. Playback speeds up automatically if needed to fit. Capacity is shown in frames.", { width: panelWidth, height: panelHeight })}</div>
         <button
           type="button"
           disabled={busy || !canTransfer || items.length === 0}
           onClick={() => void onTransfer(items.map(({ file, holdMs }) => ({ file, holdMs })))}
           className="mt-4 w-full rounded-[12px] bg-gradient-to-r from-[#32b879] to-[#22a8a2] px-4 py-3 text-[13px] font-extrabold text-white shadow-[0_8px_20px_rgba(50,184,121,.23)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {busy ? "正在转换并同步…" : `同步到设备 · ${items.length} 个素材`}
+          {t(busy ? "正在转换并同步…" : `同步到设备 · ${items.length} 个素材`)}
         </button>
-        {!canTransfer ? <p className="mt-2 text-center text-[10.5px] text-amber-600">请先授权并选择 V1PRO 设备。</p> : null}
+        {!canTransfer ? <p className="mt-2 text-center text-[10.5px] text-amber-600">{t("请先授权并选择 V1PRO 设备。", "Authorize and select a V1PRO device first.")}</p> : null}
       </aside>
     </div>
   );

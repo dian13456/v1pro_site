@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatNumber } from "../i18n";
 import { memo, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import type { ResourceItem } from "../types/resource";
@@ -23,7 +24,7 @@ function resolveCardTitle(resource: ResourceItem): string {
   if (looksLikeFilename(title) && description) {
     return description;
   }
-  return title || description || "未命名素材";
+  return title || description || t("未命名素材");
 }
 
 interface ResourceCardProps {
@@ -79,16 +80,17 @@ function MediaResourceCard({
   weeklyDownloadCount,
   showWeeklyDownloadCount = false,
 }: ResourceCardProps) {
+  useI18n();
   const { access } = useDeviceFeatureAccess();
   const featureEnabled = access?.enabled === true;
   const materialLabel =
     resource.materialType === "image"
-      ? "图片素材"
+      ? t("图片素材")
       : resource.materialType === "video"
-        ? "视频素材"
+        ? t("视频素材")
         : resource.materialType === "gif"
-          ? "GIF素材"
-        : "V1PRO素材包";
+          ? t("GIF素材")
+        : t("V1PRO素材包");
   const cardTitle = resolveCardTitle(resource);
   const previewFitClass =
     resource.materialType === "video" || resource.materialType === "image"
@@ -186,11 +188,11 @@ function MediaResourceCard({
         <div className="flex flex-col items-end gap-1 text-[11px] text-slate-500 dark:text-slate-400">
           {showWeeklyDownloadCount && weeklyDownloadCount > 0 ? (
             <div className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
-              本周 {weeklyDownloadCount}
+              {" "}{t("本周")}{" "}{formatNumber(weeklyDownloadCount)}
             </div>
           ) : null}
-          <div>总下载 {downloadCount}</div>
-          {resource.author ? <Link to={`/creator/${encodeURIComponent(resource.author)}`} className="transition hover:text-[#7c6cf0] hover:underline">上传人：{resource.author}</Link> : null}
+          <div>{t("总下载")}{" "}{formatNumber(downloadCount)}</div>
+          {resource.author ? <Link to={`/creator/${encodeURIComponent(resource.author)}`} className="transition hover:text-[#7c6cf0] hover:underline">{t("上传人：")}{resource.author}</Link> : null}
         </div>
       </div>
       <DevicePreviewFrame hoverGlow>
@@ -211,9 +213,7 @@ function MediaResourceCard({
                   />
                   {playError ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-3 text-center text-[11px] leading-relaxed text-slate-200">
-                      当前浏览器无法解码该视频（常见于 H.264 10-bit 或 HEVC 编码）。请改用 Chrome
-                      播放，或下载后使用本地播放器。
-                    </div>
+                      {" "}{t("当前浏览器无法解码该视频（常见于 H.264 10-bit 或 HEVC 编码）。请改用 Chrome 播放，或下载后使用本地播放器。")}{" "}</div>
                   ) : null}
                 </>
               ) : previewUrl ? (
@@ -228,14 +228,13 @@ function MediaResourceCard({
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                  视频预览加载中...
-                </div>
+                  {" "}{t("视频预览加载中...")}{" "}</div>
               )}
             </div>
           ) : resource.materialType === "gif" && isPlaying && playUrl ? (
             <img
               src={playUrl}
-              alt={`${cardTitle} GIF 播放`}
+              alt={t("{v0} GIF 播放", undefined, {v0: cardTitle})}
               loading="eager"
               decoding="async"
               className="h-full w-full object-contain"
@@ -253,8 +252,8 @@ function MediaResourceCard({
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
               {previewFailed
-                ? "预览暂时不可用"
-                : "预览加载中..."}
+                ? t("预览暂时不可用")
+                : t("预览加载中...")}
             </div>
           )}
       </DevicePreviewFrame>
@@ -268,7 +267,7 @@ function MediaResourceCard({
       <div className="mt-3 grid grid-cols-4 gap-2">
         <button
           type="button"
-          aria-label="点赞"
+          aria-label={t("点赞")}
           disabled={liked || liking || actionBusy}
           onClick={() => onLike(resource)}
           className={`inline-flex h-10 w-full items-center justify-center gap-1 rounded-xl border px-1 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-75 ${
@@ -285,7 +284,7 @@ function MediaResourceCard({
         {onFavorite ? (
           <button
             type="button"
-            aria-label={favorited ? "取消收藏" : "收藏"}
+            aria-label={favorited ? t("取消收藏") : t("收藏")}
             disabled={favoriting || actionBusy}
             onClick={() => onFavorite(resource)}
             className={`inline-flex h-10 w-full items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -305,12 +304,12 @@ function MediaResourceCard({
           <button
             type="button"
             disabled={actionBusy || !featureEnabled}
-            title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"}
+            title={featureEnabled ? t("传输到设备") : t("请先到个人中心输入激活码")}
             onPointerDown={() => onTransferPrepare?.(resource, { urgent: true })}
             onClick={() => void onTransfer?.(resource)}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#32b879] px-1 text-sm font-medium text-white transition hover:bg-[#299f69] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span className="truncate">{transferring ? "传输中..." : "传输"}</span>
+            <span className="truncate">{transferring ? t("传输中...") : t("传输")}</span>
           </button>
         ) : (
           <div className="h-10" aria-hidden="true" />
@@ -323,7 +322,7 @@ function MediaResourceCard({
             onClick={() => void handlePlayClick()}
             className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-1 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
-            <span className="truncate">{playing ? "打开中..." : isPlaying ? "收起" : "播放"}</span>
+            <span className="truncate">{playing ? t("打开中...") : isPlaying ? t("收起") : t("播放")}</span>
           </button>
         ) : (
           <div className="h-10" aria-hidden="true" />
@@ -333,12 +332,12 @@ function MediaResourceCard({
         <button
           type="button"
           disabled={actionBusy}
-          title="网页直传"
+          title={t("网页直传")}
           onPointerDown={() => onWebUsbTransferPrepare?.(resource, { urgent: true })}
           onClick={() => void onWebUsbTransfer?.(resource)}
           className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-violet-600 px-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {webUsbTransferring ? "网页直传中…" : "网页直传"}
+          {webUsbTransferring ? t("网页直传中…") : t("网页直传")}
         </button>
       ) : null}
     </article>
@@ -346,6 +345,7 @@ function MediaResourceCard({
 }
 
 function ResourceCardComponent(props: ResourceCardProps) {
+  useI18n();
   const { access } = useDeviceFeatureAccess();
   const featureEnabled = access?.enabled === true;
   if (props.resource.category !== "software") {
@@ -359,11 +359,11 @@ function ResourceCardComponent(props: ResourceCardProps) {
         <button
           type="button"
           disabled={downloading || !featureEnabled}
-          title={featureEnabled ? "下载" : "请先到个人中心输入激活码"}
+          title={featureEnabled ? t("下载") : t("请先到个人中心输入激活码")}
           onClick={() => onDownload(resource)}
           className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
         >
-          {downloading ? "生成下载链接..." : featureEnabled ? "下载" : "未激活"}
+          {downloading ? t("生成下载链接...") : featureEnabled ? t("下载") : t("未激活")}
         </button>
       ) : null}
     </article>

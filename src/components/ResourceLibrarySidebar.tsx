@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatNumber } from "../i18n";
 import type { MaterialTypeFilter, ResourceItem } from "../types/resource";
 import type { ResourceSortMode } from "../hooks/useResourceCatalog";
 import type { DeviceFrameCapacity } from "../utils/resourceCapacity";
@@ -21,6 +22,7 @@ function FilterGroup<T extends string | number>({
   value: T;
   onChange: (value: T) => void;
 }) {
+  useI18n();
   return (
     <section className="resource-filter-card overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white dark:border-slate-800 dark:bg-slate-900">
       <h2 className="px-[18px] pb-2.5 pt-[18px] text-xs font-normal tracking-[1px] text-[#8a93a8] dark:text-slate-400">{title}</h2>
@@ -40,9 +42,9 @@ function FilterGroup<T extends string | number>({
             >
               {active ? <span className="absolute inset-y-0 left-0 w-[3px] rounded-r bg-gradient-to-b from-[#ff8a5c] to-[#7c6cf0]" /> : null}
               <span className="w-5 text-center text-[15px]">{option.icon || "◇"}</span>
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              <span className="min-w-0 flex-1 break-words leading-5">{t(option.label)}</span>
               {option.note ? <span className="text-[11px] font-normal text-[#c2c8da] dark:text-slate-500">{option.note}</span> : null}
-              {option.count != null ? <span className="text-[11px] font-normal text-[#c2c8da] dark:text-slate-500">{option.count}</span> : null}
+              {option.count != null ? <span className="text-[11px] font-normal text-[#c2c8da] dark:text-slate-500">{formatNumber(option.count)}</span> : null}
             </button>
           );
         })}
@@ -68,37 +70,38 @@ interface ResourceLibrarySidebarProps {
 }
 
 export function ResourceLibrarySidebar(props: ResourceLibrarySidebarProps) {
+  useI18n();
   const count = (type: ResourceItem["materialType"]) => props.resources.filter((item) => item.materialType === type).length;
   const visibleCount = (value: number) => props.countsAvailable === false ? undefined : value;
   return (
     <aside className="space-y-[14px]">
       <FilterGroup
-        title="素材类型"
+        title={t("素材类型")}
         value={props.materialType}
         onChange={props.onMaterialType}
         options={[
-          { value: "all", label: "全部类型", count: visibleCount(props.resources.length), icon: "▰" },
-          { value: "image", label: "图片素材", count: visibleCount(count("image")), icon: "▧" },
-          { value: "gif", label: "GIF 素材", count: visibleCount(count("gif")), icon: "◇" },
-          { value: "video", label: "视频素材", count: visibleCount(count("video")), icon: "▣" },
+          { value: "all", label: t("全部类型"), count: visibleCount(props.resources.length), icon: "▰" },
+          { value: "image", label: t("图片素材"), count: visibleCount(count("image")), icon: "▧" },
+          { value: "gif", label: t("GIF 素材"), count: visibleCount(count("gif")), icon: "◇" },
+          { value: "video", label: t("视频素材"), count: visibleCount(count("video")), icon: "▣" },
         ]}
       />
       {props.showSortOptions !== false ? (
         <FilterGroup
-          title="特色栏目"
+          title={t("特色栏目")}
           value={props.sortMode}
           onChange={props.onSortMode}
           options={[
-            { value: "following", label: "关注上传", count: props.followedUploaderCount || undefined, icon: "🔔" },
-            { value: "hot", label: "热门排行", icon: "🔥" },
-            { value: "random", label: "随机推荐", icon: "🎲" },
-            { value: "weeklyTop", label: "周下载 TOP20", icon: "🏆" },
-            { value: "latest", label: "最新上传", icon: "✦" },
+            { value: "following", label: t("关注上传"), count: props.followedUploaderCount || undefined, icon: "🔔" },
+            { value: "hot", label: t("热门排行"), icon: "🔥" },
+            { value: "random", label: t("随机推荐"), icon: "🎲" },
+            { value: "weeklyTop", label: t("周下载 TOP20"), icon: "🏆" },
+            { value: "latest", label: t("最新上传"), icon: "✦" },
           ]}
         />
       ) : null}
       <FilterGroup
-        title="专栏"
+        title={t("专栏")}
         value={props.columnTag}
         onChange={props.onColumnTag}
         options={props.columnOptions.map((option, index) => ({

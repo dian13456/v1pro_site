@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useSyncExternalStore } from "react";
 import {
   dismissTransferTask,
@@ -6,6 +7,7 @@ import {
 } from "../services/transferTaskStore";
 
 export function GlobalTransferTaskCenter() {
+  const { t } = useI18n();
   const task = useSyncExternalStore(subscribeTransferTask, getTransferTaskSnapshot, getTransferTaskSnapshot);
   if (!task) return null;
 
@@ -27,10 +29,10 @@ export function GlobalTransferTaskCenter() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{task.label}</p>
-            <button type="button" onClick={dismissTransferTask} className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-sm text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="关闭传输任务">×</button>
+            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{t(task.label)}</p>
+            <button type="button" onClick={dismissTransferTask} className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-sm text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label={t("关闭传输任务", "Dismiss transfer task")}>×</button>
           </div>
-          <p className={`mt-1 line-clamp-2 text-[11px] leading-4 ${task.status === "error" ? "text-rose-500" : success ? "text-emerald-600" : "text-slate-500 dark:text-slate-300"}`}>{task.message}</p>
+          <p className={`mt-1 line-clamp-2 text-[11px] leading-4 ${task.status === "error" ? "text-rose-500" : success ? "text-emerald-600" : "text-slate-500 dark:text-slate-300"}`}>{t(task.message)}</p>
         </div>
       </div>
       <div className="h-1 bg-slate-100 dark:bg-slate-800">

@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { DevicePreviewFrame } from "./DevicePreviewFrame";
 
 export type SharePreviewMediaKind = "image" | "gif" | "video";
@@ -34,6 +35,7 @@ export function ShareDevicePreview({
   videoFpsLabel,
   targetFrameOptions,
 }: ShareDevicePreviewProps) {
+  const { t } = useI18n();
   const sideways = rotationDeg === 90 || rotationDeg === 270;
   const mediaStyle = {
     width: sideways ? "53.125%" : "100%",
@@ -43,19 +45,18 @@ export function ShareDevicePreview({
     filter: SHARE_DEVICE_PREVIEW_FILTER[colorProfile],
   } as const;
   const capacityLabel = targetFrameOptions.length
-    ? [...targetFrameOptions].sort((a, b) => a - b).map((frames) => `${frames}帧`).join(" / ")
-    : "未选择容量";
+    ? [...targetFrameOptions].sort((a, b) => a - b).map((frames) => t("{frames} 帧", "{frames} frames", { frames })).join(" / ")
+    : t("未选择容量", "No capacity selected");
 
   return (
     <section className="rounded-2xl border border-[#e6e9f2] bg-gradient-to-br from-[#f8f9fd] to-[#eef2fa] p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[12.5px] font-semibold text-[#4a5270]">1.9 英寸设备效果预览</p>
-          <p className="mt-1 text-[11px] text-[#8a93a8]">V1PRO 横屏 · 320 × 170 像素</p>
+          <p className="text-[12.5px] font-semibold text-[#4a5270]">{t("1.9 英寸设备效果预览", "1.9-inch device preview")}</p>
+          <p className="mt-1 text-[11px] text-[#8a93a8]">{t("V1PRO 横屏 · 320 × 170 像素", "V1PRO landscape · 320 × 170 pixels")}</p>
         </div>
         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-700">
-          实时参数预览
-        </span>
+          {t("实时参数预览", "Live settings preview")}</span>
       </div>
 
       <DevicePreviewFrame className="mx-auto w-full max-w-[480px] rounded-[2rem] p-3 shadow-[0_18px_38px_rgba(15,23,42,.28),inset_0_0_0_1px_rgba(255,255,255,.1)]">
@@ -69,14 +70,14 @@ export function ShareDevicePreview({
                 muted
                 playsInline
                 preload="metadata"
-                aria-label="设备视频效果预览"
+                aria-label={t("设备视频效果预览", "Device video preview")}
                 className="absolute left-1/2 top-1/2 max-w-none bg-black"
                 style={mediaStyle}
               />
             ) : (
               <img
                 src={previewUrl}
-                alt="设备素材效果预览"
+                alt={t("设备素材效果预览", "Device media preview")}
                 className="absolute left-1/2 top-1/2 max-w-none bg-black"
                 style={mediaStyle}
               />
@@ -84,7 +85,7 @@ export function ShareDevicePreview({
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#26344d,#090d15_72%)] text-center text-white/70">
               <span className="text-3xl" aria-hidden="true">▣</span>
-              <span className="mt-2 text-xs font-medium">选择素材后显示屏幕效果</span>
+              <span className="mt-2 text-xs font-medium">{t("选择素材后显示屏幕效果", "Select media to preview the screen")}</span>
             </div>
           )}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/15" />
@@ -94,14 +95,13 @@ export function ShareDevicePreview({
 
       <div className="mt-3 flex flex-wrap justify-center gap-1.5 text-[10.5px] font-medium text-[#66708d]">
         <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{rotationDeg}°</span>
-        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{fitMode === "fill" ? "铺满全屏" : "适应屏幕"}</span>
-        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{COLOR_PROFILE_LABEL[colorProfile]}色彩</span>
-        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{videoFpsLabel}</span>
-        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{capacityLabel}</span>
+        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{t(fitMode === "fill" ? "铺满全屏" : "适应屏幕")}</span>
+        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{t(COLOR_PROFILE_LABEL[colorProfile])} {t("色彩", "colors")}</span>
+        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{t(videoFpsLabel)}</span>
+        <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">{t(capacityLabel)}</span>
       </div>
       <p className="mt-2 text-center text-[10.5px] leading-5 text-[#8a93a8]">
-        预览会模拟旋转、裁切和色彩参数；实际观感会受设备屏幕亮度影响。
-      </p>
+        {t("预览会模拟旋转、裁切和色彩参数；实际观感会受设备屏幕亮度影响。", "The preview simulates rotation, cropping, and color settings. Actual appearance also depends on device screen brightness.")}</p>
     </section>
   );
 }

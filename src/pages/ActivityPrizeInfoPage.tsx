@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
@@ -20,6 +21,7 @@ const PHONE_PATTERN = /^1\d{10}$/;
 const QQ_PATTERN = /^[1-9]\d{4,11}$/;
 
 export default function ActivityPrizeInfoPage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(true);
@@ -98,18 +100,18 @@ export default function ActivityPrizeInfoPage() {
 
   return (
     <SitePageLayout
-      subtitle="中奖信息填写 · 提交后不可修改"
+      subtitle={t("中奖信息填写 · 提交后不可修改")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
-      {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
+      {loading ? <SiteLoadingBlock>{t("加载中…")}</SiteLoadingBlock> : null}
 
       {!loading && status && !status.isWinner ? (
         <SitePanel>
-          <SiteSectionTitle title="暂无中奖记录" description="你当前没有待填写的中奖信息。" />
+          <SiteSectionTitle title={t("暂无中奖记录")} description={t("你当前没有待填写的中奖信息。")} />
           <Link to="/activities/lottery">
-            <SiteButton type="button">返回抽奖活动</SiteButton>
+            <SiteButton type="button">{t("返回抽奖活动")}</SiteButton>
           </Link>
         </SitePanel>
       ) : null}
@@ -117,53 +119,51 @@ export default function ActivityPrizeInfoPage() {
       {!loading && status?.isWinner ? (
         <SitePanel>
           <SiteSectionTitle
-            title="填写中奖信息"
+            title={t("填写中奖信息")}
             description={
               status.activityTitle
-                ? `活动：${status.activityTitle}。请填写真实有效的收货地址与 QQ 号，提交后不可修改。`
-                : "请填写真实有效的收货地址与 QQ 号，提交后不可修改。"
+                ? t("活动：{v0}。请填写真实有效的收货地址与 QQ 号，提交后不可修改。", undefined, { v0: t(status.activityTitle) })
+                : t("请填写真实有效的收货地址与 QQ 号，提交后不可修改。")
             }
           />
 
           {submitted ? (
             <SiteAlert variant="success">
               <div className="space-y-1">
-                <p>信息已提交。发货状态：{status.shippingStatus === "shipped" ? "已发货" : "待发货"}</p>
-                {status.trackingNo ? <p className="font-semibold">快递单号：{status.trackingNo}</p> : null}
+                <p>{t("信息已提交。发货状态：")}{status.shippingStatus === "shipped" ? t("已发货") : t("待发货")}</p>
+                {status.trackingNo ? <p className="font-semibold">{t("快递单号：")}{status.trackingNo}</p> : null}
               </div>
             </SiteAlert>
           ) : (
             <div className="mt-4 space-y-3">
-              <SiteInput value={name} onChange={(e) => setName(e.target.value)} placeholder="收货人姓名" disabled={submitting} />
-              <SiteInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="手机号" disabled={submitting} />
-              <SiteInput value={qq} onChange={(e) => setQq(e.target.value)} placeholder="QQ号（必填）" disabled={submitting} />
-              <SiteInput value={wechat} onChange={(e) => setWechat(e.target.value)} placeholder="微信号（选填）" disabled={submitting} />
+              <SiteInput value={name} onChange={(e) => setName(e.target.value)} placeholder={t("收货人姓名")} disabled={submitting} />
+              <SiteInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("手机号")} disabled={submitting} />
+              <SiteInput value={qq} onChange={(e) => setQq(e.target.value)} placeholder={t("QQ号（必填）")} disabled={submitting} />
+              <SiteInput value={wechat} onChange={(e) => setWechat(e.target.value)} placeholder={t("微信号（选填）")} disabled={submitting} />
               <div className="grid gap-3 sm:grid-cols-2">
-                <SiteInput value={province} onChange={(e) => setProvince(e.target.value)} placeholder="省份" disabled={submitting} />
-                <SiteInput value={city} onChange={(e) => setCity(e.target.value)} placeholder="城市" disabled={submitting} />
+                <SiteInput value={province} onChange={(e) => setProvince(e.target.value)} placeholder={t("省份")} disabled={submitting} />
+                <SiteInput value={city} onChange={(e) => setCity(e.target.value)} placeholder={t("城市")} disabled={submitting} />
               </div>
               <SiteTextarea
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="详细收货地址"
+                placeholder={t("详细收货地址")}
                 rows={3}
                 disabled={submitting}
               />
               <SiteButton type="button" disabled={submitting} onClick={() => void handleSubmit()}>
-                {submitting ? "提交中…" : "确认提交"}
+                {submitting ? t("提交中…") : t("确认提交")}
               </SiteButton>
             </div>
           )}
         </SitePanel>
       ) : null}
 
-      {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
-      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+      {notice ? <SiteAlert variant="success">{t(notice)}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
       <Link to="/activities/lottery">
-        <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">
-          返回抽奖活动
-        </SiteButton>
+        <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">{t("返回抽奖活动")}{" "}</SiteButton>
       </Link>
     </SitePageLayout>
   );

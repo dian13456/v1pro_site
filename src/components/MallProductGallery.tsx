@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useMemo, useState } from "react";
 import { MallProductImage } from "./MallProductImage";
 import { fetchMallImageBlobUrl } from "../services/mallService";
@@ -15,6 +16,7 @@ export function MallProductGallery({
   className = "h-44 w-full",
   adminToken,
 }: MallProductGalleryProps) {
+  useI18n();
   const images = useMemo(
     () => imageUrls.map((item) => item.trim()).filter(Boolean),
     [imageUrls],
@@ -87,7 +89,7 @@ export function MallProductGallery({
           type="button"
           className={`block w-full overflow-hidden rounded-xl ${images.length > 0 ? "cursor-zoom-in" : ""}`}
           onClick={() => setLightboxOpen(true)}
-          aria-label={`查看 ${title} 大图`}
+          aria-label={t("查看 {v0} 大图", undefined, { v0: title })}
         >
           <MallProductImage imageUrl={active} title={title} className={className} adminToken={adminToken} />
         </button>
@@ -103,7 +105,7 @@ export function MallProductGallery({
                     : "border-transparent opacity-80 hover:opacity-100"
                 }`}
                 onClick={() => setActiveIndex(index)}
-                aria-label={`查看第 ${index + 1} 张图`}
+                aria-label={t("查看第 {v0} 张图", undefined, { v0: index + 1 })}
               >
                 <MallProductImage imageUrl={url} title={title} className="h-14 w-14" adminToken={adminToken} />
               </button>
@@ -111,9 +113,9 @@ export function MallProductGallery({
           </div>
         ) : null}
         {images.length > 1 ? (
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">点击图片可放大，共 {images.length} 张</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("点击图片可放大，共 {count} 张", "Select an image to enlarge. {count} images.", { count: images.length })}</p>
         ) : (
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">点击图片可放大</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("点击图片可放大")}</p>
         )}
       </div>
 
@@ -123,15 +125,13 @@ export function MallProductGallery({
           onClick={() => setLightboxOpen(false)}
           role="dialog"
           aria-modal="true"
-          aria-label={`${title} 图片预览`}
+          aria-label={t("{v0} 图片预览", undefined, { v0: title })}
         >
           <button
             type="button"
             className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-sm text-white hover:bg-white/25"
             onClick={() => setLightboxOpen(false)}
-          >
-            关闭
-          </button>
+          >{t("关闭")}{" "}</button>
           {images.length > 1 ? (
             <>
               <button
@@ -141,9 +141,7 @@ export function MallProductGallery({
                   event.stopPropagation();
                   setActiveIndex((prev) => (prev - 1 + images.length) % images.length);
                 }}
-              >
-                上一张
-              </button>
+              >{t("上一张")}{" "}</button>
               <button
                 type="button"
                 className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 px-3 py-2 text-white hover:bg-white/25"
@@ -151,9 +149,7 @@ export function MallProductGallery({
                   event.stopPropagation();
                   setActiveIndex((prev) => (prev + 1) % images.length);
                 }}
-              >
-                下一张
-              </button>
+              >{t("下一张")}{" "}</button>
             </>
           ) : null}
           <div className="max-h-[85vh] max-w-5xl" onClick={(event) => event.stopPropagation()}>

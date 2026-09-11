@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatDate } from "../i18n";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
@@ -23,7 +24,7 @@ import type { BoardMessage } from "../types/messageBoard";
 import { getDisplayName } from "../services/welcomeService";
 
 function formatMessageTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString("zh-CN", {
+  return formatDate(timestamp, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -33,6 +34,7 @@ function formatMessageTime(timestamp: number): string {
 }
 
 export default function MessageBoardPage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [messages, setMessages] = useState<BoardMessage[]>([]);
@@ -53,7 +55,7 @@ export default function MessageBoardPage() {
       setMessages(result.messages);
       setTotal(result.total);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "加载留言失败");
+      setErrorMessage((err as Error)?.message || t("加载留言失败"));
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ export default function MessageBoardPage() {
 
   const handleSubmit = async () => {
     if (!content.trim()) {
-      setErrorMessage("请输入留言内容");
+      setErrorMessage(t("请输入留言内容"));
       return;
     }
     try {
@@ -80,7 +82,7 @@ export default function MessageBoardPage() {
       setTotal((prev) => prev + 1);
       setContent("");
     } catch (err) {
-      const message = (err as Error)?.message || "发布留言失败";
+      const message = (err as Error)?.message || t("发布留言失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -92,40 +94,40 @@ export default function MessageBoardPage() {
 
   return (
     <SitePageLayout
-      subtitle="用户留言板 · 分享使用体验、素材建议或问题反馈"
+      subtitle={t("用户留言板 · 分享使用体验、素材建议或问题反馈")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
         <SitePanel>
           <SiteSectionTitle
-            title="发布留言"
-            description={`当前昵称：${myUsername || "—"} · 最多 ${MAX_MESSAGE_LENGTH} 字`}
+            title={t("发布留言")}
+            description={t("当前昵称：{v0} · 最多 {v1} 字", undefined, {v0: myUsername || "—", v1: MAX_MESSAGE_LENGTH})}
           />
           <SiteTextarea
             value={content}
             onChange={(event) => setContent(event.target.value.slice(0, MAX_MESSAGE_LENGTH))}
             rows={4}
-            placeholder="写下你的留言..."
+            placeholder={t("写下你的留言...")}
           />
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {content.trim().length}/{MAX_MESSAGE_LENGTH}
             </span>
             <SiteButton type="button" disabled={submitting || !content.trim()} onClick={() => void handleSubmit()}>
-              {submitting ? "发布中..." : "发布留言"}
+              {submitting ? t("发布中...") : t("发布留言")}
             </SiteButton>
           </div>
         </SitePanel>
 
-        {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+        {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
         <section className="space-y-3">
-          <SiteSectionTitle title="全部留言" action={<span className="text-sm text-slate-500 dark:text-slate-400">共 {total} 条</span>} />
+          <SiteSectionTitle title={t("全部留言")} action={<span className="text-sm text-slate-500 dark:text-slate-400">{t("共 {count} 条", "Messages: {count}", { count: total })}</span>} />
 
-          {loading ? <SiteLoadingBlock>正在加载留言...</SiteLoadingBlock> : null}
+          {loading ? <SiteLoadingBlock>{t("正在加载留言...")}</SiteLoadingBlock> : null}
           {!loading && messages.length === 0 ? (
-            <SiteEmptyBlock>还没有留言，来做第一个吧。</SiteEmptyBlock>
+            <SiteEmptyBlock>{t("还没有留言，来做第一个吧。")}</SiteEmptyBlock>
           ) : null}
           {!loading && messages.length > 0
             ? messages.map((item) => (

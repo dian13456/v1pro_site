@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { MallProductImage } from "./MallProductImage";
 import { SiteButton } from "./SiteUi";
@@ -11,6 +12,7 @@ interface PromoImageUploadProps {
 }
 
 export function PromoImageUpload({ label, imageUrl, onChange, disabled }: PromoImageUploadProps) {
+  useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -43,9 +45,7 @@ export function PromoImageUpload({ label, imageUrl, onChange, disabled }: PromoI
           <MallProductImage imageUrl={previewUrl} title={label} className="h-40 w-full" />
         </div>
       ) : (
-        <div className="flex h-40 max-w-xs items-center justify-center rounded-xl border border-dashed border-white/30 bg-white/40 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/40">
-          尚未上传
-        </div>
+        <div className="flex h-40 max-w-xs items-center justify-center rounded-xl border border-dashed border-white/30 bg-white/40 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/40">{t("尚未上传")}{" "}</div>
       )}
       <input
         ref={fileInputRef}
@@ -62,7 +62,7 @@ export function PromoImageUpload({ label, imageUrl, onChange, disabled }: PromoI
           disabled={disabled || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? "上传中…" : previewUrl ? "重新上传" : "上传图片"}
+          {uploading ? t("上传中…") : previewUrl ? t("重新上传") : t("上传图片")}
         </SiteButton>
         {previewUrl ? (
           <SiteButton
@@ -73,12 +73,10 @@ export function PromoImageUpload({ label, imageUrl, onChange, disabled }: PromoI
               onChange("");
               setPreviewUrl("");
             }}
-          >
-            清除
-          </SiteButton>
+          >{t("清除")}{" "}</SiteButton>
         ) : null}
       </div>
-      {errorMessage ? <p className="text-sm text-rose-600 dark:text-rose-300">{errorMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-rose-600 dark:text-rose-300">{t(errorMessage)}</p> : null}
     </div>
   );
 }

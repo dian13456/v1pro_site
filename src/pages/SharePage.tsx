@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ResourceLibraryHeader } from "../components/ResourceLibraryHeader";
@@ -123,6 +124,7 @@ function normalizeShareRemaining(value: unknown): number | null {
 }
 
 export default function SharePage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { columnTagOptions } = useColumnTags();
   const shareColumnOptions = useMemo(
@@ -549,11 +551,10 @@ export default function SharePage() {
       <main className="mx-auto flex max-w-[1280px] justify-center px-4 py-6 sm:px-6">
         <section className="w-full max-w-[640px] overflow-hidden rounded-[18px] bg-white shadow-[0_24px_60px_rgba(43,50,69,.16)]">
           <header className="border-b border-[#e6e9f2] px-[26px] pb-3.5 pt-5">
-            <h1 className="text-[17px] font-bold">分享素材</h1>
+            <h1 className="text-[17px] font-bold">{t("分享素材", "Share media")}</h1>
             <p className="mt-1.5 text-xs leading-[1.6] text-[#8a93a8]">
-              支持静态图片（8MB）、GIF（{gifMb}MB）、视频源文件（{videoMb}MB）；超过约 20MB 的视频会在浏览器本地压缩后直传 COS。
-              他人点赞可增加 <b className="text-[#2b3245]">1 积分</b>，有效下载再增加 <b className="text-[#2b3245]">0.5 积分</b>。
-              {shareQuotaLoading
+              {t("支持静态图片（8MB）、GIF（{gifMb}MB）、视频源文件（{videoMb}MB）；超过约 20MB 的视频会在浏览器本地压缩后上传。他人点赞可增加 1 积分，有效下载再增加 0.5 积分。", "Supports images up to 8 MB, GIFs up to {gifMb} MB, and source videos up to {videoMb} MB. Videos over about 20 MB are compressed locally before upload. Each like earns 1 point; each eligible download earns 0.5 points.", { gifMb, videoMb })}
+              {t(shareQuotaLoading
                 ? " 正在读取分享额度…"
                 : shareUnlimited
                   ? " 当前分享次数：无限制。"
@@ -561,13 +562,13 @@ export default function SharePage() {
                     ? shareRemaining <= 0
                       ? " 上传次数已用完，请到积分商城兑换后再分享。"
                       : ` 当前剩余分享次数：${shareRemaining}。`
-                    : ""}
+                    : "")}
             </p>
           </header>
 
           <div className="px-[26px] py-5">
             <div className="mb-4">
-              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 素材文件</label>
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> {t("素材文件", "Media file")}</label>
               <button
                 type="button"
                 disabled={uploading || transferring}
@@ -583,12 +584,12 @@ export default function SharePage() {
                   mediaKind === "video" ? (
                     <video src={previewUrl} muted playsInline className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: SHARE_DEVICE_PREVIEW_FILTER[videoColorProfile] }} />
                   ) : (
-                    <img src={previewUrl} alt="素材预览" className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: SHARE_DEVICE_PREVIEW_FILTER[videoColorProfile] }} />
+                    <img src={previewUrl} alt={t("素材预览", "Media preview")} className="mb-2 max-h-24 max-w-full rounded-lg object-contain" style={{ filter: SHARE_DEVICE_PREVIEW_FILTER[videoColorProfile] }} />
                   )
                 ) : <span className="mb-1.5 text-[28px]">📁</span>}
-                <span>点击选择文件，或拖拽到此处</span>
+                <span>{t("点击选择文件，或拖拽到此处", "Click to choose a file, or drop it here")}</span>
                 <strong className="mt-1 max-w-full truncate text-[#2b3245]">
-                  {selectedFile ? `${selectedFile.name}（${(selectedFile.size / 1048576).toFixed(1)} MB）` : "未选择"}
+                  {selectedFile ? `${selectedFile.name} (${(selectedFile.size / 1048576).toFixed(1)} MB)` : t("未选择", "None selected")}
                 </strong>
               </button>
               <input
@@ -601,28 +602,28 @@ export default function SharePage() {
             </div>
 
             <div className="mb-4">
-              <label className={fieldLabelClass}>自定义封面 <span className="font-normal text-[#8a93a8]">（视频/GIF 可选）</span></label>
+              <label className={fieldLabelClass}>{t("自定义封面", "Custom cover")} <span className="font-normal text-[#8a93a8]">{t("（视频/GIF 可选）", "(optional for videos/GIFs)")}</span></label>
               <div className="flex min-h-[92px] items-center gap-3 rounded-xl border border-[#e6e9f2] bg-[#fafbfe] p-3">
                 {customCoverPreviewUrl ? (
                   <img
                     src={customCoverPreviewUrl}
-                    alt="自定义封面预览"
+                    alt={t("自定义封面预览", "Custom cover preview")}
                     className="h-[68px] w-[108px] shrink-0 rounded-lg border border-[#e6e9f2] bg-white object-cover"
                   />
                 ) : (
                   <div className="flex h-[68px] w-[108px] shrink-0 items-center justify-center rounded-lg border border-dashed border-[#cfd5ea] bg-white text-2xl">🖼️</div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-semibold text-[#4a5270]">
-                    {customCoverFile
+                  <p className={`${customCoverFile ? "truncate" : "break-words"} text-[12.5px] font-semibold text-[#4a5270]`}>
+                    {t(customCoverFile
                       ? customCoverFile.name
                       : !mediaKind
                         ? "请先选择视频或 GIF 素材"
                         : mediaKind === "image"
                           ? "图片素材默认使用原图作为封面"
-                          : "未上传时自动生成封面"}
+                          : "未上传时自动生成封面")}
                   </p>
-                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">支持 JPG、PNG、WebP，最大 8MB</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#8a93a8]">{t("支持 JPG、PNG、WebP，最大 8MB", "JPG, PNG, or WebP, up to 8 MB")}</p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -630,7 +631,7 @@ export default function SharePage() {
                       onClick={() => coverInputRef.current?.click()}
                       className="rounded-lg border border-[#cfd5ea] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#4a5270] transition hover:border-[#ff8a5c] hover:text-[#ff8a5c] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {customCoverFile ? "更换封面" : "上传封面"}
+                      {t(customCoverFile ? "更换封面" : "上传封面")}
                     </button>
                     {customCoverFile ? (
                       <button
@@ -639,8 +640,7 @@ export default function SharePage() {
                         onClick={() => setCustomCoverFile(null)}
                         className="rounded-lg px-2 py-1.5 text-[11.5px] text-[#8a93a8] transition hover:text-rose-600 disabled:opacity-50"
                       >
-                        恢复自动生成
-                      </button>
+                        {t("恢复自动生成", "Use automatic cover")}</button>
                     ) : null}
                   </div>
                 </div>
@@ -655,26 +655,26 @@ export default function SharePage() {
             </div>
 
             <div className="mb-4">
-              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 标题</label>
-              <input className={fieldClass} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={80} placeholder="例如：初音未来 · 眨眼循环" />
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> {t("标题", "Title")}</label>
+              <input className={fieldClass} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={80} placeholder={t("例如：初音未来 · 眨眼循环", "e.g. Hatsune Miku · Blinking loop")} />
             </div>
 
             <div className="mb-4">
-              <label className={fieldLabelClass}>描述</label>
-              <textarea className={`${fieldClass} h-14 resize-none`} value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} placeholder="简单描述素材内容、动作、适用场景…" />
+              <label className={fieldLabelClass}>{t("描述", "Description")}</label>
+              <textarea className={`${fieldClass} h-14 resize-none`} value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} placeholder={t("简单描述素材内容、动作、适用场景…", "Describe the media, motion, or suggested use...")} />
             </div>
 
             {mediaKind === "video" ? (
               <div className="mb-4">
-                <label className={fieldLabelClass}>专栏</label>
+                <label className={fieldLabelClass}>{t("专栏", "Category")}</label>
                 <select className={fieldClass} value={columnTag} onChange={(event) => setColumnTag(event.target.value)}>
-                  {shareColumnOptions.map((item) => <option key={item.value || "none"} value={item.value}>{item.label}</option>)}
+                  {shareColumnOptions.map((item) => <option key={item.value || "none"} value={item.value}>{t(item.label)}</option>)}
                 </select>
               </div>
             ) : null}
 
             <div className="mb-4">
-              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> 目标设备容量（可多选）</label>
+              <label className={fieldLabelClass}><span className="text-[#ff8a5c]">*</span> {t("目标设备容量（可多选）", "Target device capacity (select one or more)")}</label>
               <div className="grid grid-cols-3 gap-2.5">
                 {[77, 154, 308].map((frames) => {
                   const selected = targetFrameOptions.includes(frames);
@@ -685,44 +685,44 @@ export default function SharePage() {
                       onClick={() => setTargetFrameOptions((current) => selected ? current.filter((item) => item !== frames) : [...current, frames].sort((a, b) => a - b))}
                       className={`rounded-xl border-[1.5px] px-2.5 py-3 text-center transition ${selected ? "border-[#ff8a5c] bg-[#fff7f2] shadow-[0_0_0_2px_rgba(255,138,92,.18)]" : "border-[#e6e9f2] bg-white hover:border-[#ff8a5c]"}`}
                     >
-                      <span className="block text-[19px] font-extrabold">{frames} 帧</span>
-                      <span className="mt-1 block text-[11px] leading-[1.5] text-[#8a93a8]">最多存储 {frames} 帧画面</span>
+                      <span className="block text-[19px] font-extrabold">{frames} {t("帧", "frames")}</span>
+                      <span className="mt-1 block text-[11px] leading-[1.5] text-[#8a93a8]">{t("最多存储 {frames} 帧画面", "Stores up to {frames} frames", { frames })}</span>
                     </button>
                   );
                 })}
               </div>
-              {targetFrameOptions.length === 0 ? <p className="mt-2 text-xs text-rose-600">请至少选择一种目标设备容量</p> : null}
+              {targetFrameOptions.length === 0 ? <p className="mt-2 text-xs text-rose-600">{t("请至少选择一种目标设备容量", "Select at least one target device capacity")}</p> : null}
             </div>
 
-            <div className="mb-4 grid grid-cols-2 gap-3.5">
+            <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div>
-                <label className={fieldLabelClass}>视频帧率</label>
+                <label className={fieldLabelClass}>{t("视频帧率", "Video frame rate")}</label>
                 <select className={fieldClass} value={videoFpsSelection} onChange={(event) => setVideoFpsSelection(parseVideoFpsSelection(event.target.value))}>
-                  <option value={COMPATIBLE_VIDEO_FPS}>兼容模式（20 / 25 / 30 fps）</option>
+                  <option value={COMPATIBLE_VIDEO_FPS}>{t("兼容模式（20 / 25 / 30 fps）", "Compatible (20 / 25 / 30 fps)")}</option>
                   <option value={20}>20 fps</option><option value={25}>25 fps</option><option value={30}>30 fps</option>
                 </select>
               </div>
               <div>
-                <label className={fieldLabelClass}>画面方向</label>
+                <label className={fieldLabelClass}>{t("画面方向", "Orientation")}</label>
                 <select className={fieldClass} value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value) as 0 | 90 | 180 | 270)}>
-                  <option value={0}>0° 原方向</option><option value={90}>90° 顺时针</option><option value={180}>180°</option><option value={270}>270° 顺时针</option>
+                  <option value={0}>{t("0° 原方向", "0° Original")}</option><option value={90}>{t("90° 顺时针", "90° Clockwise")}</option><option value={180}>180°</option><option value={270}>{t("270° 顺时针", "270° Clockwise")}</option>
                 </select>
               </div>
             </div>
 
             <div className="mb-4">
-              <label className={fieldLabelClass}>画面显示</label>
+              <label className={fieldLabelClass}>{t("画面显示", "Screen fit")}</label>
               <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 pt-1 text-[13px] text-[#4a5270]">
-                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "fill"} onChange={() => setFitMode("fill")} /> 铺满全屏</label>
-                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "contain"} onChange={() => setFitMode("contain")} /> 适应屏幕</label>
+                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "fill"} onChange={() => setFitMode("fill")} /> {t("铺满全屏", "Fill screen")}</label>
+                <label className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="fitMode" checked={fitMode === "contain"} onChange={() => setFitMode("contain")} /> {t("适应屏幕", "Fit screen")}</label>
               </div>
             </div>
 
             <div>
-              <label className={fieldLabelClass}>素材色彩</label>
+              <label className={fieldLabelClass}>{t("素材色彩", "Media colors")}</label>
               <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 pt-1 text-[13px] text-[#4a5270]">
                 {([ ["normal", "普通"], ["vivid", "鲜艳"], ["professional", "专业"] ] as const).map(([value, label]) => (
-                  <label key={value} className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="videoColor" checked={videoColorProfile === value} onChange={() => setVideoColorProfile(value)} /> {label}</label>
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5"><input type="radio" name="videoColor" checked={videoColorProfile === value} onChange={() => setVideoColorProfile(value)} /> {t(label)}</label>
                 ))}
               </div>
             </div>
@@ -734,40 +734,39 @@ export default function SharePage() {
                 fitMode={fitMode}
                 rotationDeg={rotationDeg}
                 colorProfile={videoColorProfile}
-                videoFpsLabel={videoFpsSelection === COMPATIBLE_VIDEO_FPS ? "兼容模式 · 自动" : `${videoFps} fps`}
+                videoFpsLabel={t(videoFpsSelection === COMPATIBLE_VIDEO_FPS ? "兼容模式 · 自动" : `${videoFps} fps`)}
                 targetFrameOptions={targetFrameOptions}
               />
             </div>
 
-            {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
-            {errorMessage ? <SiteAlert variant="error" className="mt-4">{errorMessage}</SiteAlert> : null}
-            {shareQuotaExhausted ? <SiteAlert variant="error" className="mt-4">上传次数已用完，请前往积分商城兑换上传次数后再分享。</SiteAlert> : null}
+            {notice ? <SiteAlert variant="success" className="mt-4">{t(notice)}</SiteAlert> : null}
+            {errorMessage ? <SiteAlert variant="error" className="mt-4">{t(errorMessage)}</SiteAlert> : null}
+            {shareQuotaExhausted ? <SiteAlert variant="error" className="mt-4">{t("上传次数已用完，请前往积分商城兑换上传次数后再分享。", "No uploads remaining. Redeem more uploads in the points store before sharing.")}</SiteAlert> : null}
           </div>
 
           <footer className="flex flex-wrap justify-end gap-3 border-t border-[#e6e9f2] px-[26px] pb-[22px] pt-4">
-            <button type="button" disabled={uploading || transferring} onClick={() => navigate("/")} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">取消</button>
+            <button type="button" disabled={uploading || transferring} onClick={() => navigate("/")} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">{t("取消", "Cancel")}</button>
             <button type="button" disabled={!selectedFile || !mediaKind || uploading || transferring || targetFrameOptions.length === 0} onClick={() => void handleDeviceTransfer()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5a9cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(124,108,240,.3)] disabled:opacity-50">
-              {transferring ? progress || "下传中…" : "⬇ 下载到当前设备"}
+              {t(transferring ? progress || "下传中…" : "⬇ 下载到当前设备")}
             </button>
             <button
               type="button"
               disabled={shareButtonDisabled}
               onClick={() => void handleShare()}
-              title={shareQuotaLoading ? "正在读取分享额度…" : shareQuotaExhausted ? "上传次数已用完，请到积分商城兑换上传次数" : undefined}
+              title={shareQuotaLoading ? t("正在读取分享额度…") : shareQuotaExhausted ? t("上传次数已用完，请到积分商城兑换上传次数") : undefined}
               className={`rounded-[10px] px-5 py-2.5 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${shareQuotaExhausted
                 ? "bg-[#c7ccd8] text-[#687083] shadow-none"
                 : "bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] text-white shadow-[0_4px_12px_rgba(255,138,92,.3)]"
                 }`}
             >
-              {uploading ? progress || "分享中…" : shareQuotaLoading ? "读取额度…" : shareQuotaExhausted ? "上传次数已用完" : "🚀 分享到素材库"}
+              {t(uploading ? progress || "分享中…" : shareQuotaLoading ? "读取额度…" : shareQuotaExhausted ? "上传次数已用完" : "🚀 分享到素材库")}
             </button>
           </footer>
         </section>
       </main>
 
       <div className="mx-auto max-w-[640px] px-4 pb-6 text-center text-xs text-[#8a93a8]">
-        内容需符合站点使用规范，上传后将经腾讯云内容安全审核。AI 图片可在 <Link to="/ai-image" className="text-[#7c6cf0] underline">AI 生图页</Link> 生成并分享。
-      </div>
+        {t("内容需符合站点使用规范，上传后将经腾讯云内容安全审核。AI 图片可在", "Content must follow the site rules and is reviewed by Tencent Cloud after upload. Create and share AI images on the")} <Link to="/ai-image" className="text-[#7c6cf0] underline">{t("AI 生图页", "AI image page")}</Link>{t("生成并分享。", ".")}</div>
       <SiteFooter />
     </div>
   );

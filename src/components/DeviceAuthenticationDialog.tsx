@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,6 +13,7 @@ export function DeviceAuthenticationDialog({
   onClose,
   onReauthenticate,
 }: DeviceAuthenticationDialogProps) {
+  const { t } = useI18n();
   const reauthenticateButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -48,13 +50,12 @@ export function DeviceAuthenticationDialog({
           </div>
           <div className="min-w-0">
             <h2 id="device-auth-error-title" className="text-lg font-bold text-slate-900 dark:text-white">
-              设备认证失效
-            </h2>
+              {t("设备认证失效", "Device authentication expired")}</h2>
             <p
               id="device-auth-error-message"
               className="mt-2 break-words text-sm leading-6 text-slate-600 dark:text-slate-300"
             >
-              {message}
+              {t(message)}
             </p>
           </div>
         </div>
@@ -65,16 +66,14 @@ export function DeviceAuthenticationDialog({
             onClick={onClose}
             className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            知道了
-          </button>
+            {t("知道了", "Got it")}</button>
           <button
             ref={reauthenticateButtonRef}
             type="button"
             onClick={onReauthenticate}
             className="rounded-full bg-rose-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-400"
           >
-            重新认证
-          </button>
+            {t("重新认证", "Authenticate again")}</button>
         </div>
       </div>
     </div>,

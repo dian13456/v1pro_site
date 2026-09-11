@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { translate as t, useI18n } from "../i18n";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SitePageLayout } from "../components/SitePageLayout";
 import {
@@ -29,6 +30,7 @@ function formatDrawTime(hour: number, minute: number): string {
 }
 
 export default function ActivityLotteryPage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(true);
@@ -88,20 +90,20 @@ export default function ActivityLotteryPage() {
     }
   };
 
-  const prizeCard = useMemo(() => {
+  const prizeCard = (() => {
     if (!activity) return null;
     return (
       <div className="rounded-2xl border border-white/30 bg-white/60 p-4 dark:border-white/10 dark:bg-slate-950/40">
-        <p className="text-xs uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300">本期奖品</p>
-        <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-100">{activity.prizeTitle}</p>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{activity.prizeDescription}</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300">{t("本期奖品")}</p>
+        <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-100">{t(activity.prizeTitle)}</p>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t(activity.prizeDescription)}</p>
       </div>
     );
-  }, [activity]);
+  })();
 
   return (
     <SitePageLayout
-      subtitle="抽奖活动 · 每天 0:00 报名刷新，晚上 7:00 开奖"
+      subtitle={t("抽奖活动 · 每天 0:00 报名刷新，晚上 7:00 开奖")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
@@ -109,73 +111,68 @@ export default function ActivityLotteryPage() {
       <SitePanel accent className="overflow-hidden p-0">
         <div className="bg-gradient-to-r from-violet-600/95 via-fuchsia-500/90 to-cyan-500/85 px-6 py-6 text-white">
           <p className="text-xs uppercase tracking-[0.28em] text-white/80">V1PRO Lottery</p>
-          <h1 className="mt-2 text-2xl font-semibold md:text-3xl">{activity?.title || "设备用户专属抽奖活动"}</h1>
+          <h1 className="mt-2 text-2xl font-semibold md:text-3xl">{t(activity?.title || "设备用户专属抽奖活动")}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-white/90">
-            {activity?.description || "购买设备即可使用 SN 码参与"} · 每天 0:00 报名刷新 · 每天 {activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "19:00"} 开奖
-          </p>
+            {t(activity?.description || "购买设备即可使用 SN 码参与")}{" "}{t("· 每天 0:00 报名刷新 · 每天")}{" "}{activity ? formatDrawTime(activity.drawHour, activity.drawMinute) : "19:00"}{" "}{t("开奖")}{" "}</p>
         </div>
         <div className="grid gap-4 p-6 md:grid-cols-3">
           <div className="rounded-2xl border border-white/25 bg-white/55 p-4 text-center dark:border-white/10 dark:bg-slate-900/45">
-            <p className="text-xs text-slate-500 dark:text-slate-400">距离开奖</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("距离开奖")}</p>
             <p className="mt-2 font-mono text-2xl font-semibold text-violet-700 dark:text-violet-200">
               {loading ? "—" : countdown || "00:00:00"}
             </p>
           </div>
           <div className="rounded-2xl border border-white/25 bg-white/55 p-4 text-center dark:border-white/10 dark:bg-slate-900/45">
-            <p className="text-xs text-slate-500 dark:text-slate-400">当前参与人数</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("当前参与人数")}</p>
             <p className="mt-2 text-2xl font-semibold text-violet-700 dark:text-violet-200">
               {loading ? "—" : activity?.participantCount ?? 0}
             </p>
           </div>
           <div className="rounded-2xl border border-white/25 bg-white/55 p-4 text-center dark:border-white/10 dark:bg-slate-900/45">
-            <p className="text-xs text-slate-500 dark:text-slate-400">我的状态</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("我的状态")}</p>
             <p className="mt-2 text-sm font-medium text-slate-800 dark:text-slate-100">
               {loading
                 ? "—"
                 : activity?.isWinner
-                  ? "已中奖"
+                  ? t("已中奖")
                   : activity?.hasJoined
-                    ? "已报名"
+                    ? t("已报名")
                     : !registrationOpen
-                      ? "报名已截止"
-                      : "未报名"}
+                      ? t("报名已截止")
+                      : t("未报名")}
             </p>
           </div>
         </div>
       </SitePanel>
 
-      {loading ? <SiteLoadingBlock>加载活动中…</SiteLoadingBlock> : null}
+      {loading ? <SiteLoadingBlock>{t("加载活动中…")}</SiteLoadingBlock> : null}
 
       {!loading && activity ? (
         <>
           <SitePanel>
-            <SiteSectionTitle title="活动规则" description={activity.rule} />
+            <SiteSectionTitle title={t("活动规则")} description={t(activity.rule)} />
             {prizeCard}
           </SitePanel>
 
           {activity.isWinner && activity.contactStatus === "pending" ? (
-            <SiteAlert variant="info">
-              恭喜中奖！请尽快填写收货地址与 QQ 号。
-              <Link to="/activities/prize-info" className="ml-2 underline">
-                去填写
-              </Link>
+            <SiteAlert variant="info">{t("恭喜中奖！请尽快填写收货地址与 QQ 号。")}{" "}<Link to="/activities/prize-info" className="ml-2 underline">{t("去填写")}{" "}</Link>
             </SiteAlert>
           ) : null}
 
           {!registrationOpen && activity.registrationMessage ? (
-            <SiteAlert variant="info">{activity.registrationMessage}</SiteAlert>
+            <SiteAlert variant="info">{t(activity.registrationMessage)}</SiteAlert>
           ) : null}
 
           <SitePanel>
             <SiteSectionTitle
-              title="SN 码报名"
-              description="每天 0:00 起可报名当日抽奖，晚上 7:00 截止报名并开奖。每个 SN、同一公网 IP 每天仅可参与一次。"
+              title={t("SN 码报名")}
+              description={t("每天 0:00 起可报名当日抽奖，晚上 7:00 截止报名并开奖。每个 SN、同一公网 IP 每天仅可参与一次。")}
             />
             <div className="mt-4 space-y-3">
               <SiteInput
                 value={sn}
                 onChange={(e) => setSn(e.target.value)}
-                placeholder="请输入设备 SN 编号"
+                placeholder={t("请输入设备 SN 编号")}
                 disabled={activity.hasJoined || submitting || !registrationOpen}
               />
               <SiteButton
@@ -185,32 +182,30 @@ export default function ActivityLotteryPage() {
                 className="w-full sm:w-auto"
               >
                 {!registrationOpen
-                  ? "今日报名已截止"
+                  ? t("今日报名已截止")
                   : activity.hasJoined
-                    ? "今日已报名"
+                    ? t("今日已报名")
                     : submitting
-                      ? "提交中…"
-                      : "立即报名"}
+                      ? t("提交中…")
+                      : t("立即报名")}
               </SiteButton>
               {activity.hasJoined && activity.joinedSn ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">已报名 SN：{activity.joinedSn}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t("已报名 SN：")}{activity.joinedSn}</p>
               ) : null}
             </div>
           </SitePanel>
         </>
       ) : null}
 
-      {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
-      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+      {notice ? <SiteAlert variant="success">{t(notice)}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
       <div className="flex flex-wrap gap-3">
         <Link to="/activities/winners">
-          <SiteButton type="button">查看中奖名单公示</SiteButton>
+          <SiteButton type="button">{t("查看中奖名单公示")}</SiteButton>
         </Link>
         <Link to="/activities">
-          <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">
-            返回活动中心
-          </SiteButton>
+          <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">{t("返回活动中心")}{" "}</SiteButton>
         </Link>
       </div>
     </SitePageLayout>

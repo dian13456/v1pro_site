@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { SITE_PAGE_CONTAINER_CLASS } from "./SitePageShell";
 
@@ -158,10 +159,11 @@ export function SiteCard({
 }
 
 export function SiteLoadingScreen({ message = "正在加载…" }: { message?: string }) {
+  const { t } = useI18n();
   return (
     <div className="site-page-shell min-h-screen text-slate-900 dark:text-slate-100">
       <div className={`${SITE_PAGE_CONTAINER_CLASS} flex min-h-screen items-center justify-center pb-8`}>
-        <SiteLoadingBlock>{message}</SiteLoadingBlock>
+        <SiteLoadingBlock>{t(message)}</SiteLoadingBlock>
       </div>
     </div>
   );
@@ -204,9 +206,10 @@ export function SiteFilterChip({
 }
 
 export function SiteLoadingBlock({ children = "加载中…" }: { children?: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="site-loading-surface rounded-[28px] border border-white/25 bg-white/55 p-8 text-center text-sm text-slate-600 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-300">
-      {children}
+      {typeof children === "string" ? t(children) : children}
     </div>
   );
 }

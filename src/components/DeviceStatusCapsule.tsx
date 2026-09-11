@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAuthState, matchesAuthenticatedUsbDevice } from "../services/authService";
@@ -13,6 +14,7 @@ export function DeviceStatusCapsule({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 } = {}) {
+  const { t } = useI18n();
   const auth = getAuthState();
   const [presence, setPresence] = useState<DevicePresence>("checking");
 
@@ -51,8 +53,7 @@ export function DeviceStatusCapsule({
   if (!auth?.serial) {
     return (
       <Link to="/auth" className="hidden h-10 shrink-0 items-center gap-2 rounded-full border border-black/[.06] bg-white/70 px-3 text-[12px] font-medium text-slate-500 transition hover:bg-white hover:text-[#0071e3] dark:border-white/10 dark:bg-white/[.06] dark:text-slate-300 lg:inline-flex">
-        <span className="h-2 w-2 rounded-full bg-slate-300" />连接设备
-      </Link>
+        <span className="h-2 w-2 rounded-full bg-slate-300" />{t("连接设备", "Connect device")}</Link>
     );
   }
 
@@ -78,7 +79,7 @@ export function DeviceStatusCapsule({
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{displayName}</p>
             <p className={`mt-1 text-xs font-medium ${online ? "text-emerald-600 dark:text-emerald-300" : "text-slate-400"}`}>
-              {presence === "checking" ? "正在检测设备…" : online ? "设备已插入，可进行网页直传" : presence === "unsupported" ? "当前浏览器不支持 WebUSB" : "设备未插入或尚未授权"}
+              {t(presence === "checking" ? "正在检测设备…" : online ? "设备已插入，可进行网页直传" : presence === "unsupported" ? "当前浏览器不支持 WebUSB" : "设备未插入或尚未授权")}
             </p>
           </div>
         </div>
@@ -87,8 +88,7 @@ export function DeviceStatusCapsule({
           <p className="mt-1 break-all font-mono text-[11px] text-slate-600 dark:text-slate-300">{auth.serial}</p>
         </div>
         <Link to="/webusb-test" onClick={() => onOpenChange?.(false)} className="mt-3 flex h-10 items-center justify-center rounded-full bg-[#0071e3] text-sm font-semibold text-white shadow-[0_7px_18px_rgba(0,113,227,.22)] transition hover:bg-[#0878e8]">
-          打开设备控制
-        </Link>
+          {t("打开设备控制", "Open device control")}</Link>
       </div>
     </details>
   );

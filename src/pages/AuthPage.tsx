@@ -1,3 +1,4 @@
+import { LanguageSwitcher, useI18n } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
@@ -47,6 +48,7 @@ async function runSilentConnect(
 }
 
 export default function AuthPage() {
+  const { t } = useI18n();
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(false);
   const [autoConnecting, setAutoConnecting] = useState(false);
@@ -198,22 +200,21 @@ export default function AuthPage() {
 
   return (
     <SitePageShell>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <LanguageSwitcher />
         <ThemeSelector theme={theme} onChange={setTheme} />
       </div>
       <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center py-4">
         <SitePanel className="w-full max-w-lg text-center sm:p-8">
           <p className="site-accent-text text-xs uppercase tracking-[0.24em]">USB Authentication</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-50">请连接设备</h1>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-50">{t("请连接设备", "Connect your device")}</h1>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-            请使用 Edge 或 Chrome。首次使用请选择设备并连接；已授权设备可快速连接，多台设备时请明确选择目标设备。
-          </p>
+            {t("请使用 Edge 或 Chrome。首次使用请选择设备并连接；已授权设备可快速连接，多台设备时请明确选择目标设备。", "Use Edge or Chrome. Select your device to connect. Previously authorized devices are available for quick selection; check the serial number when connecting multiple devices.")}</p>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            新设备首次进入网站并完成连接后，系统会自动关闭设备的“上电打开网站”，以后插入不会重复弹出。
-          </p>
+            {t("新设备首次进入网站并完成连接后，系统会自动关闭设备的“上电打开网站”，以后插入不会重复弹出。", "After a new device connects for the first time, its Open website on power-on option is turned off automatically so the website will not keep opening when you plug it in.")}</p>
 
           <SiteButton type="button" className="mt-8 w-full" disabled={busy} onClick={handleConnectClick}>
-            {loading ? "连接中..." : authorizedCount > 0 ? `选择并连接设备（已授权 ${authorizedCount} 台）` : "选择设备并连接"}
+            {t(loading ? "连接中..." : authorizedCount > 0 ? `选择并连接设备（已授权 ${authorizedCount} 台）` : "选择设备并连接")}
           </SiteButton>
 
           {!busy ? (
@@ -222,29 +223,24 @@ export default function AuthPage() {
               className="mt-3 text-xs font-medium text-violet-600 underline-offset-4 hover:underline dark:text-violet-300"
               onClick={() => setShowUsbPickerGuide(true)}
             >
-              不会连接？查看连接步骤
-            </button>
+              {t("不会连接？查看连接步骤", "Need help? View connection steps")}</button>
           ) : null}
 
           {canSilentConnect && !autoConnecting ? (
             <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-300">
-              已发现 {authorizedCount} 台已授权设备，点击上方按钮后选择要使用的设备。
-            </p>
+              {t("已发现 {count} 台已授权设备，点击上方按钮后选择要使用的设备。", "Found {count} authorized devices. Select a device using the button above.", { count: authorizedCount })}</p>
           ) : !autoConnecting ? (
             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              首次使用需在浏览器弹窗中确认授权；之后可从已授权设备中快速选择。
-            </p>
+              {t("首次使用需在浏览器弹窗中确认授权；之后可从已授权设备中快速选择。", "The first connection requires permission in the browser dialog. After that, you can quickly select an authorized device.")}</p>
           ) : null}
 
           <p className="mt-4 text-xs leading-6 text-slate-500 dark:text-slate-400">
-            点击连接即表示您已阅读并同意
-            <Link to="/terms" className="mx-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
-              {TERMS_TITLE}
+            {t("点击连接即表示您已阅读并同意", "By connecting, you confirm that you have read and agree to the")} <Link to="/terms" className="mx-1 text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
+              {t(TERMS_TITLE)}
             </Link>
-            ，承诺不进行爬取、批量下载或未经授权的内容使用。
-          </p>
+            {t("，承诺不进行爬取、批量下载或未经授权的内容使用。", "and will not scrape, bulk download, or use content without permission.")}</p>
 
-          {error ? <SiteAlert variant="error" className="mt-4">{error}</SiteAlert> : null}
+          {error ? <SiteAlert variant="error" className="mt-4">{t(error)}</SiteAlert> : null}
         </SitePanel>
         <div className="mt-8 w-full max-w-lg">
           <SiteFooter />
@@ -256,7 +252,7 @@ export default function AuthPage() {
           <button
             type="button"
             className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
-            aria-label="关闭连接引导"
+            aria-label={t("关闭连接引导", "Close connection guide")}
             onClick={() => setShowUsbPickerGuide(false)}
           />
           <section
@@ -266,47 +262,42 @@ export default function AuthPage() {
             className="relative z-10 w-full max-w-xl overflow-hidden rounded-[2rem] border border-white/60 bg-white p-5 shadow-2xl shadow-slate-950/25 dark:border-white/10 dark:bg-slate-900 sm:p-7"
           >
             <div className="text-center">
-              <p className="site-accent-text text-xs font-semibold uppercase tracking-[0.22em]">首次连接指引</p>
+              <p className="site-accent-text text-xs font-semibold uppercase tracking-[0.22em]">{t("首次连接指引", "First connection guide")}</p>
               <h2 id="usb-picker-guide-title" className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                浏览器弹窗打开后，只需两步
-              </h2>
+                {t("浏览器弹窗打开后，只需两步", "Two steps in the browser dialog")}</h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                请先点设备，设备高亮后再点右下角“连接”。
-              </p>
+                {t("请先点设备，设备高亮后再点右下角“连接”。", "Select the device first. Once it is highlighted, click Connect in the bottom right.")}</p>
             </div>
 
             <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/60 sm:p-5">
               <div className="flex items-center gap-3">
                 <span className="shrink-0 rounded-full bg-violet-600 px-3 py-1 text-sm font-bold text-white">1</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-100">点击设备名称这一行</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{t("点击设备名称这一行", "Click the row with the device name")}</span>
               </div>
               <div className="my-1 text-center text-6xl font-black leading-none text-violet-500 motion-safe:animate-bounce" aria-hidden="true">
                 ↓
               </div>
               <div className="rounded-2xl border-2 border-violet-500 bg-violet-50 px-4 py-4 text-left shadow-lg shadow-violet-500/15 dark:bg-violet-500/10">
-                <p className="font-semibold text-slate-900 dark:text-white">佳点V1PRO · 已配对</p>
+                <p className="font-semibold text-slate-900 dark:text-white">{t("佳点V1PRO · 已配对", "JiaDian V1PRO · Paired")}</p>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  显示“来自 STMicroelectronics 的未知设备”时也点击这一行
-                </p>
+                  {t("显示“来自 STMicroelectronics 的未知设备”时也点击这一行", "If it appears as Unknown device from STMicroelectronics, select that row too")}</p>
               </div>
 
               <div className="mt-5 flex items-center gap-3">
                 <span className="shrink-0 rounded-full bg-cyan-600 px-3 py-1 text-sm font-bold text-white">2</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-100">再点击右下角“连接”</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{t("再点击右下角“连接”", "Then click Connect in the bottom right")}</span>
               </div>
               <div className="mt-1 flex items-end justify-end gap-3">
                 <span className="text-6xl font-black leading-none text-cyan-500 motion-safe:animate-pulse" aria-hidden="true">↘</span>
-                <span className="rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/25">连接</span>
+                <span className="rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/25">{t("连接", "Connect")}</span>
               </div>
             </div>
 
             <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row">
               <SiteButton type="button" variant="secondary" className="w-full" onClick={() => setShowUsbPickerGuide(false)}>
-                暂不连接
-              </SiteButton>
+                {t("暂不连接", "Not now")}</SiteButton>
               <SiteButton type="button" className="w-full" onClick={openUsbPicker}>
-                我知道了，打开设备窗口
-              </SiteButton>
+                {t("我知道了，打开设备窗口", "Got it, open device picker")}</SiteButton>
             </div>
           </section>
         </div>

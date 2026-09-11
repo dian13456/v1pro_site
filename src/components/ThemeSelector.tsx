@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { ThemeMode } from "../types/theme";
@@ -18,6 +19,7 @@ const THEME_ICONS: Record<ThemeMode, string> = {
 };
 
 export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
+  const { t } = useI18n();
   const [customThemeName, setCustomThemeName] = useState(() => getInstalledThemePackage()?.name || "");
   useEffect(() => {
     const refresh = () => setCustomThemeName(getInstalledThemePackage()?.name || "");
@@ -36,7 +38,7 @@ export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
 
   return (
     <select
-      aria-label="主题切换"
+      aria-label={t("主题切换")}
       value={theme}
       onChange={handleChange}
       className="max-w-full cursor-pointer appearance-none rounded-full border border-white/30 bg-white/50 bg-[length:12px] bg-[position:right_12px_center] bg-no-repeat py-2 pl-3 pr-9 text-sm text-slate-700 backdrop-blur outline-none ring-violet-400/40 transition focus:ring-2 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
@@ -47,7 +49,7 @@ export function ThemeSelector({ theme, onChange }: ThemeSelectorProps) {
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>
-          {THEME_ICONS[option.value]} {option.label}
+          {THEME_ICONS[option.value]} {option.value === "custom" ? option.label : t(option.label)}
         </option>
       ))}
     </select>

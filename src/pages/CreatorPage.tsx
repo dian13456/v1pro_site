@@ -1,3 +1,4 @@
+import { useI18n, translate as t } from "../i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CompactResourceCard } from "../components/CompactResourceCard";
@@ -18,6 +19,7 @@ import { fetchCreatorProfile } from "../services/avatarService";
 import { fetchUploaderFollows, setUploaderFollowed } from "../services/followService";
 
 export default function CreatorPage() {
+  useI18n();
   const navigate = useNavigate();
   const { author: authorParam = "" } = useParams();
   const author = authorParam.trim();
@@ -102,7 +104,7 @@ export default function CreatorPage() {
         setOwnResourceIds(state.ownResourceIds);
       })
       .catch((err) => {
-        if (active) setErrorMessage((err as Error)?.message || "关注列表加载失败");
+        if (active) setErrorMessage((err as Error)?.message || t("关注列表加载失败"));
       });
     return () => { active = false; };
   }, [resources, setErrorMessage]);
@@ -115,7 +117,7 @@ export default function CreatorPage() {
       setFollowedResourceIds(result.state.followedResourceIds);
       setOwnResourceIds(result.state.ownResourceIds);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "关注操作失败");
+      setErrorMessage((err as Error)?.message || t("关注操作失败"));
     } finally {
       setFollowing(false);
     }
@@ -140,7 +142,7 @@ export default function CreatorPage() {
       },
     )
       .then((result) => {
-        const message = `网页直传完成：${result.frameCount} 帧`;
+        const message = t("网页直传完成：{v0} 帧", undefined, {v0: result.frameCount});
         setTransferNotice(message);
         setWebUsbProgress(100);
         window.setTimeout(() => {
@@ -151,7 +153,7 @@ export default function CreatorPage() {
       .catch((err) => {
         setTransferNotice("");
         setWebUsbProgress(null);
-        setErrorMessage((err as Error)?.message || "网页直传失败");
+        setErrorMessage((err as Error)?.message || t("网页直传失败"));
       })
       .finally(() => setWebUsbTransferringId(null));
   };
@@ -169,11 +171,11 @@ export default function CreatorPage() {
       <main className="mx-auto max-w-[1344px] space-y-[14px] px-4 py-6 sm:px-6">
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)]">
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-6 sm:px-8">
-            <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">{avatarUrl ? <img src={avatarUrl} alt={`${author}的头像`} className="h-full w-full object-cover" /> : "👤"}</div>
+            <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-[20px] bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-3xl text-white shadow-[0_8px_20px_rgba(124,108,240,.24)]">{avatarUrl ? <img src={avatarUrl} alt={t("{v0}的头像", undefined, {v0: author})} className="h-full w-full object-cover" /> : "👤"}</div>
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#ff8a5c]">Creator Profile</p>
               <div className="mt-1 flex min-w-0 items-center gap-3">
-                <h1 className="min-w-0 truncate text-2xl font-extrabold">{author || "未知上传人"}</h1>
+                <h1 className="min-w-0 truncate text-2xl font-extrabold">{author || t("未知上传人")}</h1>
                 {!isOwnCreatorPage && authorResources[0]?.uploaderBlockable ? (
                   <button
                     type="button"
@@ -185,26 +187,26 @@ export default function CreatorPage() {
                         : "border-[#ffb9a4] bg-[#fff7f2] text-[#f06f48] hover:bg-[#fff0e8]"
                     }`}
                   >
-                    {following ? "处理中…" : creatorFollowed ? "已关注" : "+ 关注"}
+                    {following ? t("处理中…") : creatorFollowed ? t("已关注") : t("+ 关注")}
                   </button>
                 ) : null}
               </div>
             </div>
             <div className="col-start-3 row-start-1 rounded-[16px] bg-[#fff7f2] px-4 py-3 text-center sm:row-span-2 sm:px-6">
-              <p className="text-[11px] font-semibold text-[#8a93a8]">公开素材</p>
+              <p className="text-[11px] font-semibold text-[#8a93a8]">{t("公开素材")}</p>
               <p className="mt-0.5 text-2xl font-extrabold text-[#ff8a5c]">{loading ? "—" : authorResources.length}</p>
             </div>
-            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">查看这位上传人的全部公开素材。页面只展示公开昵称与已发布作品。</p>
+            <p className="col-span-3 max-w-2xl text-[13px] leading-6 text-[#8a93a8] sm:col-span-1 sm:col-start-2">{t("查看这位上传人的全部公开素材。页面只展示公开昵称与已发布作品。")}</p>
           </div>
         </section>
 
-        {error || errorMessage ? <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">{error || errorMessage}</div> : null}
-        {loading ? <div className="rounded-[18px] border border-[#e6e9f2] bg-white p-12 text-center text-sm text-[#8a93a8]">正在加载上传人的素材…</div> : null}
+        {error || errorMessage ? <div className="rounded-[14px] border border-[#ffd8d5] bg-[#fff4f3] px-5 py-4 text-sm text-[#dc5d55]">{t(error || errorMessage)}</div> : null}
+        {loading ? <div className="rounded-[18px] border border-[#e6e9f2] bg-white p-12 text-center text-sm text-[#8a93a8]">{t("正在加载上传人的素材…")}</div> : null}
         {!loading && authorResources.length === 0 ? (
           <section className="rounded-[18px] border border-[#e6e9f2] bg-white px-6 py-14 text-center shadow-[0_8px_24px_rgba(43,50,69,.04)]">
             <div className="text-4xl">📭</div>
-            <h2 className="mt-4 text-lg font-extrabold">暂无公开素材</h2>
-            <button type="button" onClick={() => navigate("/")} className="mt-5 rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-6 py-2.5 text-[13px] font-semibold text-white">返回素材中心</button>
+            <h2 className="mt-4 text-lg font-extrabold">{t("暂无公开素材")}</h2>
+            <button type="button" onClick={() => navigate("/")} className="mt-5 rounded-full bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-6 py-2.5 text-[13px] font-semibold text-white">{t("返回素材中心")}</button>
           </section>
         ) : null}
         {!loading && authorResources.length > 0 ? (

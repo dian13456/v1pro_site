@@ -1,3 +1,4 @@
+import { useI18n, LanguageSwitcher } from "../i18n";
 import { useNavigate } from "react-router-dom";
 import { SiteNav } from "./SiteNav";
 import { ThemeSelector } from "./ThemeSelector";
@@ -13,6 +14,7 @@ interface SitePageToolbarProps {
 }
 
 export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToolbarProps) {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -23,6 +25,7 @@ export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToo
   if (mode === "theme-only") {
     return (
       <div className="flex flex-wrap items-center gap-2">
+        <LanguageSwitcher />
         <ThemeSelector theme={theme} onChange={onSetTheme} />
         <TechnicalSupportGroup />
       </div>
@@ -33,14 +36,13 @@ export function SitePageToolbar({ theme, onSetTheme, mode = "app" }: SitePageToo
     <div className="flex flex-wrap items-center gap-2">
       <SiteNav />
       <DeviceStatusCapsule />
-      <ThemeSelector theme={theme} onChange={onSetTheme} />
+      <LanguageSwitcher />
+        <ThemeSelector theme={theme} onChange={onSetTheme} />
       <button
         type="button"
         onClick={handleLogout}
         className="rounded-full border border-white/30 bg-white/50 px-4 py-2 text-sm text-slate-700 backdrop-blur dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-100"
-      >
-        退出认证
-      </button>
+      >{t("退出认证")}</button>
       <TechnicalSupportGroup />
     </div>
   );

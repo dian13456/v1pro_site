@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { DevicePreviewFrame } from "../components/DevicePreviewFrame";
@@ -37,15 +38,16 @@ import { useDeviceFeatureAccess } from "../services/featureAccessService";
 function formatReviewPendingMessage(err: ImageReviewPendingError): string {
   const parts = [err.message];
   if (err.reviewId) {
-    parts.push(`复核编号 ${err.reviewId}`);
+    parts.push(t("复核编号 {v0}", undefined, { v0: err.reviewId }));
   }
   if (err.label) {
-    parts.push(`标签 ${err.label}`);
+    parts.push(t("标签 {v0}", undefined, { v0: err.label }));
   }
   return parts.join(" · ");
 }
 
 export default function AiImagePage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const { access: featureAccess } = useDeviceFeatureAccess();
@@ -127,7 +129,7 @@ export default function AiImagePage() {
           .catch(() => undefined);
         return;
       }
-      const message = formatClientError(err, "AI 图片生成失败");
+      const message = formatClientError(err, t("AI 图片生成失败"));
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -157,7 +159,7 @@ export default function AiImagePage() {
         window.setTimeout(() => setTransferNotice(""), 8000);
         return;
       }
-      const message = formatClientError(err, "传输失败");
+      const message = formatClientError(err, t("传输失败"));
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -179,7 +181,7 @@ export default function AiImagePage() {
     try {
       const sharePrompt =
         prompt.trim() ||
-        (image.source === "upload" ? image.fileName || "用户上传图片" : "");
+        (image.source === "upload" ? image.fileName || t("用户上传图片") : "");
       const result = await shareAiImageToCatalog(image, sharePrompt);
       setSharedIds((prev) => new Set(prev).add(image.id));
       const remaining =
@@ -195,8 +197,8 @@ export default function AiImagePage() {
       }
       setShareNotice(
         remaining !== undefined
-          ? `已分享到素材库（#${result.resourceId || ""}），剩余分享次数 ${remaining}`
-          : `已分享到素材库（#${result.resourceId || ""}），可在素材中心查看`
+          ? t("已分享到素材库（#{v0}），剩余分享次数 {v1}", undefined, { v0: result.resourceId || "", v1: remaining })
+          : t("已分享到素材库（#{v0}），可在素材中心查看", undefined, { v0: result.resourceId || "" })
       );
       window.setTimeout(() => setShareNotice(""), 5000);
     } catch (err) {
@@ -205,7 +207,7 @@ export default function AiImagePage() {
         window.setTimeout(() => setShareNotice(""), 8000);
         return;
       }
-      const message = formatClientError(err, "分享失败");
+      const message = formatClientError(err, t("分享失败"));
       // Keep the button state in sync when another tab consumed the final
       // slot between the profile read and this request.
       if (/分享额度已用完|上传次数已用完|最多分享|分享次数/.test(message)) {
@@ -225,7 +227,7 @@ export default function AiImagePage() {
 
   return (
     <SitePageLayout
-      subtitle="AI 生图"
+      subtitle={t("AI 生图")}
       theme={theme}
       onSetTheme={setTheme}
       beforeContent={
@@ -237,26 +239,22 @@ export default function AiImagePage() {
     >
         <SitePanel accent>
           <SiteSectionTitle
-            title="AI 生图"
+            title={t("AI 生图")}
             action={
-              <span className={`${SITE_BTN_SECONDARY} cursor-default hover:bg-white/50 dark:hover:bg-slate-900/45`}>
-                剩余积分 {creditsKnown ? credits : "…"}（每次消耗 {AI_CREDIT_COST}）
+              <span className={`${SITE_BTN_SECONDARY} cursor-default hover:bg-white/50 dark:hover:bg-slate-900/45`}>{t("剩余积分 {balance}（每次消耗 {cost}）", undefined, { balance: creditsKnown ? credits : "…", cost: AI_CREDIT_COST })}
               </span>
             }
           />
-          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-            上传本地图片、GIF 或视频请前往{" "}
-            <Link to="/share" className="text-violet-600 underline dark:text-violet-300">
-              分享页
-            </Link>
-            。
+          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{t("上传本地图片、GIF 或视频请前往")}{" "}
+            <Link to="/share" className="text-violet-600 underline dark:text-violet-300">{t("分享页")}{" "}</Link>
+            {t("。", ".")}
           </p>
         </SitePanel>
 
         <section className="mb-4 flex flex-wrap gap-2">
           {getStarterPrompts().map((starter) => (
-            <SiteChipButton key={starter} disabled={loading} onClick={() => setPrompt(starter)}>
-              {starter}
+            <SiteChipButton key={starter} disabled={loading} onClick={() => setPrompt(t(starter))}>
+              {t(starter)}
             </SiteChipButton>
           ))}
         </section>
@@ -267,7 +265,7 @@ export default function AiImagePage() {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value.slice(0, MAX_PROMPT_LENGTH))}
               rows={4}
-              placeholder="描述你想要的画面，例如：赛博朋克风格的城市夜景，霓虹灯，雨夜反光，高细节"
+              placeholder={t("描述你想要的画面，例如：赛博朋克风格的城市夜景，霓虹灯，雨夜反光，高细节")}
             />
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -279,28 +277,28 @@ export default function AiImagePage() {
                 onClick={() => void handleGenerate()}
                 className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 hover:brightness-110"
               >
-                {loading ? "生成中…" : canGenerate ? "生成图片" : "积分不足"}
+                {loading ? t("生成中…") : canGenerate ? t("生成图片") : t("积分不足")}
               </SiteButton>
             </div>
           </div>
 
           {loading ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">正在绘制，请稍候…</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400">{t("正在绘制，请稍候…")}</div>
           ) : null}
 
-          {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+          {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
           {images.length > 0 ? (
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
               {images.map((image, index) => (
                 <SiteCard key={image.id} className="group p-4">
                   <div className="mb-3 inline-flex rounded-full bg-violet-600 px-3 py-1 text-xs text-white">
-                    {image.source === "upload" ? "本地上传 · 1.9 寸预览" : "AI 生成 · 1.9 寸预览"}
+                    {image.source === "upload" ? t("本地上传 · 1.9 寸预览") : t("AI 生成 · 1.9 寸预览")}
                   </div>
                   <DevicePreviewFrame hoverGlow>
                     <img
                       src={image.dataUrl}
-                      alt={`AI 生成图片 ${index + 1}`}
+                      alt={t("AI 生成图片 {v0}", undefined, { v0: index + 1 })}
                       className="h-full w-full object-cover"
                     />
                   </DevicePreviewFrame>
@@ -309,37 +307,37 @@ export default function AiImagePage() {
                       type="button"
                       variant="secondary"
                       disabled={isBusy || !featureEnabled}
-                      title={featureEnabled ? "下载" : "请先到个人中心输入激活码"}
+                      title={featureEnabled ? t("下载") : t("请先到个人中心输入激活码")}
                       className="rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm"
                       onClick={() => downloadGeneratedImage(image, `ai-image-${index + 1}.jpg`)}
                     >
-                      {featureEnabled ? "下载" : "未激活"}
+                      {featureEnabled ? t("下载") : t("未激活")}
                     </SiteButton>
                     <SiteButton
                       type="button"
                       disabled={isBusy || !featureEnabled}
-                      title={featureEnabled ? "传输到设备" : "请先到个人中心输入激活码"}
+                      title={featureEnabled ? t("传输到设备") : t("请先到个人中心输入激活码")}
                       className="rounded-xl bg-[#32b879] px-2 py-2.5 text-xs hover:bg-[#299f69] disabled:bg-slate-300 disabled:text-slate-500 sm:px-4 sm:text-sm"
                       onClick={() => void handleTransfer(image, index)}
                     >
-                      {transferringId === image.id ? "准备传输..." : featureEnabled ? "传输到设备" : "未激活"}
+                      {transferringId === image.id ? t("准备传输...") : featureEnabled ? t("传输到设备") : t("未激活")}
                     </SiteButton>
                     <SiteButton
                       type="button"
                       disabled={isBusy || sharedIds.has(image.id) || shareQuotaLoading || shareQuotaExhausted}
-                      title={shareQuotaLoading ? "正在读取分享额度…" : shareQuotaExhausted ? "上传次数已用完，请到积分商城兑换上传次数" : undefined}
+                      title={shareQuotaLoading ? t("正在读取分享额度…") : shareQuotaExhausted ? t("上传次数已用完，请到积分商城兑换上传次数") : undefined}
                       className={`rounded-xl px-2 py-2.5 text-xs sm:px-4 sm:text-sm ${shareQuotaExhausted ? "!bg-slate-300 !text-slate-500 !shadow-none" : ""}`}
                       onClick={() => void handleShare(image)}
                     >
                       {sharingId === image.id
-                        ? "分享中..."
+                        ? t("分享中...")
                         : sharedIds.has(image.id)
-                          ? "已分享"
+                          ? t("已分享")
                           : shareQuotaLoading
-                            ? "读取额度…"
+                            ? t("读取额度…")
                             : shareQuotaExhausted
-                              ? "上传次数已用完"
-                              : "一键分享"}
+                              ? t("上传次数已用完")
+                              : t("一键分享")}
                     </SiteButton>
                   </div>
                 </SiteCard>

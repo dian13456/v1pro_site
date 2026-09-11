@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResourceCard } from "../components/ResourceCard";
@@ -32,6 +33,7 @@ const STARTER_PROMPTS = [
 ];
 
 export default function AiGuidePage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [input, setInput] = useState("");
@@ -122,13 +124,13 @@ export default function AiGuidePage() {
         ...prev,
         {
           role: "assistant",
-          content: result.answer || "已为你整理相关素材。",
+          content: result.answer || t("已为你整理相关素材。"),
           resourceIds: result.resourceIds,
           mode: result.mode,
         },
       ]);
     } catch (err) {
-      const message = (err as Error)?.message || "AI 助手请求失败";
+      const message = (err as Error)?.message || t("AI 助手请求失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -140,7 +142,7 @@ export default function AiGuidePage() {
 
   return (
     <SitePageLayout
-      subtitle="AI 助手 · 从素材库中智能推荐"
+      subtitle={t("AI 助手 · 从素材库中智能推荐")}
       theme={theme}
       onSetTheme={setTheme}
       beforeContent={
@@ -153,9 +155,9 @@ export default function AiGuidePage() {
             key={prompt}
             cyan
             disabled={loading}
-            onClick={() => void submitQuestion(prompt)}
+            onClick={() => void submitQuestion(t(prompt))}
           >
-            {prompt}
+            {t(prompt)}
           </SiteChipButton>
         ))}
       </section>
@@ -167,7 +169,7 @@ export default function AiGuidePage() {
               <div
                 className={message.role === "user" ? SITE_CHAT_USER_CLASS : SITE_CHAT_ASSISTANT_CLASS}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <p className="whitespace-pre-wrap">{message.role === "assistant" ? t(message.content) : message.content}</p>
               </div>
             </div>
 
@@ -177,9 +179,7 @@ export default function AiGuidePage() {
                   const resource = resourceMap.get(id);
                   if (!resource) {
                     return (
-                      <SiteCard key={id} className="text-sm text-slate-500 dark:text-slate-400">
-                        素材 #{id} 暂不可用
-                      </SiteCard>
+                      <SiteCard key={id} className="text-sm text-slate-500 dark:text-slate-400">{t("素材 #")}{id}{" "}{t("暂不可用")}{" "}</SiteCard>
                     );
                   }
                   return (
@@ -215,17 +215,17 @@ export default function AiGuidePage() {
         ))}
 
         {loading ? (
-          <div className="text-sm text-slate-500 dark:text-slate-400">AI 正在思考…</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">{t("AI 正在思考…")}</div>
         ) : null}
 
-        {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+        {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
         <div className="flex flex-col gap-3 border-t border-white/20 pt-4 dark:border-white/10">
           <SiteTextarea
             value={input}
             onChange={(event) => setInput(event.target.value.slice(0, MAX_QUESTION_LENGTH))}
             rows={3}
-            placeholder="例如：推荐几个孤独摇滚相关的 GIF"
+            placeholder={t("例如：推荐几个孤独摇滚相关的 GIF")}
             className="ring-cyan-400/40"
           />
           <div className="flex items-center justify-between gap-3">
@@ -238,7 +238,7 @@ export default function AiGuidePage() {
               onClick={() => void submitQuestion(input)}
               className="bg-cyan-600 hover:bg-cyan-500"
             >
-              {loading ? "发送中..." : "发送"}
+              {loading ? t("发送中...") : t("发送")}
             </SiteButton>
           </div>
         </div>

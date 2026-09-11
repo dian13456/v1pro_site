@@ -1,3 +1,4 @@
+import { formatNumber, getLocale } from "../i18n";
 export type MallProductStatus = "on_sale" | "off_sale";
 
 export type MallOrderStatus = "pending_pay" | "paid" | "shipped" | "cancelled";
@@ -119,5 +120,5 @@ export function getMallOrderStatusTone(status: string): string {
 }
 
 export function formatMallPrice(cents: number): string {
-  return `¥${(Math.max(0, cents) / 100).toFixed(2)}`;
+  return formatNumber(Math.max(0, cents) / 100, { style: "currency", currency: "CNY", currencyDisplay: getLocale() === "en" ? "code" : "symbol" });
 }

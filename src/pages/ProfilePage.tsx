@@ -1,3 +1,4 @@
+import { useI18n, translate as t } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -36,6 +37,7 @@ import {
 } from "../services/themePackageService";
 
 export default function ProfilePage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const auth = getAuthState();
@@ -109,16 +111,16 @@ export default function ProfilePage() {
     try {
       const available = await checkDisplayNameAvailable(serial, nameInput);
       if (!available) {
-        setErrorMessage("该昵称已被使用，请换一个");
+        setErrorMessage(t("该昵称已被使用，请换一个"));
         return;
       }
       const saved = await saveDisplayName(serial, nameInput);
       setDisplayName(saved);
       setNameInput(saved);
-      setNotice("昵称已保存，留言板将显示此名称");
+      setNotice(t("昵称已保存，留言板将显示此名称"));
       window.setTimeout(() => setNotice(""), 4000);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "保存失败");
+      setErrorMessage((err as Error)?.message || t("保存失败"));
     } finally {
       setSaving(false);
     }
@@ -135,10 +137,10 @@ export default function ProfilePage() {
       const saved = await saveDisplayName(serial, "");
       setDisplayName(saved);
       setNameInput(saved);
-      setNotice("已恢复为默认昵称（SN 后十位）");
+      setNotice(t("已恢复为默认昵称（SN 后十位）"));
       window.setTimeout(() => setNotice(""), 4000);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "恢复失败");
+      setErrorMessage((err as Error)?.message || t("恢复失败"));
     } finally {
       setSaving(false);
     }
@@ -154,10 +156,10 @@ export default function ProfilePage() {
     try {
       const nextAvatarUrl = await uploadProfileAvatar(file);
       setAvatarUrl(nextAvatarUrl);
-      setNotice("头像已上传到 COS 并保存");
+      setNotice(t("头像已上传到 COS 并保存"));
       window.setTimeout(() => setNotice(""), 4000);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "头像上传失败");
+      setErrorMessage((err as Error)?.message || t("头像上传失败"));
     } finally {
       setAvatarSaving(false);
     }
@@ -169,10 +171,10 @@ export default function ProfilePage() {
     try {
       await removeProfileAvatar();
       setAvatarUrl("");
-      setNotice("头像已恢复为默认样式");
+      setNotice(t("头像已恢复为默认样式"));
       window.setTimeout(() => setNotice(""), 4000);
     } catch (err) {
-      setErrorMessage((err as Error)?.message || "头像删除失败");
+      setErrorMessage((err as Error)?.message || t("头像删除失败"));
     } finally {
       setAvatarSaving(false);
     }
@@ -190,9 +192,9 @@ export default function ProfilePage() {
       installThemePackage(imported);
       setInstalledTheme(imported);
       setTheme("custom");
-      setThemeNotice(`主题“${imported.name}”已导入并启用`);
+      setThemeNotice(t("主题“{v0}”已导入并启用", undefined, {v0: imported.name}));
     } catch (err) {
-      setThemeError((err as Error)?.message || "主题包导入失败");
+      setThemeError((err as Error)?.message || t("主题包导入失败"));
     } finally {
       setThemeImporting(false);
     }
@@ -203,7 +205,7 @@ export default function ProfilePage() {
     setInstalledTheme(null);
     if (theme === "custom") setTheme("light");
     setThemeError("");
-    setThemeNotice("已移除导入主题并恢复浅色主题");
+    setThemeNotice(t("已移除导入主题并恢复浅色主题"));
   };
 
   const handleActivateFeatures = async () => {
@@ -214,9 +216,9 @@ export default function ProfilePage() {
     try {
       await activateDeviceFeatures(activationCode);
       setActivationCode("");
-      setActivationNotice("激活成功，软件下载和设备传输功能已开启");
+      setActivationNotice(t("激活成功，软件下载和设备传输功能已开启"));
     } catch (err) {
-      setActivationError((err as Error)?.message || "激活失败");
+      setActivationError((err as Error)?.message || t("激活失败"));
     } finally {
       setActivating(false);
     }
@@ -236,31 +238,31 @@ export default function ProfilePage() {
               disabled={loading || avatarSaving}
               onClick={() => avatarInputRef.current?.click()}
               className="group relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#ff8a5c] to-[#7c6cf0] text-2xl text-white shadow-[0_6px_16px_rgba(124,108,240,.25)] disabled:opacity-60"
-              title="上传或更换头像"
+              title={t("上传或更换头像")}
             >
-              {avatarUrl ? <img src={avatarUrl} alt="个人头像" className="h-full w-full object-cover" /> : "👤"}
-              <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[9px] font-semibold opacity-0 transition group-hover:opacity-100">更换</span>
+              {avatarUrl ? <img src={avatarUrl} alt={t("个人头像")} className="h-full w-full object-cover" /> : "👤"}
+              <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[9px] font-semibold opacity-0 transition group-hover:opacity-100">{t("更换")}</span>
             </button>
             <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => void handleAvatarChange(event)} />
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-xl font-extrabold">{loading ? "个人中心" : displayName}</h1>
+              <h1 className="truncate text-xl font-extrabold">{loading ? t("个人中心") : displayName}</h1>
               <p className="mt-1 break-all font-mono text-xs text-[#8a93a8]">SN: {serial || "—"}</p>
             </div>
             <div className="rounded-2xl bg-[#fff7f2] px-5 py-3 text-right">
-              <div className="text-[11px] font-semibold text-[#8a93a8]">当前积分</div>
+              <div className="text-[11px] font-semibold text-[#8a93a8]">{t("当前积分")}</div>
               <div className="mt-0.5 text-2xl font-extrabold text-[#ff8a5c]">{loading ? "—" : formatCredits(credits ?? DEFAULT_AI_CREDITS)}</div>
             </div>
             <div className="flex flex-col gap-1 text-[11px]">
-              <button type="button" disabled={loading || avatarSaving} onClick={() => avatarInputRef.current?.click()} className="font-semibold text-[#7c6cf0] disabled:opacity-50">{avatarSaving ? "处理中…" : avatarUrl ? "更换头像" : "上传头像"}</button>
-              {avatarUrl ? <button type="button" disabled={avatarSaving} onClick={() => void handleAvatarRemove()} className="text-[#8a93a8] disabled:opacity-50">删除头像</button> : null}
+              <button type="button" disabled={loading || avatarSaving} onClick={() => avatarInputRef.current?.click()} className="font-semibold text-[#7c6cf0] disabled:opacity-50">{avatarSaving ? t("处理中…") : avatarUrl ? t("更换头像") : t("上传头像")}</button>
+              {avatarUrl ? <button type="button" disabled={avatarSaving} onClick={() => void handleAvatarRemove()} className="text-[#8a93a8] disabled:opacity-50">{t("删除头像")}</button> : null}
             </div>
           </header>
 
           <div className="grid gap-5 p-6 md:grid-cols-[1fr_1.25fr]">
             <section>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <label className="text-[12.5px] font-semibold text-[#4a5270]">网站昵称</label>
-                <span className="text-[11px] text-[#8a93a8]">默认：SN 后十位（{defaultName}）</span>
+                <label className="text-[12.5px] font-semibold text-[#4a5270]">{t("网站昵称")}</label>
+                <span className="text-[11px] text-[#8a93a8]">{t("默认：SN 后十位（{name}）", "Default: last 10 SN characters ({name})", { name: defaultName })}</span>
               </div>
               <input
                 value={nameInput}
@@ -275,32 +277,32 @@ export default function ProfilePage() {
                     setNameHint("");
                     return;
                   }
-                  void checkDisplayNameAvailable(serial, nameInput).then((available) => setNameHint(available ? "" : "该昵称已被使用"));
+                  void checkDisplayNameAvailable(serial, nameInput).then((available) => setNameHint(available ? "" : t("该昵称已被使用")));
                 }}
                 placeholder={defaultName}
                 className="w-full rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-50"
               />
               <p className="mt-2 text-xs leading-relaxed text-[#8a93a8]">
-                留言板、欢迎语与分享作者名将显示此昵称。当前显示：<span className="font-semibold text-[#7c6cf0]">{loading ? "加载中…" : displayName}</span>{usingCustomName ? null : "（默认）"}
+                {" "}{t("留言板、欢迎语与分享作者名将显示此昵称。当前显示：")}{" "}<span className="font-semibold text-[#7c6cf0]">{loading ? t("加载中…") : displayName}</span>{usingCustomName ? null : t("（默认）")}
               </p>
-              {nameHint ? <p className="mt-2 text-xs text-amber-600">{nameHint}</p> : null}
+              {nameHint ? <p className="mt-2 text-xs text-amber-600">{t(nameHint)}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2.5">
-                <button type="button" disabled={loading || saving || !nameInput.trim()} onClick={() => void handleSave()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:opacity-50">{saving ? "保存中…" : "保存昵称"}</button>
-                <button type="button" disabled={loading || saving || !usingCustomName} onClick={() => void handleResetDefault()} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">恢复默认</button>
+                <button type="button" disabled={loading || saving || !nameInput.trim()} onClick={() => void handleSave()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_12px_rgba(255,138,92,.25)] disabled:opacity-50">{saving ? t("保存中…") : t("保存昵称")}</button>
+                <button type="button" disabled={loading || saving || !usingCustomName} onClick={() => void handleResetDefault()} className="rounded-[10px] bg-[#f1f3f8] px-5 py-2.5 text-[13px] font-semibold text-[#4a5270] disabled:opacity-50">{t("恢复默认")}</button>
               </div>
-              {notice ? <SiteAlert variant="success" className="mt-4">{notice}</SiteAlert> : null}
-              {errorMessage ? <SiteAlert variant="error" className="mt-4">{errorMessage}</SiteAlert> : null}
+              {notice ? <SiteAlert variant="success" className="mt-4">{t(notice)}</SiteAlert> : null}
+              {errorMessage ? <SiteAlert variant="error" className="mt-4">{t(errorMessage)}</SiteAlert> : null}
             </section>
 
             <section className="rounded-[14px] border border-[#e6e9f2] bg-[#fafbfe] px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-[13px] font-bold">积分与奖励</h2>
-                  <p className="mt-1 text-[11px] text-[#8a93a8]">默认 {DEFAULT_AI_CREDITS} · 生图消耗 {AI_CREDIT_COST}</p>
+                  <h2 className="text-[13px] font-bold">{t("积分与奖励")}</h2>
+                  <p className="mt-1 text-[11px] text-[#8a93a8]">{t("默认 {initial} · 生图消耗 {cost}", "Starting credits: {initial} · Image generation: {cost}", { initial: DEFAULT_AI_CREDITS, cost: AI_CREDIT_COST })}</p>
                 </div>
-                <Link to="/shop" className="rounded-full border border-[#e6e9f2] bg-white px-3 py-1.5 text-xs font-semibold text-[#7c6cf0] hover:border-[#7c6cf0]">积分商城</Link>
+                <Link to="/shop" className="rounded-full border border-[#e6e9f2] bg-white px-3 py-1.5 text-xs font-semibold text-[#7c6cf0] hover:border-[#7c6cf0]">{t("积分商城")}</Link>
               </div>
-              <p className="mt-3 text-xs leading-relaxed text-[#8a93a8]">被点赞 +{formatCredits(likeRewardCredits)} · 点赞他人 +{formatCredits(actorLikeRewardCredits)} · 被下载 +{formatCredits(downloadRewardCredits)}</p>
+              <p className="mt-3 text-xs leading-relaxed text-[#8a93a8]">{t("被点赞 +")}{formatCredits(likeRewardCredits)} {" "}{t("· 点赞他人 +")}{formatCredits(actorLikeRewardCredits)} {" "}{t("· 被下载 +")}{formatCredits(downloadRewardCredits)}</p>
               <CreditLedgerPanel entries={creditLedger} loading={loading} />
             </section>
           </div>
@@ -308,19 +310,19 @@ export default function ProfilePage() {
 
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)] dark:border-slate-800 dark:bg-slate-900">
           <header className="border-b border-[#e6e9f2] px-6 py-4 dark:border-slate-800">
-            <h2 className="text-[15px] font-extrabold dark:text-white">下载与传输激活</h2>
-            <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">2026-08-18 之前登记的设备自动开放；新设备输入激活码后永久开启。</p>
+            <h2 className="text-[15px] font-extrabold dark:text-white">{t("下载与传输激活")}</h2>
+            <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">{t("2026-08-18 之前登记的设备自动开放；新设备输入激活码后永久开启。")}</p>
           </header>
           <div className="p-6">
             {featureAccessLoading ? (
-              <p className="text-sm text-[#8a93a8]">正在读取设备权限…</p>
+              <p className="text-sm text-[#8a93a8]">{t("正在读取设备权限…")}</p>
             ) : featureAccess?.enabled ? (
               <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                已开启软件下载和设备传输{featureAccess.grandfathered ? "（老客户设备自动开放）" : "（激活码已生效）"}
+                {" "}{t("已开启软件下载和设备传输")}{featureAccess.grandfathered ? t("（老客户设备自动开放）") : t("（激活码已生效）")}
               </div>
             ) : (
               <div className="max-w-lg">
-                <label className="text-[12.5px] font-semibold text-[#4a5270] dark:text-slate-200">激活码</label>
+                <label className="text-[12.5px] font-semibold text-[#4a5270] dark:text-slate-200">{t("激活码")}</label>
                 <div className="mt-2 flex gap-2.5">
                   <input
                     value={activationCode}
@@ -332,29 +334,28 @@ export default function ProfilePage() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter") void handleActivateFeatures();
                     }}
-                    placeholder="请输入激活码"
+                    placeholder={t("请输入激活码")}
                     autoComplete="off"
                     className="min-w-0 flex-1 rounded-[10px] border border-[#e6e9f2] bg-[#fafbfe] px-3 py-[9px] text-[13px] outline-none transition focus:border-[#ff8a5c] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
                   />
                   <button type="button" disabled={activating || !activationCode.trim()} onClick={() => void handleActivateFeatures()} className="rounded-[10px] bg-gradient-to-br from-[#ff8a5c] to-[#ff6f9c] px-5 py-2.5 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
-                    {activating ? "激活中…" : "立即激活"}
+                    {activating ? t("激活中…") : t("立即激活")}
                   </button>
                   <span className="flex shrink-0 items-center whitespace-nowrap text-[13px] font-semibold text-[#ff7b75] dark:text-[#ff9c98]">
-                    激活码 1234
-                  </span>
+                    {" "}{t("激活码 1234")}{" "}</span>
                 </div>
               </div>
             )}
-            {activationNotice ? <SiteAlert variant="success" className="mt-4">{activationNotice}</SiteAlert> : null}
-            {activationError ? <SiteAlert variant="error" className="mt-4">{activationError}</SiteAlert> : null}
+            {activationNotice ? <SiteAlert variant="success" className="mt-4">{t(activationNotice)}</SiteAlert> : null}
+            {activationError ? <SiteAlert variant="error" className="mt-4">{t(activationError)}</SiteAlert> : null}
           </div>
         </section>
 
         <section className="overflow-hidden rounded-[18px] border border-[#e6e9f2] bg-white shadow-[0_10px_30px_rgba(43,50,69,.06)] dark:border-slate-800 dark:bg-slate-900">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e9f2] px-6 py-4 dark:border-slate-800">
             <div>
-              <h2 className="text-[15px] font-extrabold dark:text-white">网站主题包</h2>
-              <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">主题仅保存在当前浏览器，不上传服务器，也不会修改网站功能。</p>
+              <h2 className="text-[15px] font-extrabold dark:text-white">{t("网站主题包")}</h2>
+              <p className="mt-1 text-xs text-[#8a93a8] dark:text-slate-400">{t("主题仅保存在当前浏览器，不上传服务器，也不会修改网站功能。")}</p>
             </div>
             <ThemeSelector theme={theme} onChange={setTheme} />
           </header>
@@ -365,22 +366,22 @@ export default function ProfilePage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-sm dark:text-white">{installedTheme.name}</strong>
                     <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-600 dark:bg-violet-500/10 dark:text-violet-300">v{installedTheme.version}</span>
-                    <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300">{installedTheme.appearance === "dark" ? "深色" : "浅色"}</span>
+                    <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300">{installedTheme.appearance === "dark" ? t("深色") : t("浅色")}</span>
                   </div>
-                  <p className="mt-1.5 text-xs text-[#8a93a8] dark:text-slate-400">作者：{installedTheme.author}{installedTheme.description ? ` · ${installedTheme.description}` : ""}</p>
+                  <p className="mt-1.5 text-xs text-[#8a93a8] dark:text-slate-400">{t("作者：")}{installedTheme.author}{installedTheme.description ? ` · ${installedTheme.description}` : ""}</p>
                 </div>
               ) : (
-                <div className="rounded-[14px] border border-dashed border-[#dfe3ee] px-4 py-5 text-center text-xs text-[#8a93a8] dark:border-slate-700 dark:text-slate-400">尚未导入自定义主题</div>
+                <div className="rounded-[14px] border border-dashed border-[#dfe3ee] px-4 py-5 text-center text-xs text-[#8a93a8] dark:border-slate-700 dark:text-slate-400">{t("尚未导入自定义主题")}</div>
               )}
-              {themeNotice ? <SiteAlert variant="success" className="mt-3">{themeNotice}</SiteAlert> : null}
-              {themeError ? <SiteAlert variant="error" className="mt-3">{themeError}</SiteAlert> : null}
+              {themeNotice ? <SiteAlert variant="success" className="mt-3">{t(themeNotice)}</SiteAlert> : null}
+              {themeError ? <SiteAlert variant="error" className="mt-3">{t(themeError)}</SiteAlert> : null}
             </div>
             <div className="flex flex-wrap gap-2 md:max-w-[310px] md:justify-end">
               <input ref={themeInputRef} type="file" accept=".v1theme,.json,application/json" className="hidden" onChange={(event) => void handleThemeImport(event)} />
-              <button type="button" disabled={themeImporting} onClick={() => themeInputRef.current?.click()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5d8cff] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50">{themeImporting ? "校验中…" : installedTheme ? "替换主题包" : "导入主题包"}</button>
-              {installedTheme && theme !== "custom" ? <button type="button" onClick={() => setTheme("custom")} className="rounded-[10px] bg-[#eef0ff] px-4 py-2.5 text-xs font-semibold text-[#6557db] dark:bg-violet-500/10 dark:text-violet-300">启用主题</button> : null}
-              {installedTheme ? <button type="button" onClick={handleThemeRemove} className="rounded-[10px] bg-[#fff1ef] px-4 py-2.5 text-xs font-semibold text-[#df6259] dark:bg-rose-500/10 dark:text-rose-300">移除</button> : null}
-              <button type="button" onClick={downloadDefaultThemePackage} className="rounded-[10px] border border-[#e6e9f2] bg-white px-4 py-2.5 text-xs font-semibold text-[#4a5270] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">下载示例包</button>
+              <button type="button" disabled={themeImporting} onClick={() => themeInputRef.current?.click()} className="rounded-[10px] bg-gradient-to-br from-[#7c6cf0] to-[#5d8cff] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50">{themeImporting ? t("校验中…") : installedTheme ? t("替换主题包") : t("导入主题包")}</button>
+              {installedTheme && theme !== "custom" ? <button type="button" onClick={() => setTheme("custom")} className="rounded-[10px] bg-[#eef0ff] px-4 py-2.5 text-xs font-semibold text-[#6557db] dark:bg-violet-500/10 dark:text-violet-300">{t("启用主题")}</button> : null}
+              {installedTheme ? <button type="button" onClick={handleThemeRemove} className="rounded-[10px] bg-[#fff1ef] px-4 py-2.5 text-xs font-semibold text-[#df6259] dark:bg-rose-500/10 dark:text-rose-300">{t("移除")}</button> : null}
+              <button type="button" onClick={downloadDefaultThemePackage} className="rounded-[10px] border border-[#e6e9f2] bg-white px-4 py-2.5 text-xs font-semibold text-[#4a5270] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">{t("下载示例包")}</button>
             </div>
           </div>
         </section>

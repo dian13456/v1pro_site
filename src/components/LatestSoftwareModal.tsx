@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAuthState } from "../services/authService";
@@ -12,6 +13,7 @@ import type { ResourceItem } from "../types/resource";
 import { findLatestSoftware } from "../utils/latestSoftware";
 
 export function LatestSoftwareModal() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const auth = getAuthState();
   const serial = auth?.serial || "";
@@ -96,7 +98,7 @@ export function LatestSoftwareModal() {
       >
         <button
           type="button"
-          aria-label="关闭软件推荐"
+          aria-label={t("关闭软件推荐", "Close software recommendation")}
           onClick={handleDismiss}
           className="absolute right-4 top-4 rounded-full px-2 py-1 text-lg leading-none text-slate-400 transition hover:bg-white/60 hover:text-slate-600 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
         >
@@ -107,24 +109,22 @@ export function LatestSoftwareModal() {
           Software
         </p>
         <h2 id="latest-software-title" className="mt-2 text-xl font-semibold text-slate-900 dark:text-slate-50">
-          最新软件下载
-        </h2>
+          {t("最新软件下载", "Latest software")}</h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          检测到有新版桌面软件，可直接下载安装；关闭后将按 SN 记住，不再重复提示同一版本。
-        </p>
+          {t("检测到有新版桌面软件，可直接下载安装；关闭后将按 SN 记住，不再重复提示同一版本。", "A new desktop software version is available. After dismissal, this version will not be shown again for this device serial number.")}</p>
 
         <div className="mt-5 rounded-2xl border border-violet-100/80 bg-white/70 px-4 py-3 dark:border-violet-500/15 dark:bg-slate-950/40">
           <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{software.title}</p>
           <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-300">{software.description}</p>
           {software.size && software.size !== "未知" ? (
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">大小：{software.size}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("大小：", "Size:")} {software.size}</p>
           ) : null}
         </div>
 
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">正在获取最新软件...</p>
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">{t("正在获取最新软件...", "Getting the latest software...")}</p>
         ) : null}
-        {error ? <p className="mt-4 text-sm text-rose-600 dark:text-rose-300">{error}</p> : null}
+        {error ? <p className="mt-4 text-sm text-rose-600 dark:text-rose-300">{t(error)}</p> : null}
 
         <div className="mt-5 flex gap-3">
           <button
@@ -132,15 +132,14 @@ export function LatestSoftwareModal() {
             onClick={handleDismiss}
             className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            稍后再说
-          </button>
+            {t("稍后再说", "Later")}</button>
           <button
             type="button"
             disabled={downloading || loading}
             onClick={() => void handleDownload()}
             className="flex-1 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {downloading ? "生成链接..." : "立即下载"}
+            {t(downloading ? "生成链接..." : "立即下载")}
           </button>
         </div>
       </div>

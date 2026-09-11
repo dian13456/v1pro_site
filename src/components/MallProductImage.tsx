@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { fetchMallImageBlobUrl } from "../services/mallService";
 
@@ -14,6 +15,7 @@ export function MallProductImage({
   className = "h-40 w-full",
   adminToken,
 }: MallProductImageProps) {
+  useI18n();
   const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -66,7 +68,7 @@ export function MallProductImage({
       <div
         className={`flex items-center justify-center rounded-xl border border-dashed border-white/30 bg-white/40 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-400 ${className}`}
       >
-        {loading ? "加载中…" : "暂无商品图"}
+        {loading ? t("加载中…") : t("暂无商品图")}
       </div>
     );
   }

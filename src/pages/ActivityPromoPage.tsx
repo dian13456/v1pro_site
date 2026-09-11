@@ -1,3 +1,4 @@
+import { translate as t, useI18n, formatDate } from "../i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PromoImageUpload } from "../components/PromoImageUpload";
@@ -24,17 +25,19 @@ import type { PromoCampaignId, PromoOverview, PromoSubmissionRecord } from "../t
 import { PROMO_CAMPAIGN_LABEL, PROMO_STATUS_LABEL } from "../types/promo";
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="grid gap-1 border-b border-slate-200/70 py-3 last:border-0 dark:border-white/10 sm:grid-cols-[120px_1fr]">
       <dt className="text-sm text-slate-500 dark:text-slate-400">{label}</dt>
       <dd className="break-words whitespace-pre-wrap text-sm font-medium text-slate-800 dark:text-slate-100">
-        {children || "未填写"}
+        {children || t("未填写")}
       </dd>
     </div>
   );
 }
 
 export default function ActivityPromoPage() {
+  useI18n();
   const navigate = useNavigate();
   const { theme, setTheme } = useThemeMode();
   const [loading, setLoading] = useState(true);
@@ -180,77 +183,76 @@ export default function ActivityPromoPage() {
 
   return (
     <SitePageLayout
-      subtitle="限时福利 · 二选一参与"
+      subtitle={t("限时福利 · 二选一参与")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
       <SitePanel>
         <SiteSectionTitle
-          title="上新活动（二选一）"
-          description="选择一个活动报名。提交后可以查看资料；审核前或被驳回后可以修改，审核通过后资料将锁定。"
+          title={t("上新活动（二选一）")}
+          description={t("选择一个活动报名。提交后可以查看资料；审核前或被驳回后可以修改，审核通过后资料将锁定。")}
           action={
             <Link to="/activities">
-              <SiteButton type="button" variant="secondary">返回活动中心</SiteButton>
+              <SiteButton type="button" variant="secondary">{t("返回活动中心")}</SiteButton>
             </Link>
           }
         />
-        {overview ? <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">{overview.rule}</p> : null}
+        {overview ? <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">{t(overview.rule)}</p> : null}
       </SitePanel>
 
-      {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
-      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
-      {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
+      {notice ? <SiteAlert variant="success">{t(notice)}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
+      {loading ? <SiteLoadingBlock>{t("加载中…")}</SiteLoadingBlock> : null}
 
       {!loading && overview?.current ? (
         <SitePanel>
           <SiteSectionTitle
-            title="我的提交"
+            title={t("我的提交")}
             description={
               overview.current.status === "approved"
-                ? "审核已通过，报名资料已锁定。"
+                ? t("审核已通过，报名资料已锁定。")
                 : overview.current.status === "rejected"
-                  ? "审核未通过，请根据审核备注修改资料后重新提交。"
-                  : "资料正在等待审核，发现填写错误时仍可修改。"
+                  ? t("审核未通过，请根据审核备注修改资料后重新提交。")
+                  : t("资料正在等待审核，发现填写错误时仍可修改。")
             }
             action={
               <div className="flex flex-wrap gap-2">
                 <SiteButton type="button" variant="secondary" onClick={() => setShowDetails((value) => !value)}>
-                  {showDetails ? "收起填写信息" : "查看填写信息"}
+                  {showDetails ? t("收起填写信息") : t("查看填写信息")}
                 </SiteButton>
-                {canEdit ? <SiteButton type="button" onClick={beginEdit}>修改信息</SiteButton> : null}
+                {canEdit ? <SiteButton type="button" onClick={beginEdit}>{t("修改信息")}</SiteButton> : null}
               </div>
             }
           />
           <div className="grid gap-2 rounded-2xl border border-white/30 bg-white/35 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/25 dark:text-slate-300 sm:grid-cols-2">
-            <p>参与活动：<strong>{PROMO_CAMPAIGN_LABEL[overview.current.campaignId]}</strong></p>
-            <p>当前状态：<strong>{PROMO_STATUS_LABEL[overview.current.status]}</strong></p>
-            <p>提交时间：{new Date(overview.current.createdAt).toLocaleString("zh-CN")}</p>
-            <p>最后更新：{new Date(overview.current.updatedAt).toLocaleString("zh-CN")}</p>
+            <p>{t("参与活动：")}<strong>{t(PROMO_CAMPAIGN_LABEL[overview.current.campaignId])}</strong></p>
+            <p>{t("当前状态：")}<strong>{t(PROMO_STATUS_LABEL[overview.current.status])}</strong></p>
+            <p>{t("提交时间：")}{formatDate(new Date(overview.current.createdAt), { dateStyle: "medium", timeStyle: "short" })}</p>
+            <p>{t("最后更新：")}{formatDate(new Date(overview.current.updatedAt), { dateStyle: "medium", timeStyle: "short" })}</p>
           </div>
           {overview.current.adminNote ? (
-            <SiteAlert variant={overview.current.status === "rejected" ? "error" : "info"} className="mt-4">
-              审核备注：{overview.current.adminNote}
+            <SiteAlert variant={overview.current.status === "rejected" ? "error" : "info"} className="mt-4">{t("审核备注：")}{overview.current.adminNote}
             </SiteAlert>
           ) : null}
           {showDetails && submission ? (
             <dl className="mt-4 rounded-2xl border border-slate-200/70 bg-white/45 px-4 dark:border-white/10 dark:bg-slate-950/30">
-              <DetailRow label="订单号">{submission.orderNo}</DetailRow>
-              <DetailRow label="订单截图">
-                <a className="text-violet-600 underline dark:text-violet-300" href={submission.orderScreenshotUrl} target="_blank" rel="noreferrer">查看订单截图</a>
+              <DetailRow label={t("订单号")}>{submission.orderNo}</DetailRow>
+              <DetailRow label={t("订单截图")}>
+                <a className="text-violet-600 underline dark:text-violet-300" href={submission.orderScreenshotUrl} target="_blank" rel="noreferrer">{t("查看订单截图")}</a>
               </DetailRow>
               {submission.campaignId === "cnc-repurchase-bonus" ? (
                 <>
-                  <DetailRow label="颜色备注">{submission.injectionColorNote}</DetailRow>
-                  <DetailRow label="收货地址">{submission.shippingAddress}</DetailRow>
+                  <DetailRow label={t("颜色备注")}>{submission.injectionColorNote}</DetailRow>
+                  <DetailRow label={t("收货地址")}>{submission.shippingAddress}</DetailRow>
                 </>
               ) : (
                 <>
-                  <DetailRow label="视频链接">
+                  <DetailRow label={t("视频链接")}>
                     <a className="text-violet-600 underline dark:text-violet-300" href={submission.videoLink} target="_blank" rel="noreferrer">{submission.videoLink}</a>
                   </DetailRow>
-                  <DetailRow label="收款码">
-                    <a className="text-violet-600 underline dark:text-violet-300" href={submission.paymentQrUrl} target="_blank" rel="noreferrer">查看收款码</a>
+                  <DetailRow label={t("收款码")}>
+                    <a className="text-violet-600 underline dark:text-violet-300" href={submission.paymentQrUrl} target="_blank" rel="noreferrer">{t("查看收款码")}</a>
                   </DetailRow>
                 </>
               )}
@@ -260,12 +262,12 @@ export default function ActivityPromoPage() {
       ) : null}
 
       {!loading && overview && !overview.current && overview.campaigns.every((item) => item.quotaFull) ? (
-        <SiteAlert variant="info">两个活动报名人数均已满（各 260 份），报名已截止。</SiteAlert>
+        <SiteAlert variant="info">{t("两个活动报名人数均已满（各 260 份），报名已截止。")}</SiteAlert>
       ) : null}
 
       {!loading && overview && !overview.current ? (
         <SitePanel>
-          <SiteSectionTitle title="选择参与的活动" description="活动提交后不可更换，但审核前可以修改该活动内的填写资料。" />
+          <SiteSectionTitle title={t("选择参与的活动")} description={t("活动提交后不可更换，但审核前可以修改该活动内的填写资料。")} />
           <div className="mt-4 grid gap-3">
             {overview.campaigns.map((campaign) => {
               const active = selectedCampaign === campaign.id;
@@ -284,13 +286,12 @@ export default function ActivityPromoPage() {
                   onClick={() => !campaign.quotaFull && setSelectedCampaign(campaign.id)}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">{campaign.title}</p>
-                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">
-                      已填报 {campaign.submittedCount} / {campaign.quotaLimit}{campaign.quotaFull ? " · 已满" : ""}
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">{t(campaign.title)}</p>
+                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{t("已填报")}{" "}{campaign.submittedCount} / {campaign.quotaLimit}{campaign.quotaFull ? t(" · 已满") : ""}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{campaign.summary}</p>
-                  <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">{campaign.description}</p>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t(campaign.summary)}</p>
+                  <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">{t(campaign.description)}</p>
                 </button>
               );
             })}
@@ -301,39 +302,39 @@ export default function ActivityPromoPage() {
       {!loading && overview && selectedMeta && (!overview.current || editing) ? (
         <SitePanel>
           <SiteSectionTitle
-            title={`${editing ? "修改提交资料" : "填写资料"} · ${selectedMeta.title}`}
+            title={`${editing ? t("修改提交资料") : t("填写资料")} · ${t(selectedMeta.title)}`}
             description={
               editing
-                ? "保存后将重新进入待审核状态，请确认所有信息无误。"
+                ? t("保存后将重新进入待审核状态，请确认所有信息无误。")
                 : selectedCampaign === "cnc-repurchase-bonus"
-                  ? "填写 CNC 订单信息、颜色备注与收货地址。"
-                  : "请确保订单、视频和收款信息真实有效。"
+                  ? t("填写 CNC 订单信息、颜色备注与收货地址。")
+                  : t("请确保订单、视频和收款信息真实有效。")
             }
           />
           <div className="mt-4 grid gap-4">
             <SiteInput
-              placeholder={selectedCampaign === "cnc-repurchase-bonus" ? "CNC 订单号（直购用户可留空）" : "订单号"}
+              placeholder={selectedCampaign === "cnc-repurchase-bonus" ? t("CNC 订单号（直购用户可留空）") : t("订单号")}
               value={orderNo}
               onChange={(event) => setOrderNo(event.target.value)}
             />
-            <PromoImageUpload label="订单截图" imageUrl={orderScreenshotUrl} onChange={setOrderScreenshotUrl} />
+            <PromoImageUpload label={t("订单截图")} imageUrl={orderScreenshotUrl} onChange={setOrderScreenshotUrl} />
             {selectedCampaign === "cnc-repurchase-bonus" ? (
               <>
-                <SiteInput placeholder="注塑 V1PRO 颜色备注（如：白色 / 透黑）" value={injectionColorNote} onChange={(event) => setInjectionColorNote(event.target.value)} />
-                <SiteTextarea placeholder="收货地址（含收件人、手机号、省市区与详细地址）" value={shippingAddress} onChange={(event) => setShippingAddress(event.target.value)} rows={4} />
+                <SiteInput placeholder={t("注塑 V1PRO 颜色备注（如：白色 / 透黑）")} value={injectionColorNote} onChange={(event) => setInjectionColorNote(event.target.value)} />
+                <SiteTextarea placeholder={t("收货地址（含收件人、手机号、省市区与详细地址）")} value={shippingAddress} onChange={(event) => setShippingAddress(event.target.value)} rows={4} />
               </>
             ) : (
               <>
-                <SiteInput placeholder="视频链接（B站 / 抖音 / 小红书等）" value={videoLink} onChange={(event) => setVideoLink(event.target.value)} />
-                <PromoImageUpload label="收款码截图" imageUrl={paymentQrUrl} onChange={setPaymentQrUrl} />
+                <SiteInput placeholder={t("视频链接（B站 / 抖音 / 小红书等）")} value={videoLink} onChange={(event) => setVideoLink(event.target.value)} />
+                <PromoImageUpload label={t("收款码截图")} imageUrl={paymentQrUrl} onChange={setPaymentQrUrl} />
               </>
             )}
             <div className="flex flex-wrap gap-2">
               <SiteButton type="button" disabled={submitting || (!editing && selectedMeta.quotaFull)} onClick={() => void handleSubmit()}>
-                {submitting ? "保存中…" : editing ? "保存并重新提交审核" : "确认提交"}
+                {submitting ? t("保存中…") : editing ? t("保存并重新提交审核") : t("确认提交")}
               </SiteButton>
               {editing ? (
-                <SiteButton type="button" variant="secondary" disabled={submitting} onClick={() => setEditing(false)}>取消修改</SiteButton>
+                <SiteButton type="button" variant="secondary" disabled={submitting} onClick={() => setEditing(false)}>{t("取消修改")}</SiteButton>
               ) : null}
             </div>
           </div>

@@ -1,3 +1,4 @@
+import { useI18n, translate as t } from "../i18n";
 import { FormEvent, useEffect, useState } from "react";
 
 interface SearchBarProps {
@@ -6,6 +7,7 @@ interface SearchBarProps {
 }
 
 export function SearchBar({ value, onChange }: SearchBarProps) {
+  useI18n();
   const [draft, setDraft] = useState(value);
 
   useEffect(() => {
@@ -24,15 +26,14 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
           type="text"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="输入标题或简介进行筛选..."
+          placeholder={t("输入标题或简介进行筛选...")}
           className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
         />
         <button
           type="submit"
           className="rounded-full bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
         >
-          搜索
-        </button>
+          {" "}{t("搜索")}{" "}</button>
       </form>
     </div>
   );

@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
@@ -26,6 +27,7 @@ import {
 import type { ActivityAdminItem, ActivityJoinRecord, ActivityWinnerRecord, WinnerContactInfo } from "../types/activity";
 
 export default function ActivityAdminPage() {
+  useI18n();
   const { theme, setTheme } = useThemeMode();
   const { adminToken, authenticated, refreshSession, logout, handleUnauthorized } = useAdminSession();
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ export default function ActivityAdminPage() {
       }
       setNotice("数据已刷新");
     } catch (err) {
-      const message = (err as Error)?.message || "加载失败，请重新登录";
+      const message = (err as Error)?.message || t("加载失败，请重新登录");
       if (message.includes("token") || message.includes("无效") || message.includes("未授权")) {
         handleUnauthorized();
       }
@@ -177,57 +179,47 @@ export default function ActivityAdminPage() {
 
   return (
     <SitePageLayout
-      subtitle="活动管理后台 · 需管理员密码"
+      subtitle={t("活动管理后台 · 需管理员密码")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_MEDIUM}
     >
       {!authenticated ? (
         <AdminLoginPanel
-          description="输入后台密码后可管理抽奖活动、开奖与发货。"
+          description={t("输入后台密码后可管理抽奖活动、开奖与发货。")}
           onLoggedIn={handleLoggedIn}
         />
       ) : (
         <SitePanel>
           <SiteSectionTitle
-            title="已登录管理后台"
-            description="当前会话有效，可进行操作。"
+            title={t("已登录管理后台")}
+            description={t("当前会话有效，可进行操作。")}
             action={
               <div className="flex flex-wrap gap-2">
                 <Link to="/activities/promo-admin">
-                  <SiteButton type="button" variant="secondary">
-                    福利活动审核
-                  </SiteButton>
+                  <SiteButton type="button" variant="secondary">{t("福利活动审核")}{" "}</SiteButton>
                 </Link>
-                <SiteButton type="button" variant="secondary" onClick={logout}>
-                  退出登录
-                </SiteButton>
+                <SiteButton type="button" variant="secondary" onClick={logout}>{t("退出登录")}{" "}</SiteButton>
               </div>
             }
           />
         </SitePanel>
       )}
 
-      {loading ? <SiteLoadingBlock>加载中…</SiteLoadingBlock> : null}
-      {notice ? <SiteAlert variant="success">{notice}</SiteAlert> : null}
-      {errorMessage ? <SiteAlert variant="error">{errorMessage}</SiteAlert> : null}
+      {loading ? <SiteLoadingBlock>{t("加载中…")}</SiteLoadingBlock> : null}
+      {notice ? <SiteAlert variant="success">{t(notice)}</SiteAlert> : null}
+      {errorMessage ? <SiteAlert variant="error">{t(errorMessage)}</SiteAlert> : null}
 
       {authenticated && adminToken ? (
         <>
           <SitePanel>
             <SiteSectionTitle
-              title="活动列表"
+              title={t("活动列表")}
               action={
                 <div className="flex flex-wrap gap-2">
-                  <SiteButton type="button" onClick={() => void loadAll(adminToken)}>
-                    刷新
-                  </SiteButton>
-                  <SiteButton type="button" onClick={() => void handleCreateDefault()}>
-                    创建默认活动
-                  </SiteButton>
-                  <SiteButton type="button" onClick={() => void handleDraw()} disabled={!selectedId}>
-                    手动开奖
-                  </SiteButton>
+                  <SiteButton type="button" onClick={() => void loadAll(adminToken)}>{t("刷新")}{" "}</SiteButton>
+                  <SiteButton type="button" onClick={() => void handleCreateDefault()}>{t("创建默认活动")}{" "}</SiteButton>
+                  <SiteButton type="button" onClick={() => void handleDraw()} disabled={!selectedId}>{t("手动开奖")}{" "}</SiteButton>
                 </div>
               }
             />
@@ -243,7 +235,7 @@ export default function ActivityAdminPage() {
                       : "border border-white/25 bg-white/55 text-slate-700 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-200"
                   }`}
                 >
-                  {item.title}
+                  {t(item.title)}
                 </button>
               ))}
             </div>
@@ -252,36 +244,32 @@ export default function ActivityAdminPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <SitePanel>
               <SiteSectionTitle
-                title={`报名记录 (${joins.length})`}
+                title={t("报名记录 ({v0})", undefined, { v0: joins.length })}
                 action={
-                  <SiteButton type="button" onClick={exportJoinsCsv} disabled={joins.length === 0}>
-                    导出 CSV
-                  </SiteButton>
+                  <SiteButton type="button" onClick={exportJoinsCsv} disabled={joins.length === 0}>{t("导出 CSV")}{" "}</SiteButton>
                 }
               />
               <div className="mt-3 max-h-80 space-y-2 overflow-auto text-xs">
                 {joins.map((item) => (
                   <div key={item.id} className="rounded-xl border border-white/20 bg-white/50 p-2 dark:border-white/10 dark:bg-slate-950/40">
                     <p>SN: {item.sn}</p>
-                    <p>用户: {item.userSerial}</p>
-                    <p>周期: {item.drawPeriod} · {item.status}</p>
+                    <p>{t("用户:")}{" "}{item.userSerial}</p>
+                    <p>{t("周期:")}{" "}{item.drawPeriod} · {item.status}</p>
                   </div>
                 ))}
               </div>
             </SitePanel>
 
             <SitePanel>
-              <SiteSectionTitle title={`中奖名单 (${winners.length})`} />
+              <SiteSectionTitle title={t("中奖名单 ({v0})", undefined, { v0: winners.length })} />
               <div className="mt-3 max-h-80 space-y-2 overflow-auto text-xs">
                 {winners.map((item) => (
                   <div key={item.id} className="rounded-xl border border-white/20 bg-white/50 p-2 dark:border-white/10 dark:bg-slate-950/40">
                     <p>SN: {item.sn}</p>
-                    <p>联系: {item.contactStatus} · 发货: {item.shippingStatus}</p>
-                    {item.trackingNo ? <p>快递: {item.trackingNo}</p> : null}
+                    <p>{t("联系:")}{" "}{item.contactStatus}{" "}{t("· 发货:")}{" "}{item.shippingStatus}</p>
+                    {item.trackingNo ? <p>{t("快递:")}{" "}{item.trackingNo}</p> : null}
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <SiteButton type="button" className="px-3 py-1 text-xs" onClick={() => void handleViewContact(item.id)}>
-                        查看联系方式
-                      </SiteButton>
+                      <SiteButton type="button" className="px-3 py-1 text-xs" onClick={() => void handleViewContact(item.id)}>{t("查看联系方式")}{" "}</SiteButton>
                     </div>
                     {item.shippingStatus !== "shipped" ? (
                       <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -293,7 +281,7 @@ export default function ActivityAdminPage() {
                               [item.id]: event.target.value,
                             }))
                           }
-                          placeholder="填写快递单号"
+                          placeholder={t("填写快递单号")}
                           maxLength={128}
                         />
                         <SiteButton
@@ -301,9 +289,7 @@ export default function ActivityAdminPage() {
                           className="px-3 py-1 text-xs"
                           disabled={!(shippingTrackingNumbers[item.id] || "").trim()}
                           onClick={() => void handleMarkShipped(item.id)}
-                        >
-                          保存单号并标记已发货
-                        </SiteButton>
+                        >{t("保存单号并标记已发货")}{" "}</SiteButton>
                       </div>
                     ) : null}
                   </div>
@@ -311,11 +297,11 @@ export default function ActivityAdminPage() {
               </div>
               {contact ? (
                 <div className="mt-3 rounded-xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                  <p>姓名: {contact.name}</p>
-                  <p>手机: {contact.phone}</p>
+                  <p>{t("姓名:")}{" "}{contact.name}</p>
+                  <p>{t("手机:")}{" "}{contact.phone}</p>
                   <p>QQ: {contact.qq || "—"}</p>
-                  <p>微信: {contact.wechat || "—"}</p>
-                  <p>地址: {contact.province} {contact.city} {contact.address}</p>
+                  <p>{t("微信:")}{" "}{contact.wechat || "—"}</p>
+                  <p>{t("地址:")}{" "}{contact.province} {contact.city} {contact.address}</p>
                 </div>
               ) : null}
             </SitePanel>
@@ -324,9 +310,7 @@ export default function ActivityAdminPage() {
       ) : null}
 
       <Link to="/activities">
-        <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">
-          返回活动中心
-        </SiteButton>
+        <SiteButton type="button" className="bg-transparent text-slate-700 ring-1 ring-slate-300 dark:text-slate-200 dark:ring-slate-600">{t("返回活动中心")}{" "}</SiteButton>
       </Link>
     </SitePageLayout>
   );

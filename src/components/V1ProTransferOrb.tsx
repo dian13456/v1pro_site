@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -19,6 +20,7 @@ export function V1ProTransferOrb({
   transferId,
   message = "",
 }: V1ProTransferOrbProps) {
+  const { t } = useI18n();
   const [displayedProgress, setDisplayedProgress] = useState(0);
 
   useEffect(() => {
@@ -41,12 +43,12 @@ export function V1ProTransferOrb({
       className="fixed bottom-5 right-4 z-[95] flex max-w-[9rem] flex-col items-center rounded-[22px] border border-emerald-100/90 bg-white/90 px-3 py-3 shadow-[0_14px_38px_rgba(34,132,104,.24)] backdrop-blur-md dark:border-emerald-400/20 dark:bg-slate-900/90 sm:bottom-7 sm:right-7"
       role="status"
       aria-live="polite"
-      title={message || `网页直传 ${roundedProgress}%`}
+      title={t(message || `网页直传 ${roundedProgress}%`)}
     >
       <div
         className="relative h-[76px] w-[76px] overflow-hidden rounded-full border-[3px] border-white bg-emerald-50 shadow-[inset_0_0_16px_rgba(43,143,115,.16),0_7px_18px_rgba(43,143,115,.2)] ring-2 ring-emerald-200/80 dark:border-slate-800 dark:bg-slate-800 dark:ring-emerald-400/30"
         role="progressbar"
-        aria-label="网页直传进度"
+        aria-label={t("网页直传进度", "Device transfer progress")}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={roundedProgress}
@@ -64,8 +66,7 @@ export function V1ProTransferOrb({
         </span>
       </div>
       <span className="mt-2 text-center text-[11px] font-bold tracking-[.08em] text-emerald-700 dark:text-emerald-300">
-        网页直传中
-      </span>
+        {t("网页直传中", "Transferring to device")}</span>
     </div>,
     document.body,
   );

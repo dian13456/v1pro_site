@@ -1,3 +1,4 @@
+import { translate as t, useI18n } from "../i18n";
 import { useState } from "react";
 import { SiteButton, SiteInput, SitePanel, SiteSectionTitle } from "./SiteUi";
 import { loginAdmin } from "../services/adminAuthService";
@@ -9,10 +10,11 @@ type AdminLoginPanelProps = {
 };
 
 export function AdminLoginPanel({
-  title = "管理员登录",
-  description = "请输入后台密码进入管理页面。",
+  title = t("管理员登录"),
+  description = t("请输入后台密码进入管理页面。"),
   onLoggedIn,
 }: AdminLoginPanelProps) {
+  useI18n();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -42,14 +44,14 @@ export function AdminLoginPanel({
         <SiteInput
           type="text"
           autoComplete="username"
-          placeholder="管理员账号"
+          placeholder={t("管理员账号")}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
         <SiteInput
           type="password"
           autoComplete="current-password"
-          placeholder="管理员密码"
+          placeholder={t("管理员密码")}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => {
@@ -59,10 +61,10 @@ export function AdminLoginPanel({
           }}
         />
         <SiteButton type="button" disabled={!username.trim() || !password.trim() || submitting} onClick={() => void handleLogin()}>
-          {submitting ? "验证中…" : "进入后台"}
+          {submitting ? t("验证中…") : t("进入后台")}
         </SiteButton>
       </div>
-      {errorMessage ? <p className="mt-3 text-sm text-rose-600 dark:text-rose-300">{errorMessage}</p> : null}
+      {errorMessage ? <p className="mt-3 text-sm text-rose-600 dark:text-rose-300">{t(errorMessage)}</p> : null}
     </SitePanel>
   );
 }

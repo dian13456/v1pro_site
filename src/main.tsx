@@ -6,6 +6,7 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { applyThemeToDocument, getInitialTheme } from "./hooks/useThemeMode";
 import "./index.css";
 import "./styles/theme.css";
+import { I18nProvider } from "./i18n";
 
 applyThemeToDocument(getInitialTheme());
 // Clear stale scroll locks left by an interrupted modal render or hot reload.
@@ -13,10 +14,12 @@ document.body.style.removeProperty("overflow");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <HashRouter>
-      <AppErrorBoundary>
-        <App />
-      </AppErrorBoundary>
-    </HashRouter>
+    <I18nProvider>
+      <HashRouter>
+        <AppErrorBoundary>
+          <App />
+        </AppErrorBoundary>
+      </HashRouter>
+    </I18nProvider>
   </React.StrictMode>
 );

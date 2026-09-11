@@ -4,6 +4,7 @@ import { getAuthState, hasValidLocalAuth } from "./authService";
 import { apiFetch } from "./httpClient";
 import { isStaticMode } from "./runtimeMode";
 import { fetchResources } from "./resourceService";
+import { getLocale, translate } from "../i18n";
 
 const MAX_QUESTION_LENGTH = 300;
 type RawAiGuideResponse = Omit<AiGuideResponse, "resourceIds"> & {
@@ -61,11 +62,11 @@ function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGu
   const resourceIds = ranked.map((entry) => entry.resource.id);
   const names = ranked.map((entry) => entry.resource.title);
 
-  let answer = "你可以描述想要的主题、角色、风格或素材类型，我会帮你找合适的素材。";
+  let answer = translate("你可以描述想要的主题、角色、风格或素材类型，我会帮你找合适的素材。", "Describe the theme, character, style or content type you want, and I'll help you find matching resources.");
   if (names.length > 0) {
-    answer = `根据关键词为你找到 ${names.length} 个可能相关的素材：${names.join("、")}。`;
+    answer = translate("根据关键词为你找到 {count} 个可能相关的素材：{names}。", "Found {count} potentially matching resources: {names}.", { count: names.length, names: names.join(getLocale() === "en" ? ", " : "、") });
   } else if (question.trim()) {
-    answer = `暂未精确匹配「${question.trim()}」，建议试试「视频」「GIF」「月薪喵」等关键词。`;
+    answer = translate("暂未精确匹配「{question}」，建议试试「视频」「GIF」「月薪喵」等关键词。", "No exact matches for “{question}”. Try keywords such as “video”, “GIF” or a creator's name.", { question: question.trim() });
   }
 
   return {
@@ -79,10 +80,10 @@ function localAiGuideFallback(question: string, resources: ResourceItem[]): AiGu
 export async function askAiGuide(question: string): Promise<AiGuideResult> {
   const trimmed = question.trim();
   if (!trimmed) {
-    throw new Error("请输入你想找的内容");
+    throw new Error(translate("请输入你想找的内容", "Describe what you want to find."));
   }
   if (trimmed.length > MAX_QUESTION_LENGTH) {
-    throw new Error(`问题最多 ${MAX_QUESTION_LENGTH} 字`);
+    throw new Error(translate("问题最多 {count} 字", "Questions can contain up to {count} characters.", { count: MAX_QUESTION_LENGTH }));
   }
   if (!hasValidLocalAuth()) {
     throw new Error("认证状态无效，请重新验证设备");
@@ -111,7 +112,9 @@ export async function askAiGuide(question: string): Promise<AiGuideResult> {
     }
     return {
       success: true,
-      answer: payload.answer || "已为你整理相关素材。",
+      answer: payload.mode !== "deepseek" && getLocale() === "en"
+        ? translate("已为你整理相关素材。", "Here are the matching resources.")
+        : payload.answer || translate("已为你整理相关素材。", "Here are the matching resources."),
       resourceIds: normalizeIds(payload.resourceIds),
       mode: payload.mode === "deepseek" ? "deepseek" : "fallback",
     };

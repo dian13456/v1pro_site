@@ -1,3 +1,4 @@
+import { useI18n, translate as t, formatNumber } from "../i18n";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { V1ProTransferNotice } from "../components/V1ProTransferNotice";
@@ -104,6 +105,7 @@ interface ResourcesPageProps {
 }
 
 export default function ResourcesPage({ adminMode = false }: ResourcesPageProps) {
+  useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -241,7 +243,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       })
       .catch((err: unknown) => {
         if (!active || controller.signal.aborted) return;
-        setServerPageError((err as Error)?.message || "素材分页加载失败");
+        setServerPageError((err as Error)?.message || t("素材分页加载失败"));
         // Older deployments may not expose the page endpoint yet. Falling back
         // keeps the catalog usable while avoiding an endless retry loop.
         setCatalogFallbackRequested(true);
@@ -439,7 +441,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     if (resources.length === 0) {
       setRandomPending(false);
       setRandomMode(false);
-      setErrorMessage(error || "素材目录为空，请稍后重试");
+      setErrorMessage(error || t("素材目录为空，请稍后重试"));
       return;
     }
     const pool = filtered.filter(
@@ -516,7 +518,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             window.setTimeout(() => loadLikes(attempt + 1), 800);
             return;
           }
-          setErrorMessage((current) => current || "点赞数据加载失败，刷新页面后可重试");
+          setErrorMessage((current) => current || t("点赞数据加载失败，刷新页面后可重试"));
         });
     };
     loadLikes();
@@ -550,7 +552,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         setBlockedUploaderCount(state.blockedUploaderCount);
       })
       .catch(() => {
-        if (active) setErrorMessage((current) => current || "屏蔽列表加载失败，刷新页面后可重试");
+        if (active) setErrorMessage((current) => current || t("屏蔽列表加载失败，刷新页面后可重试"));
       });
     return () => {
       active = false;
@@ -568,7 +570,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         setFollowedUploaderCount(state.followedUploaderCount);
       })
       .catch(() => {
-        if (active) setErrorMessage((current) => current || "关注列表加载失败，刷新页面后可重试");
+        if (active) setErrorMessage((current) => current || t("关注列表加载失败，刷新页面后可重试"));
       });
     return () => {
       active = false;
@@ -602,7 +604,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             category: "gif",
           });
       if (fallback.items.length === 0) {
-        throw new Error("素材分页结果为空");
+        throw new Error(t("素材分页结果为空"));
       }
       return fallback;
     };
@@ -614,7 +616,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             excludeIds: readRecentRecommendationIds(),
           });
           if (result.resources.length === 0) {
-            throw new Error("推荐素材详情为空");
+            throw new Error(t("推荐素材详情为空"));
           }
           return {
             resources: result.resources,
@@ -630,7 +632,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         recommendations: fallback.items.map((resource) => ({
           resourceId: resource.id,
           score: 0,
-          reason: "最新上传",
+          reason: t("最新上传"),
         })),
       };
     };
@@ -782,7 +784,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     setErrorMessage("");
     setWebUsbTransferringId(resource.id);
     setWebUsbProgress(0);
-    beginTransferTask(`网页直传 · ${resource.title || resource.description || "未命名素材"}`);
+    beginTransferTask(t("网页直传 · {v0}", undefined, {v0: resource.title || resource.description || t("未命名素材")}));
     void transferResourceViaWebUsb(resource, {
       onStatus: (message) => {
         setTransferNotice(message);
@@ -798,7 +800,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       colorProfile: options.colorProfile,
     })
       .then((result) => {
-        const message = `网页直传完成：${result.frameCount} 帧`;
+        const message = t("网页直传完成：{v0} 帧", undefined, {v0: result.frameCount});
         setTransferNotice(message);
         completeTransferTask(message);
         void recordResourceInteraction(resource.id, "transfer").catch(() => undefined);
@@ -809,7 +811,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         }, 6000);
       })
       .catch((err) => {
-        const message = (err as Error)?.message || "网页直传失败";
+        const message = (err as Error)?.message || t("网页直传失败");
         setTransferNotice("");
         setWebUsbProgress(null);
         failTransferTask(message);
@@ -858,7 +860,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       const result = await toggleResourceFavorite(resource.id);
       setFavoriteIds(result.state.favoriteIds);
     } catch (err) {
-      const message = (err as Error)?.message || "收藏操作失败";
+      const message = (err as Error)?.message || t("收藏操作失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -895,7 +897,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
         });
       }
     } catch (err) {
-      const message = (err as Error)?.message || "点赞失败";
+      const message = (err as Error)?.message || t("点赞失败");
       setErrorMessage(message);
       if (message.includes("认证")) {
         navigate("/auth", { replace: true });
@@ -919,10 +921,10 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setOwnResourceIds(result.state.ownResourceIds);
       setFollowedUploaderCount(result.state.followedUploaderCount);
       setStatusMessage(result.followed
-        ? `已关注“${resource.author || "该上传者"}”`
-        : `已取消关注“${resource.author || "该上传者"}”`);
+        ? t("已关注“{v0}”", undefined, {v0: resource.author || t("该上传者")})
+        : t("已取消关注“{v0}”", undefined, {v0: resource.author || t("该上传者")}));
     } catch (err) {
-      const message = (err as Error)?.message || "关注操作失败";
+      const message = (err as Error)?.message || t("关注操作失败");
       setErrorMessage(message);
       if (message.includes("认证")) navigate("/auth", { replace: true });
     } finally {
@@ -948,10 +950,10 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
       setSelectedResource((current) => current?.id === resource.id ? null : current);
       setStatusMessage(hidden
-        ? `已为当前设备屏蔽“${resource.author || "该用户"}”上传的全部素材`
-        : `已恢复“${resource.author || "该用户"}”上传的全部素材`);
+        ? t("已为当前设备屏蔽“{v0}”上传的全部素材", undefined, {v0: resource.author || t("该用户")})
+        : t("已恢复“{v0}”上传的全部素材", undefined, {v0: resource.author || t("该用户")}));
     } catch (err) {
-      const message = (err as Error)?.message || "屏蔽设置失败";
+      const message = (err as Error)?.message || t("屏蔽设置失败");
       setErrorMessage(message);
       if (message.includes("认证")) navigate("/auth", { replace: true });
     } finally {
@@ -985,7 +987,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const toggleAlbumResource = (resource: ResourceItem) => {
     if (albumTransferring) return;
     if (resource.materialType !== "image") {
-      setErrorMessage("相册模式目前仅支持图片素材");
+      setErrorMessage(t("相册模式目前仅支持图片素材"));
       return;
     }
     setErrorMessage("");
@@ -1011,15 +1013,15 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     }
     if (albumTransferring || webUsbTransferringId !== null) return;
     if (albumResources.length === 0) {
-      setErrorMessage("请先选择要写入相册的图片");
+      setErrorMessage(t("请先选择要写入相册的图片"));
       return;
     }
 
     setErrorMessage("");
-    setAlbumTransferStatus("正在准备图片相册…");
+    setAlbumTransferStatus(t("正在准备图片相册…"));
     setAlbumTransferring(true);
     setWebUsbProgress(0);
-    beginTransferTask(`图片相册 · ${albumResources.length} 张素材`, "正在准备图片相册…");
+    beginTransferTask(t("图片相册 · {v0} 张素材", undefined, {v0: albumResources.length}), t("正在准备图片相册…"));
     void transferAlbumResourcesViaWebUsb(
       albumResources,
       {
@@ -1039,13 +1041,13 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       },
     )
       .then((result) => {
-        const message = result.note || `相册传输完成：${result.frameCount} 帧`;
+        const message = result.note || t("相册传输完成：{v0} 帧", undefined, {v0: result.frameCount});
         setWebUsbProgress(100);
         setAlbumTransferStatus(message);
         completeTransferTask(message);
       })
       .catch((err) => {
-        const message = (err as Error)?.message || "相册网页直传失败";
+        const message = (err as Error)?.message || t("相册网页直传失败");
         setWebUsbProgress(null);
         setAlbumTransferStatus("");
         failTransferTask(message);
@@ -1060,7 +1062,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     const adminToken = adminSession.adminToken;
     if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null || adminUploaderPurgingId != null) return;
     const confirmed = window.confirm(
-      `确定永久删除素材「${resource.title || resource.description}」吗？\n\n将同时删除 COS 原文件、封面及相关点赞、收藏、评论记录，此操作不可撤销。`,
+      t("确定永久删除素材「{v0}」吗？\n\n将同时删除 COS 原文件、封面及相关点赞、收藏、评论记录，此操作不可撤销。", undefined, {v0: resource.title || resource.description}),
     );
     if (!confirmed) return;
     setAdminDeletingId(resource.id);
@@ -1073,11 +1075,11 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setSelectedResource((current) => current?.id === resource.id ? null : current);
       setAlbumSelectedIds((current) => current.filter((id) => id !== resource.id));
       const warningText = result.cleanupWarnings.length > 0
-        ? `；注意：${result.cleanupWarnings.join("、")}`
+        ? t("；注意：{v0}", undefined, {v0: result.cleanupWarnings.join("、")})
         : "";
       setStatusMessage(`${result.message}${warningText}`);
     } catch (error) {
-      const message = (error as Error)?.message || "管理员删除素材失败";
+      const message = (error as Error)?.message || t("管理员删除素材失败");
       if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
         adminSession.handleUnauthorized();
       }
@@ -1090,9 +1092,9 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
   const handleAdminQuotaReset = async (resource: ResourceItem) => {
     const adminToken = adminSession.adminToken;
     if (!adminMode || !adminToken || adminDeletingId != null || adminQuotaResettingId != null || adminUploaderPurgingId != null) return;
-    const uploaderName = resource.author?.trim() || "该上传人";
+    const uploaderName = resource.author?.trim() || t("该上传人");
     const confirmed = window.confirm(
-      `确定将「${uploaderName}」的剩余上传额度重置为 50 次吗？\n\n这会替换现有额外上传额度，但不会删除素材或清除历史上传记录。`,
+      t("确定将「{v0}」的剩余上传额度重置为 50 次吗？\n\n这会替换现有额外上传额度，但不会删除素材或清除历史上传记录。", undefined, {v0: uploaderName}),
     );
     if (!confirmed) return;
     setAdminQuotaResettingId(resource.id);
@@ -1100,9 +1102,9 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
     setStatusMessage("");
     try {
       const result = await adminResetUploaderQuota(adminToken, resource.id);
-      setStatusMessage(`${result.message}（当前剩余 ${result.shareRemaining} 次）`);
+      setStatusMessage(t("{v0}（当前剩余 {v1} 次）", undefined, {v0: result.message, v1: result.shareRemaining}));
     } catch (error) {
-      const message = (error as Error)?.message || "管理员重置上传额度失败";
+      const message = (error as Error)?.message || t("管理员重置上传额度失败");
       if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
         adminSession.handleUnauthorized();
       }
@@ -1129,14 +1131,14 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       // Resolve the uploader server-side first. The response contains only a
       // masked serial, so the browser never needs to receive or submit the SN.
       const summary = await adminFetchUploaderSummary(adminToken, resource.id);
-      const bannedText = summary.banned ? "（当前已禁止上传，将再次清理并保持禁止状态）" : "";
+      const bannedText = summary.banned ? t("（当前已禁止上传，将再次清理并保持禁止状态）") : "";
       const confirmed = window.confirm(
-        `确定删除上传人「${summary.uploaderName}」的全部素材并禁止继续上传吗？\n\nSN：${summary.uploaderSerialMasked}\n当前公开素材：${summary.publishedResourceCount} 条${bannedText}\n\n将删除该上传人的公开素材、审核中的记录和临时对象，此操作不可撤销。`,
+        t("确定删除上传人「{v0}」的全部素材并禁止继续上传吗？\n\nSN：{v1}\n当前公开素材：{v2} 条{v3}\n\n将删除该上传人的公开素材、审核中的记录和临时对象，此操作不可撤销。", undefined, {v0: summary.uploaderName, v1: summary.uploaderSerialMasked, v2: summary.publishedResourceCount, v3: bannedText}),
       );
       if (!confirmed) return;
 
       const confirmedAgain = window.confirm(
-        `请再次确认：删除「${summary.uploaderName}」的全部素材，并永久禁止该上传人继续上传？\n\n确认后将立即执行，无法恢复。`,
+        t("请再次确认：删除「{v0}」的全部素材，并永久禁止该上传人继续上传？\n\n确认后将立即执行，无法恢复。", undefined, {v0: summary.uploaderName}),
       );
       if (!confirmedAgain) return;
 
@@ -1166,13 +1168,13 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
       setSelectedResource((current) => current && deletedIdSet.has(current.id) ? null : current);
       setAlbumSelectedIds((current) => current.filter((id) => !deletedIdSet.has(id)));
       const warningText = result.cleanupWarnings.length > 0
-        ? `；注意：${result.cleanupWarnings.join("、")}`
+        ? t("；注意：{v0}", undefined, {v0: result.cleanupWarnings.join("、")})
         : "";
       setStatusMessage(
-        `${result.message}（上传人：${result.uploaderName} · SN：${result.uploaderSerialMasked} · 删除公开素材 ${result.deletedResourceCount} 条 · 清理审核记录 ${result.deletedReviewCount} 条）${warningText}`,
+        t("{v0}（上传人：{v1} · SN：{v2} · 删除公开素材 {v3} 条 · 清理审核记录 {v4} 条）{v5}", undefined, {v0: result.message, v1: result.uploaderName, v2: result.uploaderSerialMasked, v3: result.deletedResourceCount, v4: result.deletedReviewCount, v5: warningText}),
       );
     } catch (error) {
-      const message = (error as Error)?.message || "管理员清理上传人失败";
+      const message = (error as Error)?.message || t("管理员清理上传人失败");
       if (message.includes("token") || message.includes("未授权") || message.includes("登录")) {
         adminSession.handleUnauthorized();
       }
@@ -1197,38 +1199,36 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           <div className="mb-5">
             {!adminSession.authenticated ? (
               <AdminLoginPanel
-                title="素材库管理员登录"
-                description="登录后可永久删除任意素材、重置上传额度，或清理指定上传人的全部素材并禁止继续上传。所有操作均由服务器验证管理员权限。"
+                title={t("素材库管理员登录")}
+                description={t("登录后可永久删除任意素材、重置上传额度，或清理指定上传人的全部素材并禁止继续上传。所有操作均由服务器验证管理员权限。")}
                 onLoggedIn={adminSession.refreshSession}
               />
             ) : (
               <SiteAlert variant="success" className="flex flex-wrap items-center justify-between gap-3">
-                <span>管理员模式已开启。素材卡片右下角“•••”菜单中可以重置额度、删除单个素材，或清理上传人全部素材并禁止上传。</span>
+                <span>{t("管理员模式已开启。素材卡片右下角“•••”菜单中可以重置额度、删除单个素材，或清理上传人全部素材并禁止上传。")}</span>
                 <button
                   type="button"
                   onClick={adminSession.logout}
                   className="shrink-0 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-slate-900 dark:text-emerald-300"
                 >
-                  退出管理员
-                </button>
+                  {" "}{t("退出管理员")}{" "}</button>
               </SiteAlert>
             )}
           </div>
         ) : null}
         {!authenticated && !adminMode ? (
           <SiteAlert variant="info" className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <span>当前为公开浏览模式，仅加载静态封面；打开详情、点赞、收藏、下载和设备传输需要连接佳点设备。</span>
+            <span>{t("当前为公开浏览模式，仅加载静态封面；打开详情、点赞、收藏、下载和设备传输需要连接佳点设备。")}</span>
             <button
               type="button"
               onClick={() => navigate("/auth", { state: { from: location } })}
               className="shrink-0 rounded-full bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#0878e8]"
             >
-              连接设备
-            </button>
+              {" "}{t("连接设备")}{" "}</button>
           </SiteAlert>
         ) : null}
         <details className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 lg:hidden dark:border-slate-800 dark:bg-slate-900">
-          <summary className="cursor-pointer font-semibold">筛选素材</summary>
+          <summary className="cursor-pointer font-semibold">{t("筛选素材")}</summary>
           <div className="mt-4">
             <ResourceLibrarySidebar
               resources={resources}
@@ -1317,12 +1317,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
 
           <div className="min-w-0">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <nav className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-black/[.055] bg-white/65 p-1 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055]" aria-label="素材发现栏目">
+              <nav className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-black/[.055] bg-white/65 p-1 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055]" aria-label={t("素材发现栏目")}>
                 {([
-                  ["recommend", "为你推荐"],
-                  ["latest", "最新上传"],
-                  ["following", "关注动态"],
-                  ["hot", "热门排行"],
+                  ["recommend", t("为你推荐")],
+                  ["latest", t("最新上传")],
+                  ["following", t("关注动态")],
+                  ["hot", t("热门排行")],
                 ] as const).filter(([value]) => authenticated || value !== "following").map(([value, label]) => {
                   const active = value === "recommend"
                     ? showingRecommendations
@@ -1340,7 +1340,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                           : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
                       }`}
                     >
-                      {label}
+                      {t(label)}
                     </button>
                   );
                 })}
@@ -1351,24 +1351,23 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                   disabled={recommendationsLoading}
                   onClick={() => setRecommendationRefreshKey((value) => value + 1)}
                   className="inline-flex items-center gap-1.5 rounded-full border border-black/[.06] bg-white/70 px-3.5 py-2 text-sm font-medium text-[#0071e3] shadow-sm transition hover:-translate-y-0.5 hover:bg-white disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-white/[.055] dark:text-sky-300"
-                  aria-label="刷新推荐素材"
+                  aria-label={t("刷新推荐素材")}
                 >
                   <span aria-hidden="true">↻</span>
-                  {recommendationsLoading ? "刷新中…" : "换一批"}
+                  {recommendationsLoading ? t("刷新中…") : t("换一批")}
                 </button>
               ) : null}
             </div>
             <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
-                共 <strong className="text-lg text-slate-700 dark:text-slate-200">{displayedTotalItems}</strong> 张，{displayedTotalPages} 页
-                {currentPage !== 0 ? (
+                {t("共 {count} 张，{pages} 页", "Materials: {count} · Pages: {pages}", { count: formatNumber(displayedTotalItems), pages: formatNumber(displayedTotalPages) })}{currentPage !== 0 ? (
                   <>
-                    <span> · 每页</span>
+                    <span> {" "}{t("· 每页")}</span>
                     <select value={pageSize} onChange={(event) => {
                       setCurrentPage(1);
                       setPageSize(Number(event.target.value));
                     }} className="ml-1 rounded-lg border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                      {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size} 张</option>)}
+                      {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size} {" "}{t("张")}</option>)}
                     </select>
                   </>
                 ) : null}
@@ -1391,7 +1390,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                       }`}
                     >
                       <span aria-hidden="true">⊘</span>
-                      {showHidden ? "返回素材库" : `已屏蔽用户 ${blockedUploaderCount}`}
+                      {showHidden ? t("返回素材库") : t("已屏蔽用户 {v0}", undefined, {v0: blockedUploaderCount})}
                     </button>
                     <button
                       type="button"
@@ -1404,7 +1403,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                       }`}
                     >
                       <span aria-hidden="true">▦</span>
-                      {albumMode ? `相册模式 · ${albumSelectedIds.length}` : "相册模式"}
+                      {albumMode ? t("相册模式 · {v0}", undefined, {v0: albumSelectedIds.length}) : t("相册模式")}
                     </button>
                   </>
                 ) : null}
@@ -1418,19 +1417,19 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                     }}
                     className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
-                    <option value="latest">最新优先</option>
-                    <option value="earliest">最早优先</option>
-                    <option value="hot">热门排行</option>
-                    <option value="weeklyTop">周下载 TOP20</option>
+                    <option value="latest">{t("最新优先")}</option>
+                    <option value="earliest">{t("最早优先")}</option>
+                    <option value="hot">{t("热门排行")}</option>
+                    <option value="weeklyTop">{t("周下载 TOP20")}</option>
                   </select>
                 ) : null}
               </div>
             </div>
 
-            {visibleCatalogError || errorMessage ? <SiteAlert variant="error" className="mb-5">{visibleCatalogError || errorMessage}</SiteAlert> : null}
-            {statusMessage ? <SiteAlert variant="success" className="mb-5">{statusMessage}</SiteAlert> : null}
+            {visibleCatalogError || errorMessage ? <SiteAlert variant="error" className="mb-5">{t(visibleCatalogError || errorMessage)}</SiteAlert> : null}
+            {statusMessage ? <SiteAlert variant="success" className="mb-5">{t(statusMessage)}</SiteAlert> : null}
             {showInitialLoader ? (
-              <section className="resource-card-grid gap-5" aria-label={recommendationsLoading ? "正在加载推荐素材" : "正在加载素材"}>
+              <section className="resource-card-grid gap-5" aria-label={recommendationsLoading ? t("正在加载推荐素材") : t("正在加载素材")}>
                 {Array.from({ length: 8 }, (_, index) => <CompactResourceCardSkeleton key={index} />)}
               </section>
             ) : null}
@@ -1481,25 +1480,25 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
             {canRenderCards && displayedItems.length === 0 ? (
               <div className="rounded-2xl bg-white p-10 text-center text-slate-400 dark:bg-slate-900">
                 {showingRecommendations
-                  ? "暂时没有可推荐的素材，请点击“换一批”重试。"
+                  ? t("暂时没有可推荐的素材，请点击“换一批”重试。")
                   : showHidden
-                    ? "当前设备没有已屏蔽素材。"
+                    ? t("当前设备没有已屏蔽素材。")
                     : followingOnly
-                      ? "还没有关注上传者，先在喜欢的上传者素材卡片上点击关注。"
-                      : "没有匹配的素材，请调整筛选条件。"}
+                      ? t("还没有关注上传者，先在喜欢的上传者素材卡片上点击关注。")
+                      : t("没有匹配的素材，请调整筛选条件。")}
               </div>
             ) : null}
 
             {shouldShowPagination ? (
-              <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="素材分页">
-                <button type="button" disabled={currentPage <= 0} onClick={handlePreviousPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">上一页</button>
-                <button type="button" onClick={handleRecommendationHome} className={`h-9 rounded-full px-3.5 text-sm ${currentPage === 0 ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>首页</button>
+              <nav className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label={t("素材分页")}>
+                <button type="button" disabled={currentPage <= 0} onClick={handlePreviousPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">{t("上一页")}</button>
+                <button type="button" onClick={handleRecommendationHome} className={`h-9 rounded-full px-3.5 text-sm ${currentPage === 0 ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{t("首页")}</button>
                 {pageList.map((page) => (
                   <button key={page} type="button" onClick={() => setCurrentPage(page)} className={`h-9 min-w-9 rounded-full px-3 text-sm ${currentPage === page ? "bg-orange-500 text-white" : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}>{page}</button>
                 ))}
-                <button type="button" disabled={currentPage >= totalPages} onClick={handleNextPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">下一页</button>
+                <button type="button" disabled={currentPage >= totalPages} onClick={handleNextPage} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900">{t("下一页")}</button>
                 <form noValidate onSubmit={handlePageJump} className="ml-1 flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                  <span>到</span>
+                  <span>{t("到")}</span>
                   <input
                     type="number"
                     min={1}
@@ -1508,13 +1507,12 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                     inputMode="numeric"
                     value={pageJumpInput}
                     onChange={(event) => setPageJumpInput(event.target.value)}
-                    aria-label={`跳转页码，共 ${totalPages} 页`}
+                    aria-label={t("跳转页码，共 {v0} 页", undefined, {v0: totalPages})}
                     className="h-7 w-14 rounded-lg border border-slate-200 bg-slate-50 px-1.5 text-center text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:ring-orange-900/40"
                   />
-                  <span>页</span>
+                  <span>{t("页")}</span>
                   <button type="submit" className="h-7 rounded-full bg-orange-500 px-2.5 text-xs font-medium text-white transition hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
-                    跳转
-                  </button>
+                    {" "}{t("跳转")}{" "}</button>
                 </form>
               </nav>
             ) : null}
@@ -1562,7 +1560,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
           ) : null}
 
           {shouldShowPagination ? (
-            <nav className="hidden 2xl:sticky 2xl:top-[84px] 2xl:flex 2xl:flex-col 2xl:gap-4" aria-label="快速翻页">
+            <nav className="hidden 2xl:sticky 2xl:top-[84px] 2xl:flex 2xl:flex-col 2xl:gap-4" aria-label={t("快速翻页")}>
               <button
                 type="button"
                 disabled={currentPage <= 0}
@@ -1570,7 +1568,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                 className="group flex min-h-[152px] w-full flex-col items-center justify-center gap-2 rounded-3xl border border-slate-200 bg-white px-3 py-5 text-lg font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-[#0071e3]/40 hover:text-[#0071e3] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
               >
                 <span aria-hidden="true" className="text-5xl font-light leading-none text-[#0071e3] transition group-hover:scale-110">↑</span>
-                <span>上一页</span>
+                <span>{t("上一页")}</span>
               </button>
               <button
                 type="button"
@@ -1579,7 +1577,7 @@ export default function ResourcesPage({ adminMode = false }: ResourcesPageProps)
                 className="group flex min-h-[152px] w-full flex-col items-center justify-center gap-2 rounded-3xl border border-[#0071e3]/25 bg-[#0071e3] px-3 py-5 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,.24)] transition hover:-translate-y-0.5 hover:bg-[#0878e8] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
               >
                 <span aria-hidden="true" className="text-5xl font-light leading-none transition group-hover:scale-110">↓</span>
-                <span>下一页</span>
+                <span>{t("下一页")}</span>
               </button>
             </nav>
           ) : null}

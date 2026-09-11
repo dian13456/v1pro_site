@@ -231,15 +231,17 @@ export function renderAppleLyricsCanvas(
   document: BrowserLrcDocument,
   positionSeconds: number,
   durationSeconds: number,
+  waitingText = "等待音乐开始",
 ): LyricsRenderState {
   canvas.width = LYRICS_PANEL_WIDTH;
   canvas.height = LYRICS_PANEL_HEIGHT;
   const ctx = canvas.getContext("2d", { alpha: false });
   if (!ctx) throw new Error("Canvas 不可用。");
-  const state = lyricStateAt(document, positionSeconds);
+  const lyricState = lyricStateAt(document, positionSeconds);
+  const state = lyricState.index < 0 ? { ...lyricState, current: waitingText } : lyricState;
   const index = state.index;
   const previous = index > 0 ? document.lines[index - 1].text : "";
-  const current = index >= 0 ? document.lines[index].text : "等待音乐开始";
+  const current = state.current;
   const next = document.lines[index + 1]?.text || (index < 0 ? document.lines[0]?.text : "") || "";
 
   const bg = ctx.createLinearGradient(0, 0, LYRICS_PANEL_WIDTH, LYRICS_PANEL_HEIGHT);
