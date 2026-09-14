@@ -18,7 +18,9 @@ func isLegacyManagedImageHost(host string) bool {
 	if h == "media.jadot.cn" || h == "media.jadot.club" {
 		return true
 	}
-	return false
+	// Older promo records retain URLs from the former per-type image bucket.
+	// The object key is still valid after migration to the unified bucket.
+	return strings.HasPrefix(h, "v1image-") && strings.Contains(h, ".cos.")
 }
 
 func stripProtocolAndQuery(raw string) string {
