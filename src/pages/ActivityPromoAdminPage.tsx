@@ -1,5 +1,5 @@
 import { translate as t, useI18n, formatDate } from "../i18n";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
@@ -21,6 +21,7 @@ import {
   adminFetchPromoSubmissionDetail,
   adminFetchPromoSubmissions,
   adminReviewPromoSubmission,
+  adminUploadPaymentProof,
 } from "../services/promoService";
 import type { PromoCampaignId, PromoSubmissionRecord } from "../types/promo";
 import { PROMO_CAMPAIGN_LABEL, PROMO_STATUS_LABEL } from "../types/promo";
@@ -36,6 +37,7 @@ export default function ActivityPromoAdminPage() {
   const [campaignFilter, setCampaignFilter] = useState<PromoCampaignId | "">("");
   const [statusFilter, setStatusFilter] = useState("");
   const [adminNote, setAdminNote] = useState("");
+  const [proofUploading, setProofUploading] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -101,6 +103,23 @@ export default function ActivityPromoAdminPage() {
       await loadList(adminToken);
     } catch (err) {
       setErrorMessage((err as Error)?.message || "操作失败");
+    }
+  };
+
+  const handlePaymentProofUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !adminToken || !selectedId) return;
+    setProofUploading(true);
+    try {
+      const updated = await adminUploadPaymentProof(adminToken, selectedId, file);
+      setDetail(updated);
+      setNotice("打款凭证已上传");
+      await loadList(adminToken);
+    } catch (err) {
+      setErrorMessage((err as Error)?.message || "上传打款凭证失败");
+    } finally {
+      setProofUploading(false);
     }
   };
 
@@ -265,6 +284,29 @@ export default function ActivityPromoAdminPage() {
                       className="h-44 w-full max-w-xs"
                       adminToken={adminToken}
                     />
+                  </div>
+                ) : null}
+                {detail.status === "approved" ? (
+                  <div>
+                    <p className="mb-2 text-sm font-medium">打款凭证</p>
+                    <MallProductImage
+                      imageUrl={detail.paymentProofUrl}
+                      title="打款凭证"
+                      emptyText="尚未上传打款凭证"
+                      className="h-44 w-full max-w-xs"
+                      adminToken={adminToken}
+                    />
+                    <label className="mt-2 inline-flex cursor-pointer items-center rounded-xl border border-violet-300/70 bg-white/60 px-3 py-2 text-sm text-violet-700 transition hover:bg-white dark:border-violet-400/30 dark:bg-slate-900/50 dark:text-violet-200">
+                      {proofUploading ? "上传中…" : detail.paymentProofUrl ? "更换凭证图片" : "上传打款凭证"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        disabled={proofUploading}
+                        onChange={(event) => void handlePaymentProofUpload(event)}
+                      />
+                    </label>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">支持 JPG、PNG、WEBP，5MB 以内</p>
                   </div>
                 ) : null}
               </div>

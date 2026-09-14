@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS promo_submission (
   shipping_address_enc TEXT NOT NULL,
   video_link TEXT NOT NULL,
   payment_qr_url_enc TEXT NOT NULL,
+  payment_proof_url TEXT NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'pending',
   admin_note TEXT NOT NULL,
   created_at BIGINT NOT NULL DEFAULT 0,
@@ -59,7 +61,19 @@ CREATE TABLE IF NOT EXISTS promo_submission (
   UNIQUE KEY uk_promo_user_group (user_serial, choice_group),
   KEY idx_promo_campaign_status (campaign_id, status, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
-	return err
+	if err != nil {
+		return err
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='promo_submission' AND COLUMN_NAME='payment_proof_url'`).Scan(&count); err != nil {
+		return fmt.Errorf("check promo_submission.payment_proof_url failed: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE promo_submission ADD COLUMN payment_proof_url TEXT NOT NULL AFTER payment_qr_url_enc`); err != nil {
+			return fmt.Errorf("add promo_submission.payment_proof_url failed: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *promoMySQLStore) Close() error {
@@ -76,7 +90,7 @@ func scanPromoSubmission(scanner interface {
 	err := scanner.Scan(
 		&item.ID, &item.CampaignID, &item.ChoiceGroup, &item.UserSerial,
 		&item.OrderNo, &item.OrderScreenshotURL, &item.InjectionColorNote,
-		&item.ShippingAddressEnc, &item.VideoLink, &item.PaymentQrURLEnc,
+		&item.ShippingAddressEnc, &item.VideoLink, &item.PaymentQrURLEnc, &item.PaymentProofURL,
 		&item.Status, &item.AdminNote, &item.CreatedAt, &item.UpdatedAt,
 	)
 	return item, err
@@ -85,7 +99,7 @@ func scanPromoSubmission(scanner interface {
 func (s *promoMySQLStore) findByUserAndGroup(ctx context.Context, userSerial, choiceGroup string) (*PromoSubmission, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, campaign_id, choice_group, user_serial, order_no, order_screenshot_url,
-       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc,
+       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc, payment_proof_url,
        status, admin_note, created_at, updated_at
 FROM promo_submission
 WHERE user_serial = ? AND choice_group = ?
@@ -105,11 +119,11 @@ func (s *promoMySQLStore) insertSubmission(ctx context.Context, item PromoSubmis
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO promo_submission (
   id, campaign_id, choice_group, user_serial, order_no, order_screenshot_url,
-  injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc,
+  injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc, payment_proof_url,
   status, admin_note, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, item.CampaignID, item.ChoiceGroup, item.UserSerial, item.OrderNo, item.OrderScreenshotURL,
-		item.InjectionColorNote, item.ShippingAddressEnc, item.VideoLink, item.PaymentQrURLEnc,
+		item.InjectionColorNote, item.ShippingAddressEnc, item.VideoLink, item.PaymentQrURLEnc, item.PaymentProofURL,
 		item.Status, item.AdminNote, item.CreatedAt, item.UpdatedAt,
 	)
 	return item, err
@@ -124,7 +138,7 @@ func (s *promoMySQLStore) countSubmissionsByCampaign(ctx context.Context, campai
 func (s *promoMySQLStore) listSubmissions(ctx context.Context, campaignID, status string) ([]PromoSubmission, error) {
 	query := `
 SELECT id, campaign_id, choice_group, user_serial, order_no, order_screenshot_url,
-       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc,
+       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc, payment_proof_url,
        status, admin_note, created_at, updated_at
 FROM promo_submission WHERE 1=1`
 	args := make([]any, 0, 2)
@@ -156,7 +170,7 @@ FROM promo_submission WHERE 1=1`
 func (s *promoMySQLStore) getSubmission(ctx context.Context, id string) (*PromoSubmission, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, campaign_id, choice_group, user_serial, order_no, order_screenshot_url,
-       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc,
+       injection_color_note, shipping_address_enc, video_link, payment_qr_url_enc, payment_proof_url,
        status, admin_note, created_at, updated_at
 FROM promo_submission WHERE id = ?`, id)
 	item, err := scanPromoSubmission(row)
@@ -181,6 +195,21 @@ UPDATE promo_submission SET status = ?, admin_note = ?, updated_at = ? WHERE id 
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
 		return nil, errors.New("记录不存在")
+	}
+	return s.getSubmission(ctx, id)
+}
+
+func (s *promoMySQLStore) updatePaymentProofURL(ctx context.Context, id, proofURL string) (*PromoSubmission, error) {
+	now := time.Now().UnixMilli()
+	res, err := s.db.ExecContext(ctx, `
+UPDATE promo_submission SET payment_proof_url = ?, updated_at = ?
+WHERE id = ? AND status = ?`, proofURL, now, id, PromoStatusApproved)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return nil, errors.New("记录不存在或报名尚未审核通过")
 	}
 	return s.getSubmission(ctx, id)
 }

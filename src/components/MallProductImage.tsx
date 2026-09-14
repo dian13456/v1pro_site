@@ -7,6 +7,7 @@ interface MallProductImageProps {
   title: string;
   className?: string;
   adminToken?: string;
+  emptyText?: string;
 }
 
 export function MallProductImage({
@@ -14,6 +15,7 @@ export function MallProductImage({
   title,
   className = "h-40 w-full",
   adminToken,
+  emptyText = "暂无商品图",
 }: MallProductImageProps) {
   useI18n();
   const [src, setSrc] = useState("");
@@ -68,7 +70,7 @@ export function MallProductImage({
       <div
         className={`flex items-center justify-center rounded-xl border border-dashed border-white/30 bg-white/40 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-400 ${className}`}
       >
-        {loading ? t("加载中…") : t("暂无商品图")}
+        {loading ? t("加载中…") : t(emptyText)}
       </div>
     );
   }

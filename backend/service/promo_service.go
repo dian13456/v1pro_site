@@ -331,6 +331,14 @@ func (s *PromoService) ReviewSubmission(id, status, adminNote string) (PromoSubm
 	return s.toPlain(*updated, true)
 }
 
+func (s *PromoService) UpdatePaymentProofURL(id, proofURL string) (PromoSubmissionPlain, error) {
+	updated, err := s.repo.UpdatePaymentProofURL(id, proofURL)
+	if err != nil {
+		return PromoSubmissionPlain{}, err
+	}
+	return s.toPlain(*updated, true)
+}
+
 func (s *PromoService) toPlain(item PromoSubmission, decryptSensitive bool) (PromoSubmissionPlain, error) {
 	plain := PromoSubmissionPlain{
 		ID:                 item.ID,
@@ -341,6 +349,7 @@ func (s *PromoService) toPlain(item PromoSubmission, decryptSensitive bool) (Pro
 		OrderScreenshotURL: item.OrderScreenshotURL,
 		InjectionColorNote: item.InjectionColorNote,
 		VideoLink:          item.VideoLink,
+		PaymentProofURL:    item.PaymentProofURL,
 		Status:             item.Status,
 		AdminNote:          item.AdminNote,
 		CreatedAt:          item.CreatedAt,

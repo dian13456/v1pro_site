@@ -44,6 +44,7 @@ export interface PromoSubmissionRecord {
   shippingAddress?: string;
   videoLink?: string;
   paymentQrUrl?: string;
+  paymentProofUrl?: string;
   status: PromoSubmissionStatus;
   adminNote?: string;
   createdAt: number;

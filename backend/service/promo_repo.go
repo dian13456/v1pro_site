@@ -272,6 +272,43 @@ func (r *PromoRepo) UpdateSubmissionStatus(id, status, adminNote string) (*Promo
 	return nil, errors.New("记录不存在")
 }
 
+// UpdatePaymentProofURL stores an administrator-uploaded proof after payment.
+// Only approved submissions may receive a proof.
+func (r *PromoRepo) UpdatePaymentProofURL(id, proofURL string) (*PromoSubmission, error) {
+	id = strings.TrimSpace(id)
+	proofURL = strings.TrimSpace(proofURL)
+	if id == "" || proofURL == "" {
+		return nil, errors.New("打款凭证地址无效")
+	}
+	if r.UsesMySQL() {
+		ctx, cancel := r.ctx()
+		defer cancel()
+		return r.mysql.updatePaymentProofURL(ctx, id, proofURL)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.loadJSONLocked(); err != nil {
+		return nil, err
+	}
+	for i := range r.cache.Submissions {
+		item := &r.cache.Submissions[i]
+		if item.ID != id {
+			continue
+		}
+		if item.Status != PromoStatusApproved {
+			return nil, errors.New("只有审核通过的报名才能上传打款凭证")
+		}
+		item.PaymentProofURL = proofURL
+		item.UpdatedAt = time.Now().UnixMilli()
+		copy := *item
+		if err := r.saveJSONLocked(); err != nil {
+			return nil, err
+		}
+		return &copy, nil
+	}
+	return nil, errors.New("记录不存在")
+}
+
 // UpdateSubmissionContent updates fields owned by the applicant. Campaign and
 // ownership fields are intentionally immutable. A reviewed/approved submission
 // cannot be changed through this path.

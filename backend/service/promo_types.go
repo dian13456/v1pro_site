@@ -3,10 +3,10 @@ package service
 import "time"
 
 const (
-	PromoCampaignCNCRrepurchase      = "cnc-repurchase-bonus"
-	PromoCampaignVideoLikeFreeOrder    = "video-like-free-order"
-	PromoChoiceGroupSpring2026       = "promo-choice-2026-spring"
-	PromoCampaignQuotaLimit          = 260
+	PromoCampaignCNCRrepurchase     = "cnc-repurchase-bonus"
+	PromoCampaignVideoLikeFreeOrder = "video-like-free-order"
+	PromoChoiceGroupSpring2026      = "promo-choice-2026-spring"
+	PromoCampaignQuotaLimit         = 260
 
 	PromoStatusPending  = "pending"
 	PromoStatusApproved = "approved"
@@ -14,12 +14,12 @@ const (
 )
 
 type PromoCampaignDefinition struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Summary     string `json:"summary"`
-	Description string `json:"description"`
-	ChoiceGroup string `json:"choiceGroup"`
-	Status      string `json:"status"`
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Summary        string `json:"summary"`
+	Description    string `json:"description"`
+	ChoiceGroup    string `json:"choiceGroup"`
+	Status         string `json:"status"`
 	StartTime      int64  `json:"startTime"`
 	EndTime        int64  `json:"endTime"`
 	QuotaLimit     int    `json:"quotaLimit"`
@@ -38,6 +38,7 @@ type PromoSubmission struct {
 	ShippingAddressEnc string `json:"shippingAddressEnc,omitempty"`
 	VideoLink          string `json:"videoLink,omitempty"`
 	PaymentQrURLEnc    string `json:"paymentQrUrlEnc,omitempty"`
+	PaymentProofURL    string `json:"paymentProofUrl,omitempty"`
 	Status             string `json:"status"`
 	AdminNote          string `json:"adminNote,omitempty"`
 	CreatedAt          int64  `json:"createdAt"`
@@ -55,6 +56,7 @@ type PromoSubmissionPlain struct {
 	ShippingAddress    string `json:"shippingAddress,omitempty"`
 	VideoLink          string `json:"videoLink,omitempty"`
 	PaymentQrURL       string `json:"paymentQrUrl,omitempty"`
+	PaymentProofURL    string `json:"paymentProofUrl,omitempty"`
 	Status             string `json:"status"`
 	AdminNote          string `json:"adminNote,omitempty"`
 	CreatedAt          int64  `json:"createdAt"`

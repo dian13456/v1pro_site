@@ -237,3 +237,31 @@ export async function adminReviewPromoSubmission(
   }
   return payload.submission;
 }
+
+export async function adminUploadPaymentProof(
+  adminToken: string,
+  id: string,
+  file: File,
+): Promise<PromoSubmissionRecord> {
+  const form = new FormData();
+  form.append("file", file);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/admin/promo/submissions/${encodeURIComponent(id)}/payment-proof`, {
+      method: "POST",
+      headers: { "X-Review-Admin-Token": adminToken },
+      body: form,
+    });
+  } catch (err) {
+    throw new Error(formatClientError(err, "上传打款凭证失败"));
+  }
+  const payload = (await response.json()) as {
+    success?: boolean;
+    submission?: PromoSubmissionRecord;
+    message?: string;
+  };
+  if (!response.ok || !payload.success || !payload.submission) {
+    throw new Error(payload.message || `上传失败（HTTP ${response.status}）`);
+  }
+  return payload.submission;
+}

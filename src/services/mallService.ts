@@ -233,12 +233,32 @@ export function isCosMallImageUrl(imageUrl: string): boolean {
   return /\.cos\.[a-z0-9-]+\.myqcloud\.com\//i.test(imageUrl.trim());
 }
 
+/**
+ * Activity uploads use the configured public media host and the same private
+ * COS bucket as mall images. They must go through the authenticated image
+ * proxy too; loading the custom host directly can fail when the bucket is
+ * private, which used to make promo screenshots appear as "暂无商品图".
+ */
+export function isManagedImageUrl(imageUrl: string): boolean {
+  const raw = imageUrl.trim();
+  if (!raw || isCosMallImageUrl(raw)) return Boolean(raw);
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    const trustedMediaHost = host === "media.jadot.cn" || host === "media.jadot.club";
+    const managedPath = /^\/(?:activity\/promo|mall\/products)\//i.test(url.pathname);
+    return trustedMediaHost && managedPath;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchMallImageBlobUrl(imageUrl: string, adminToken?: string): Promise<string> {
   const raw = imageUrl.trim();
   if (!raw || isStaticMode()) {
     return raw;
   }
-  if (!isCosMallImageUrl(raw)) {
+  if (!isManagedImageUrl(raw)) {
     return raw;
   }
 
