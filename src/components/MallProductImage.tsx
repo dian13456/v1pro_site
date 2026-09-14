@@ -18,23 +18,26 @@ export function MallProductImage({
   emptyText = "暂无商品图",
 }: MallProductImageProps) {
   useI18n();
+  const rawImageUrl = (imageUrl || "").trim();
   const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [triedFallback, setTriedFallback] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl = "";
     setFailed(false);
-    const raw = (imageUrl || "").trim();
-    if (!raw) {
+    setTriedFallback(false);
+    setSrc("");
+    if (!rawImageUrl) {
       setSrc("");
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    void fetchMallImageBlobUrl(raw, adminToken)
+    void fetchMallImageBlobUrl(rawImageUrl, adminToken)
       .then((resolved) => {
         if (cancelled) {
           if (resolved.startsWith("blob:")) {
@@ -43,12 +46,14 @@ export function MallProductImage({
           return;
         }
         objectUrl = resolved;
+        setTriedFallback(false);
         setSrc(resolved);
       })
       .catch(() => {
         if (!cancelled) {
-          setFailed(true);
-          setSrc("");
+          setTriedFallback(true);
+          setSrc(rawImageUrl);
+          setFailed(false);
         }
       })
       .finally(() => {
@@ -63,7 +68,7 @@ export function MallProductImage({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [imageUrl, adminToken]);
+  }, [rawImageUrl, adminToken]);
 
   if (!src || failed) {
     return (
@@ -81,7 +86,14 @@ export function MallProductImage({
       alt={title}
       className={`rounded-xl object-cover ${className}`}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (!triedFallback && src.startsWith("blob:")) {
+          setTriedFallback(true);
+          setSrc(rawImageUrl);
+          return;
+        }
+        setFailed(true);
+      }}
     />
   );
 }

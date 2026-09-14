@@ -4,10 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+func isLegacyManagedImageHost(host string) bool {
+	h := strings.TrimSpace(strings.ToLower(host))
+	if h == "" {
+		return false
+	}
+	if h == "media.jadot.cn" || h == "media.jadot.club" {
+		return true
+	}
+	return false
+}
+
+func stripProtocolAndQuery(raw string) string {
+	text := strings.TrimSpace(raw)
+	if idx := strings.Index(text, "?"); idx >= 0 {
+		text = text[:idx]
+	}
+	if idx := strings.Index(text, "#"); idx >= 0 {
+		text = text[:idx]
+	}
+	return text
+}
 
 func NormalizeMallProductImages(p *MallProduct) {
 	if p == nil {
@@ -75,7 +98,7 @@ func StripURLQuery(raw string) string {
 
 func MallImageObjectKey(publicBase, rawURL string) (string, bool) {
 	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
-	text := StripURLQuery(rawURL)
+	text := stripProtocolAndQuery(rawURL)
 	if base == "" || text == "" {
 		return "", false
 	}
@@ -88,25 +111,106 @@ func MallImageObjectKey(publicBase, rawURL string) (string, bool) {
 }
 
 func MallImageObjectKeyWithBucket(publicBase, bucket, rawURL string) (string, bool) {
-	if key, ok := MallImageObjectKey(publicBase, rawURL); ok {
-		return key, true
-	}
-	text := StripURLQuery(rawURL)
-	bucket = strings.TrimSpace(bucket)
-	if text == "" || bucket == "" {
+	candidates := mallImageObjectKeyCandidates(publicBase, bucket, rawURL)
+	if len(candidates) == 0 {
 		return "", false
+	}
+	return candidates[0], true
+}
+
+func mallImageObjectKeyCandidates(publicBase, bucket, rawURL string) []string {
+	candidates := []string{}
+	seen := map[string]struct{}{}
+	addCandidate := func(key string) {
+		key = strings.Trim(strings.TrimSpace(key), "/")
+		if key == "" {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, key)
+	}
+
+	if key, ok := MallImageObjectKey(publicBase, rawURL); ok {
+		addCandidate(key)
+	}
+
+	text := strings.TrimSpace(rawURL)
+	if text == "" {
+		return candidates
+	}
+	if !strings.Contains(text, "://") {
+		return candidates
+	}
+	parsed, err := url.Parse(text)
+	if err != nil || parsed == nil || parsed.Path == "" {
+		return candidates
+	}
+
+	pathText := strings.TrimPrefix(stripProtocolAndQuery(parsed.Path), "/")
+	if pathText == "" {
+		return candidates
+	}
+
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if strings.HasPrefix(pathText, "activity/promo/") || strings.HasPrefix(pathText, "mall/products/") {
+		if isLegacyManagedImageHost(host) {
+			addCandidate(pathText)
+		}
+	}
+
+	bucket = strings.TrimSpace(bucket)
+	if bucket == "" {
+		return candidates
 	}
 	marker := "://" + bucket + ".cos."
 	pos := strings.Index(text, marker)
 	if pos < 0 {
-		return "", false
+		return candidates
 	}
 	rest := text[pos+len(marker):]
 	slash := strings.Index(rest, "/")
 	if slash < 0 {
-		return "", false
+		return candidates
 	}
-	return rest[slash+1:], true
+	addCandidate(rest[slash+1:])
+	return candidates
+}
+
+func mallImageLoadCandidates(signer *COSSigner, key string) []string {
+	trimmed := strings.TrimLeft(strings.TrimSpace(key), "/")
+	if trimmed == "" {
+		return []string{}
+	}
+	prefixes := []string{trimmed}
+	prefix := ""
+	if signer != nil {
+		prefix = strings.Trim(strings.TrimSpace(signer.objectPrefix), "/")
+		if prefix != "" {
+			if strings.HasPrefix(trimmed, prefix+"/") {
+				prefixes = append(prefixes, strings.TrimPrefix(trimmed, prefix+"/"))
+			} else {
+				prefixes = append(prefixes, prefix+"/"+trimmed)
+			}
+		}
+	}
+
+	seen := map[string]struct{}{}
+	candidates := []string{}
+	for _, value := range prefixes {
+		value = strings.TrimLeft(strings.TrimSpace(value), "/")
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
+	}
+	return candidates
 }
 
 func MallImageContentType(objectKey string) string {
@@ -157,11 +261,20 @@ func LoadMallImageObject(ctx context.Context, signer *COSSigner, publicBase, buc
 	if !ok || signer == nil {
 		return nil, "", fmt.Errorf("图片地址无效")
 	}
-	data, err := signer.GetObject(ctx, key)
-	if err != nil {
-		return nil, "", err
+
+	candidates := mallImageLoadCandidates(signer, key)
+	var lastErr error
+	for _, candidate := range candidates {
+		data, err := signer.GetObject(ctx, candidate)
+		if err == nil {
+			return data, MallImageContentType(candidate), nil
+		}
+		lastErr = err
 	}
-	return data, MallImageContentType(key), nil
+	if lastErr != nil {
+		return nil, "", lastErr
+	}
+	return nil, "", fmt.Errorf("读取图片失败")
 }
 
 func SignMallOrderItemImages(ctx context.Context, signer *COSSigner, publicBase, bucket string, ttl time.Duration, items []MallOrderItem) {

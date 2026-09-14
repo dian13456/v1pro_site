@@ -258,9 +258,6 @@ export async function fetchMallImageBlobUrl(imageUrl: string, adminToken?: strin
   if (!raw || isStaticMode()) {
     return raw;
   }
-  if (!isManagedImageUrl(raw)) {
-    return raw;
-  }
 
   const headers: Record<string, string> = {};
   if (adminToken) {
@@ -273,20 +270,20 @@ export async function fetchMallImageBlobUrl(imageUrl: string, adminToken?: strin
 
   const path = `/api/mall/image-data?url=${encodeURIComponent(raw)}`;
   const signedInit = await withApiSignature(path, { method: "GET", headers });
-  let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, signedInit);
-  } catch (err) {
-    throw new Error(formatClientError(err, "读取商品图片失败"));
+    const response = await fetch(`${API_BASE}${path}`, signedInit);
+    if (!response.ok) {
+      throw new Error(`读取商品图片失败（HTTP ${response.status}）`);
+    }
+    const blob = await response.blob();
+    if (!blob.size) {
+      throw new Error("商品图片为空");
+    }
+    return URL.createObjectURL(blob);
+  } catch {
+    // 某些历史图片地址不支持代理时，回退到原图地址，避免误判为空。
+    return raw;
   }
-  if (!response.ok) {
-    throw new Error(`读取商品图片失败（HTTP ${response.status}）`);
-  }
-  const blob = await response.blob();
-  if (!blob.size) {
-    throw new Error("商品图片为空");
-  }
-  return URL.createObjectURL(blob);
 }
 
 export async function adminFetchMallOrders(adminToken: string): Promise<MallOrder[]> {
