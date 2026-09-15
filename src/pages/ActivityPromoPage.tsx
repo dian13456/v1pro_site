@@ -21,8 +21,12 @@ import {
   submitPromoApplication,
   updatePromoApplication,
 } from "../services/promoService";
-import type { PromoCampaignId, PromoOverview, PromoSubmissionRecord } from "../types/promo";
+import type { PromoCampaign, PromoCampaignId, PromoOverview, PromoSubmissionRecord } from "../types/promo";
 import { PROMO_CAMPAIGN_LABEL, PROMO_STATUS_LABEL } from "../types/promo";
+
+function campaignOpen(campaign: PromoCampaign): boolean {
+  return campaign.status === "active" && Date.now() >= campaign.startTime && Date.now() <= campaign.endTime;
+}
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   useI18n();
@@ -64,9 +68,9 @@ export default function ActivityPromoPage() {
     overview?.current &&
       (overview.current.status === "pending" || overview.current.status === "rejected") &&
       selectedMeta &&
-      Date.now() >= selectedMeta.startTime &&
-      Date.now() <= selectedMeta.endTime,
+      campaignOpen(selectedMeta),
   );
+  const registrationClosed = Boolean(overview?.campaigns.length && overview.campaigns.every((item) => !campaignOpen(item)));
 
   const loadData = useCallback(async () => {
     const data = await fetchPromoOverview();
@@ -78,7 +82,7 @@ export default function ActivityPromoPage() {
       return;
     }
     setSubmission(null);
-    const available = data.campaigns.find((item) => !item.quotaFull) || data.campaigns[0];
+    const available = data.campaigns.find((item) => campaignOpen(item) && !item.quotaFull);
     setSelectedCampaign(available?.id || "");
   }, []);
 
@@ -121,6 +125,10 @@ export default function ActivityPromoPage() {
   const handleSubmit = async () => {
     const isUpdate = Boolean(overview?.current);
     if (!selectedCampaign || submitting || (isUpdate && !editing)) return;
+    if (!selectedMeta || !campaignOpen(selectedMeta)) {
+      setErrorMessage("报名已截止");
+      return;
+    }
     if (!isUpdate && selectedMeta?.quotaFull) {
       setErrorMessage("该活动报名人数已满（260份），请选择另一活动");
       return;
@@ -183,22 +191,22 @@ export default function ActivityPromoPage() {
 
   return (
     <SitePageLayout
-      subtitle={t("限时福利 · 二选一参与")}
+      subtitle={t(registrationClosed ? "报名已截止" : "限时福利 · 二选一参与")}
       theme={theme}
       onSetTheme={setTheme}
       contentClassName={SITE_CONTENT_NARROW}
     >
       <SitePanel>
         <SiteSectionTitle
-          title={t("上新活动（二选一）")}
-          description={t("选择一个活动报名。提交后可以查看资料；审核前或被驳回后可以修改，审核通过后资料将锁定。")}
+          title={t(registrationClosed ? "CNC 买一送一、视频免单活动已截止" : "上新活动（二选一）")}
+          description={t(registrationClosed ? "已提交的报名仍可查看，工作人员将继续审核并处理后续事项。" : "选择一个活动报名。提交后可以查看资料；审核前或被驳回后可以修改，审核通过后资料将锁定。")}
           action={
             <Link to="/activities">
               <SiteButton type="button" variant="secondary">{t("返回活动中心")}</SiteButton>
             </Link>
           }
         />
-        {overview ? <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">{t(overview.rule)}</p> : null}
+        {overview && !registrationClosed ? <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">{t(overview.rule)}</p> : null}
       </SitePanel>
 
       {notice ? <SiteAlert variant="success">{t(notice)}</SiteAlert> : null}
@@ -210,7 +218,9 @@ export default function ActivityPromoPage() {
           <SiteSectionTitle
             title={t("我的提交")}
             description={
-              overview.current.status === "approved"
+              registrationClosed
+                ? t("已提交的报名仍可查看，工作人员将继续审核并处理后续事项。")
+                : overview.current.status === "approved"
                 ? t("审核已通过，报名资料已锁定。")
                 : overview.current.status === "rejected"
                   ? t("审核未通过，请根据审核备注修改资料后重新提交。")
@@ -267,27 +277,28 @@ export default function ActivityPromoPage() {
 
       {!loading && overview && !overview.current ? (
         <SitePanel>
-          <SiteSectionTitle title={t("选择参与的活动")} description={t("活动提交后不可更换，但审核前可以修改该活动内的填写资料。")} />
+          <SiteSectionTitle title={t(registrationClosed ? "报名已截止" : "选择参与的活动")} description={registrationClosed ? undefined : t("活动提交后不可更换，但审核前可以修改该活动内的填写资料。")} />
           <div className="mt-4 grid gap-3">
             {overview.campaigns.map((campaign) => {
               const active = selectedCampaign === campaign.id;
+              const closed = !campaignOpen(campaign);
               return (
                 <button
                   key={campaign.id}
                   type="button"
-                  disabled={campaign.quotaFull}
+                  disabled={closed || campaign.quotaFull}
                   className={`rounded-2xl border p-4 text-left transition ${
-                    campaign.quotaFull
+                    closed || campaign.quotaFull
                       ? "cursor-not-allowed border-slate-200/80 bg-slate-100/70 opacity-75 dark:border-slate-600/40 dark:bg-slate-900/50"
                       : active
                         ? "border-violet-500 bg-violet-50/80 dark:border-violet-400 dark:bg-violet-500/10"
                         : "border-white/25 bg-white/40 hover:bg-white/60 dark:border-white/10 dark:bg-slate-950/30"
                   }`}
-                  onClick={() => !campaign.quotaFull && setSelectedCampaign(campaign.id)}
+                  onClick={() => !closed && !campaign.quotaFull && setSelectedCampaign(campaign.id)}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-semibold text-slate-900 dark:text-slate-100">{t(campaign.title)}</p>
-                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{t("已填报")}{" "}{campaign.submittedCount} / {campaign.quotaLimit}{campaign.quotaFull ? t(" · 已满") : ""}
+                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{closed ? t("报名已截止") : <>{t("已填报")}{" "}{campaign.submittedCount} / {campaign.quotaLimit}{campaign.quotaFull ? t(" · 已满") : ""}</>}
                     </span>
                   </div>
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t(campaign.summary)}</p>
@@ -299,7 +310,7 @@ export default function ActivityPromoPage() {
         </SitePanel>
       ) : null}
 
-      {!loading && overview && selectedMeta && (!overview.current || editing) ? (
+      {!loading && overview && selectedMeta && campaignOpen(selectedMeta) && (!overview.current || editing) ? (
         <SitePanel>
           <SiteSectionTitle
             title={`${editing ? t("修改提交资料") : t("填写资料")} · ${t(selectedMeta.title)}`}

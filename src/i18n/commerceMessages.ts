@@ -1,5 +1,9 @@
 /** Commerce, events and AI UI copy. Business identifiers remain unchanged. */
 export const commerceMessages: Record<string, string> = {
+  "CNC 买一送一、视频免单活动已截止": "CNC buy-one-get-one and video refund events are closed",
+  "两个活动均已截止，不再接受新报名。": "Both events are closed to new registrations.",
+  "已提交的报名仍可查看，工作人员将继续审核并处理后续事项。": "You can still view existing applications. Staff will continue reviewing and processing them.",
+  "查看报名记录": "View applications",
   "请完整填写收货人、手机、QQ、省市和详细地址": "Complete the recipient name, mobile number, QQ ID, province, city and street address.",
   "手机号格式不正确": "Enter a valid mainland China mobile number.",
   "QQ 号格式不正确": "Enter a valid QQ ID.",

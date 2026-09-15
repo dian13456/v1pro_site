@@ -1,6 +1,10 @@
 package service
 
-import "time"
+import (
+	"os"
+	"strings"
+	"time"
+)
 
 const (
 	PromoCampaignCNCRrepurchase     = "cnc-repurchase-bonus"
@@ -96,6 +100,10 @@ type PromoDataStore struct {
 }
 
 func DefaultPromoCampaigns(now time.Time) []PromoCampaignDefinition {
+	status := ActivityStatusEnded
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("PROMO_REGISTRATION_CLOSED")), "false") {
+		status = ActivityStatusActive
+	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, now.Location())
 	end := time.Date(2026, 12, 31, 23, 59, 59, 0, now.Location())
 	return []PromoCampaignDefinition{
@@ -105,7 +113,7 @@ func DefaultPromoCampaigns(now time.Time) []PromoCampaignDefinition {
 			Summary:     "原有 CNC 用户复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。",
 			Description: "活动说明：原有 CNC 用户，复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。\n\n资料填写：CNC 订单号（直购用户发支付截图）、订单截图、注塑 V1PRO 颜色备注和收货地址。审核通过后安排加送发货。",
 			ChoiceGroup: PromoChoiceGroupSpring2026,
-			Status:      ActivityStatusActive,
+			Status:      status,
 			StartTime:   start.UnixMilli(),
 			EndTime:     end.UnixMilli(),
 		},
@@ -115,7 +123,7 @@ func DefaultPromoCampaigns(now time.Time) []PromoCampaignDefinition {
 			Summary:     "发布视频获赞达标，可申请订单免单。",
 			Description: "提交订单号、订单截图、视频链接与收款码，工作人员审核点赞情况后处理免单。",
 			ChoiceGroup: PromoChoiceGroupSpring2026,
-			Status:      ActivityStatusActive,
+			Status:      status,
 			StartTime:   start.UnixMilli(),
 			EndTime:     end.UnixMilli(),
 		},

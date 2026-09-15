@@ -37,7 +37,7 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
           description:
             "活动说明：原有 CNC 用户，复购注塑 V1PRO，凭订单号加送一个注塑 V1PRO。\n\n资料填写：CNC 订单号（直购用户发支付截图）、订单截图、注塑 V1PRO 颜色备注和收货地址。审核通过后安排加送发货。",
           choiceGroup: "promo-choice-2026-spring",
-          status: "active",
+          status: "ended",
           startTime: now - 86400000,
           endTime: now + 86400000 * 120,
           quotaLimit: 260,
@@ -50,7 +50,7 @@ export async function fetchPromoOverview(): Promise<PromoOverview> {
           summary: "发布视频获赞达标，可申请订单免单。",
           description: "提交订单号、订单截图、视频链接与收款码。",
           choiceGroup: "promo-choice-2026-spring",
-          status: "active",
+          status: "ended",
           startTime: now - 86400000,
           endTime: now + 86400000 * 120,
           quotaLimit: 260,

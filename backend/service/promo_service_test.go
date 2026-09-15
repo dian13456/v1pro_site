@@ -2,7 +2,48 @@ package service
 
 import "testing"
 
+func TestClosedPromosRejectNewApplicationsAndKeepAdminReview(t *testing.T) {
+	t.Setenv("STORAGE_BACKEND", "json")
+	t.Setenv("PROMO_REGISTRATION_CLOSED", "false")
+	repo, err := NewPromoRepo(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	svc := NewPromoService(repo, "test-jwt-secret")
+	input := PromoSubmissionInput{CampaignID: PromoCampaignVideoLikeFreeOrder, OrderNo: "OLD-ORDER", OrderScreenshotURL: "https://example.com/order.jpg", VideoLink: "https://example.com/video", PaymentQrURL: "https://example.com/qr.jpg"}
+	created, err := svc.Submit("EXISTING-USER", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With no explicit override, both campaigns are now closed.
+	t.Setenv("PROMO_REGISTRATION_CLOSED", "")
+	overview, err := svc.GetOverview("EXISTING-USER")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Current == nil || overview.Current.ID != created.ID {
+		t.Fatal("existing application disappeared")
+	}
+	for _, campaign := range overview.Campaigns {
+		if campaign.Status != ActivityStatusEnded {
+			t.Fatalf("campaign %s remains open", campaign.ID)
+		}
+		input.CampaignID = campaign.ID
+		if _, err := svc.Submit("NEW-USER", input); err == nil {
+			t.Fatalf("closed campaign %s accepted application", campaign.ID)
+		}
+	}
+	if _, err := svc.ReviewSubmission(created.ID, PromoStatusApproved, "review after closing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdatePaymentProofURL(created.ID, "https://example.com/proof.jpg"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPromoApplicantCanViewAndCorrectSubmissionBeforeApproval(t *testing.T) {
+	t.Setenv("PROMO_REGISTRATION_CLOSED", "false")
 	t.Setenv("STORAGE_BACKEND", "json")
 	repo, err := NewPromoRepo(t.TempDir())
 	if err != nil {
@@ -67,6 +108,7 @@ func TestPromoApplicantCanViewAndCorrectSubmissionBeforeApproval(t *testing.T) {
 }
 
 func TestPromoApplicantCannotChangeCampaignOrReadAnotherUsersSubmission(t *testing.T) {
+	t.Setenv("PROMO_REGISTRATION_CLOSED", "false")
 	t.Setenv("STORAGE_BACKEND", "json")
 	repo, err := NewPromoRepo(t.TempDir())
 	if err != nil {
