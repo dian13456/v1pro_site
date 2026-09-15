@@ -232,7 +232,7 @@ export default function ActivityPromoAdminPage() {
                   }}
                 >
                   <div
-                    className="relative my-auto max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl shadow-2xl"
+                    className="relative my-auto max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto rounded-3xl shadow-2xl"
                     role="dialog"
                     aria-modal="true"
                     aria-label={t("报名审核详情")}
@@ -265,13 +265,14 @@ export default function ActivityPromoAdminPage() {
                   </p>
                 ) : null}
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="mt-4 grid min-w-0 gap-6">
                 <div>
                   <p className="mb-2 text-sm font-medium">{t("订单截图")}</p>
                   <MallProductImage
                     imageUrl={detail.orderScreenshotUrl}
                     title={t("订单截图")}
-                    className="h-44 w-full max-w-xs"
+                    fit="contain"
+                    className="mx-auto block h-auto w-full max-w-2xl bg-white"
                     adminToken={adminToken}
                   />
                 </div>
@@ -281,7 +282,8 @@ export default function ActivityPromoAdminPage() {
                     <MallProductImage
                       imageUrl={detail.paymentQrUrl}
                       title={t("收款码")}
-                      className="h-44 w-full max-w-xs"
+                      fit="contain"
+                      className="mx-auto block h-auto w-full max-w-2xl bg-white"
                       adminToken={adminToken}
                     />
                   </div>
@@ -293,7 +295,8 @@ export default function ActivityPromoAdminPage() {
                       imageUrl={detail.paymentProofUrl}
                       title="打款凭证"
                       emptyText="尚未上传打款凭证"
-                      className="h-44 w-full max-w-xs"
+                      fit="contain"
+                      className="mx-auto block h-auto w-full max-w-2xl bg-white"
                       adminToken={adminToken}
                     />
                     <label className="mt-2 inline-flex cursor-pointer items-center rounded-xl border border-violet-300/70 bg-white/60 px-3 py-2 text-sm text-violet-700 transition hover:bg-white dark:border-violet-400/30 dark:bg-slate-900/50 dark:text-violet-200">

@@ -8,6 +8,7 @@ interface MallProductImageProps {
   className?: string;
   adminToken?: string;
   emptyText?: string;
+  fit?: "cover" | "contain";
 }
 
 export function MallProductImage({
@@ -16,6 +17,7 @@ export function MallProductImage({
   className = "h-40 w-full",
   adminToken,
   emptyText = "暂无商品图",
+  fit = "cover",
 }: MallProductImageProps) {
   useI18n();
   const rawImageUrl = (imageUrl || "").trim();
@@ -84,7 +86,7 @@ export function MallProductImage({
     <img
       src={src}
       alt={title}
-      className={`rounded-xl object-cover ${className}`}
+      className={`rounded-xl ${fit === "contain" ? "object-contain" : "object-cover"} ${className}`}
       loading="lazy"
       onError={() => {
         if (!triedFallback && src.startsWith("blob:")) {
