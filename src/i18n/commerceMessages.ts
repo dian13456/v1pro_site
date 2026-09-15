@@ -1,5 +1,10 @@
 /** Commerce, events and AI UI copy. Business identifiers remain unchanged. */
 export const commerceMessages: Record<string, string> = {
+  "拖入图片上传打款凭证": "Drop an image here to upload payment proof",
+  "拖入新图片更换打款凭证": "Drop a new image to replace payment proof",
+  "松开即可上传打款凭证": "Release to upload payment proof",
+  "也可点击此处选择图片": "Or click here to select an image",
+  "请一次上传一张打款凭证": "Upload one payment proof image at a time",
   "CNC 买一送一、视频免单活动已截止": "CNC buy-one-get-one and video refund events are closed",
   "两个活动均已截止，不再接受新报名。": "Both events are closed to new registrations.",
   "已提交的报名仍可查看，工作人员将继续审核并处理后续事项。": "You can still view existing applications. Staff will continue reviewing and processing them.",

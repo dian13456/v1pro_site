@@ -1,5 +1,5 @@
 import { translate as t, useI18n, formatDate } from "../i18n";
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { AdminLoginPanel } from "../components/AdminLoginPanel";
@@ -38,6 +38,9 @@ export default function ActivityPromoAdminPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [proofUploading, setProofUploading] = useState(false);
+  const proofUploadLock = useRef(false);
+  const [proofDragging, setProofDragging] = useState(false);
+  const [proofError, setProofError] = useState("");
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -84,6 +87,8 @@ export default function ActivityPromoAdminPage() {
 
   const handleSelect = async (id: string) => {
     if (!adminToken) return;
+    setProofError("");
+    setProofDragging(false);
     setSelectedId(id);
     try {
       const item = await adminFetchPromoSubmissionDetail(adminToken, id);
@@ -106,19 +111,35 @@ export default function ActivityPromoAdminPage() {
     }
   };
 
-  const handlePaymentProofUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !adminToken || !selectedId) return;
+  const handlePaymentProofUpload = async (files: File[]) => {
+    if (!files.length || !adminToken || !detail || detail.status !== "approved" || proofUploadLock.current) return;
+    setProofError("");
+    if (files.length !== 1) {
+      setProofError("请一次上传一张打款凭证");
+      return;
+    }
+    const file = files[0];
+    if (!/\.(jpe?g|png|webp)$/i.test(file.name) || (file.type && !["image/jpeg", "image/png", "image/webp"].includes(file.type))) {
+      setProofError("仅支持 JPG / PNG / WEBP");
+      return;
+    }
+    if (!file.size || file.size > 5 * 1024 * 1024) {
+      setProofError("图片大小需在 5MB 以内");
+      return;
+    }
+    const submissionId = detail.id;
+    proofUploadLock.current = true;
     setProofUploading(true);
     try {
-      const updated = await adminUploadPaymentProof(adminToken, selectedId, file);
-      setDetail(updated);
+      const updated = await adminUploadPaymentProof(adminToken, submissionId, file);
+      setDetail((current) => current?.id === submissionId ? updated : current);
       setNotice("打款凭证已上传");
       await loadList(adminToken);
     } catch (err) {
+      setProofError((err as Error)?.message || "上传打款凭证失败");
       setErrorMessage((err as Error)?.message || "上传打款凭证失败");
     } finally {
+      proofUploadLock.current = false;
       setProofUploading(false);
     }
   };
@@ -299,16 +320,42 @@ export default function ActivityPromoAdminPage() {
                       className="mx-auto block h-auto w-full max-w-2xl bg-white"
                       adminToken={adminToken}
                     />
-                    <label className="mt-2 inline-flex cursor-pointer items-center rounded-xl border border-violet-300/70 bg-white/60 px-3 py-2 text-sm text-violet-700 transition hover:bg-white dark:border-violet-400/30 dark:bg-slate-900/50 dark:text-violet-200">
-                      {proofUploading ? "上传中…" : detail.paymentProofUrl ? "更换凭证图片" : "上传打款凭证"}
+                    <label
+                      className={`mt-3 flex min-h-36 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center text-sm transition focus-within:ring-2 focus-within:ring-violet-500 ${proofUploading ? "cursor-wait opacity-60" : "cursor-pointer"} ${proofDragging ? "border-violet-500 bg-violet-100 dark:bg-violet-950" : "border-violet-300/70 bg-white/60 hover:bg-violet-50 dark:border-violet-400/30 dark:bg-slate-900/50"}`}
+                      aria-busy={proofUploading}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = proofUploading ? "none" : "copy";
+                        if (!proofUploading) setProofDragging(true);
+                      }}
+                      onDragLeave={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setProofDragging(false);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setProofDragging(false);
+                        void handlePaymentProofUpload(Array.from(event.dataTransfer.files));
+                      }}
+                    >
+                      <span className="font-medium text-violet-700 dark:text-violet-200" aria-live="polite">
+                        {t(proofUploading ? "上传中…" : proofDragging ? "松开即可上传打款凭证" : detail.paymentProofUrl ? "拖入新图片更换打款凭证" : "拖入图片上传打款凭证")}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{t("也可点击此处选择图片")}</span>
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         className="sr-only"
                         disabled={proofUploading}
-                        onChange={(event) => void handlePaymentProofUpload(event)}
+                        aria-label={t("上传打款凭证")}
+                        onChange={(event) => {
+                          const files = Array.from(event.target.files || []);
+                          event.target.value = "";
+                          void handlePaymentProofUpload(files);
+                        }}
                       />
                     </label>
+                    {proofError ? <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{t(proofError)}</p> : null}
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">支持 JPG、PNG、WEBP，5MB 以内</p>
                   </div>
                 ) : null}
